@@ -6,6 +6,7 @@ import { users } from "./db/schema.js";
 import { respond } from "./agent/orchestrator.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
+import { benchmarkRerankers } from "./agent/lightRag.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
