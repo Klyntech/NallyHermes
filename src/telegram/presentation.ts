@@ -52,3 +52,27 @@ export async function replyFormatted(
     await reply(escapeHtml(part), { parse_mode: "HTML" });
   }
 }
+
+export async function editFormatted(
+  edit: (text: string, options?: { parse_mode?: "HTML" }) => Promise<unknown>,
+  reply: (text: string, options?: { parse_mode?: "HTML" }) => Promise<unknown>,
+  html: string
+): Promise<void> {
+  if (html.length <= TELEGRAM_TEXT_LIMIT) {
+    try {
+      await edit(html, { parse_mode: "HTML" });
+      return;
+    } catch (error) {
+      console.warn("Telegram HTML edit failed; falling back to plain text:", error);
+    }
+  }
+
+  const plain = toPlainText(html) || "I could not format that response.";
+  const parts = splitText(plain);
+  if (parts.length) {
+    await edit(escapeHtml(parts[0]!), { parse_mode: "HTML" });
+    for (const part of parts.slice(1)) {
+      await reply(escapeHtml(part), { parse_mode: "HTML" });
+    }
+  }
+}
