@@ -8,6 +8,9 @@ const envSchema = z.object({
   NVIDIA_NIM_MODEL: z.string().default("meta/llama-3.3-70b-instruct"),
   DATABASE_URL: z.string().min(1),
   TAVILY_API_KEY: z.string().optional(),
+  WEBHOOK_URL: z.string().url(),
+  WEBHOOK_SECRET: z.string().min(32).regex(/^[A-Za-z0-9_-]+$/),
+  PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.string().default("info")
 });
