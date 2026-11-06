@@ -160,10 +160,48 @@ const tools: ChatCompletionTool[] = [
   }
 ];
 
+
+function progressForTool(name: string, args: Record<string, unknown>): string {
+  const short = (value: unknown, max = 72) => typeof value === "string"
+    ? (value.replace(/\\s+/g, " ").trim().slice(0, max) || "")
+    : "";
+  switch (name) {
+    case "web_search": return short(args.query) ? `Searching ${short(args.query)}…` : "Searching the web…";
+    case "fetch": {
+      try { return `Looking up ${new URL(String(args.url)).hostname}…`; }
+      catch { return "Retrieving a webpage…"; }
+    }
+    case "file_io": {
+      const path = short(args.path, 90) || "workspace";
+      const action: Record<string, string> = {
+        read: "Reading", write: "Writing", edit: "Editing", grep: "Searching",
+        delete: "Deleting", list: "Listing", mkdir: "Creating folder"
+      };
+      const verb = action[String(args.operation)] ?? "Working on";
+      return `${verb} ${path}${args.operation === "list" || args.operation === "grep" ? "…" : "…"}`;
+    }
+    case "memory": {
+      const labels: Record<string, string> = {
+        recall: "Looking up saved information…", remember: "Saving information…",
+        update: "Updating saved information…", forget: "Removing saved information…"
+      };
+      return labels[String(args.operation)] ?? "Working with memory…";
+    }
+    case "schedule": {
+      const labels: Record<string, string> = {
+        create: "Creating a reminder…", list: "Checking reminders…", cancel: "Updating a reminder…"
+      };
+      return labels[String(args.operation)] ?? "Checking schedules…";
+    }
+    default: return "Working…";
+  }
+}
+
 export async function respond(
   history: ChatCompletionMessageParam[],
   userMessage: string,
-  telegramId: string
+  telegramId: string,
+  onProgress?: (status: string) => Promise<void> | void
 ): Promise<string> {
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -192,6 +230,7 @@ export async function respond(
       if (call.type !== "function") continue;
       try {
         const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+        await onProgress?.(progressForTool(call.function.name, args));
         let result: unknown;
         switch (call.function.name) {
           case "web_search":
