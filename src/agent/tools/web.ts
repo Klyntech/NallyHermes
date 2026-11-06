@@ -39,15 +39,35 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
 
   const data = await response.json() as {
     answer?: string;
-    results?: Array<{ title: string; url: string; content: string; score: number }>;
+    results?: Array<{ title: string; url: string; content: string; score: number; published_date?: string | null }>;
   };
 
+  const retrievedAt = new Date();
   await onProgress?.({ type: "tool_progress", tool: "web_search", stage: "search_complete", resultCount: data.results?.length ?? 0 });
 
   return {
     answer: data.answer ?? null,
-    results: (data.results ?? []).map(({ title, url, content, score }) => ({
-      title, url, content, score
-    }))
+    searched_at: retrievedAt.toISOString(),
+    freshness_guidance: "searched_at is retrieval time, not publication time. Publication dates may be absent. A recent retrieval does not prove a page is current.",
+    results: (data.results ?? []).map(({ title, url, content, score, published_date }) => {
+      const publishedAt = published_date ? new Date(published_date) : null;
+      const validPublicationDate = publishedAt && Number.isFinite(publishedAt.getTime());
+      const publicationAgeDays = validPublicationDate
+        ? Math.floor((retrievedAt.getTime() - publishedAt.getTime()) / 86_400_000)
+        : null;
+      const freshness = publicationAgeDays === null
+        ? "undated"
+        : publicationAgeDays < 0
+          ? "future_dated_check_source"
+          : publicationAgeDays <= 30
+            ? "published_within_30_days"
+            : "older_than_30_days";
+      return {
+        title, url, content, score,
+        published_date: published_date ?? null,
+        publication_age_days: publicationAgeDays,
+        freshness
+      };
+    })
   };
 }
