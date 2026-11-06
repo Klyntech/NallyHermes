@@ -15,10 +15,9 @@ export interface ProgressDisplay {
 
 function short(value: unknown, max = 72): string {
   return typeof value === "string"
-    ? value.replace(/\\s+/g, " ").trim().slice(0, max)
+    ? value.replaceAll("\n", " ").replaceAll("\r", " ").replaceAll("\t", " ").trim().slice(0, max)
     : "";
 }
-
 function toolStatus(tool: string, args: Record<string, unknown>): string {
   switch (tool) {
     case "web_search":
