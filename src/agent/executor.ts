@@ -48,3 +48,43 @@ export async function executeToolCall(
     return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: reason }) };
   }
 }
+
+
+function isReadOnlyCall(call: ToolCallInput): boolean {
+  let args: Record<string, unknown>;
+  try {
+    args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  switch (call.function.name) {
+    case "web_search":
+    case "fetch":
+      return true;
+    case "file_io":
+      return ["read", "grep", "list"].includes(String(args.operation));
+    case "memory":
+      return args.operation === "recall";
+    case "schedule":
+      return args.operation === "list";
+    default:
+      return false;
+  }
+}
+
+/** Parallelize only independent read-only calls; keep all mutations sequential. */
+export async function executeToolCalls(
+  calls: ToolCallInput[],
+  telegramId: string,
+  onProgress?: (event: ProgressEvent) => Promise<void> | void
+): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
+  if (calls.length > 1 && calls.every(isReadOnlyCall)) {
+    return Promise.all(calls.map((call) => executeToolCall(call, telegramId, onProgress)));
+  }
+
+  const results: Extract<ChatCompletionMessageParam, { role: "tool" }>[] = [];
+  for (const call of calls) {
+    results.push(await executeToolCall(call, telegramId, onProgress));
+  }
+  return results;
+}
