@@ -63,11 +63,11 @@ test("collects evidence only from the supplied step-local messages", () => {
   const currentStep = [
     { role: "system", content: "step instructions" },
     { role: "assistant", content: "I need one source." },
-    { role: "tool", tool_call_id: "new-call", content: "{\\"source\\":\\"current\\"}" }
+    { role: "tool", tool_call_id: "new-call", content: JSON.stringify({ source: "current" }) }
   ];
   const evidence = collectStepEvidence(currentStep);
   assert.deepEqual(evidence.observations, [
-    { tool_call_id: "new-call", content: "{\\"source\\":\\"current\\"}" }
+    { tool_call_id: "new-call", content: JSON.stringify({ source: "current" }) }
   ]);
   assert.deepEqual(evidence.assistantNotes, ["I need one source."]);
   assert.equal(evidence.observations.some((item) => item.tool_call_id === "old-call"), false);
