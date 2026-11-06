@@ -214,9 +214,11 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
         .from(memories).where(input.query ? and(eq(memories.userId, userId), ilike(memories.content, `%${input.query.slice(0, 100)}%`)) : eq(memories.userId, userId))
         .orderBy(asc(memories.createdAt)).limit(20);
       let semanticContext = "";
-      if (input.query) {
+      if (input.query && config.LIGHTRAG_ENABLED) {
         try {
-          if (config.LIGHTRAG_ENABLED) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
+          await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
+          await syncUserMemories(telegramId, onProgress);
+          await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
           semanticContext = await retrieveMemory(telegramId, input.query);
         }
         catch (error) { console.error("LightRAG memory retrieval failed:", error); }
