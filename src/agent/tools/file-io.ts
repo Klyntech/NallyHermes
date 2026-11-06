@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile, rm, stat, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { config } from "../../config.js";
@@ -12,11 +12,24 @@ const schema = z.object({
   replace: z.string().max(5000).optional(),
   recursive: z.boolean().default(false)
 });
-function safePath(input: string, userId: string): string {
+async function safePath(input: string, userId: string): Promise<string> {
   if (path.isAbsolute(input)) throw new Error("Absolute paths are not allowed.");
-  const root = path.resolve(config.FILE_WORKSPACE, userId);
+  const configuredRoot = path.resolve(config.FILE_WORKSPACE, userId);
+  await mkdir(configuredRoot, { recursive: true });
+  const root = await realpath(configuredRoot);
   const target = path.resolve(root, input);
   if (target !== root && !target.startsWith(root + path.sep)) throw new Error("Path escapes the user's workspace.");
+  let cursor = root;
+  for (const segment of path.relative(root, target).split(path.sep).filter(Boolean)) {
+    cursor = path.join(cursor, segment);
+    try {
+      const info = await lstat(cursor);
+      if (info.isSymbolicLink()) throw new Error("Symbolic links are not allowed in the workspace.");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") break;
+      throw error;
+    }
+  }
   return target;
 }
 toolRegistry.register({
@@ -26,13 +39,13 @@ toolRegistry.register({
   parameters: { type: "object", properties: {
     operation: { type: "string", enum: ["read","write","edit","grep","delete","list","mkdir"] },
     path: { type: "string", description: "Workspace-relative path" },
-    content: { type: "string", description: "Content for write; full replacement text for edit" },
+    content: { type: "string", description: "Content for write" },
     search: { type: "string", description: "Literal text to find for edit or grep" },
     replace: { type: "string", description: "Replacement text for edit" },
     recursive: { type: "boolean", default: false }
   }, required: ["operation","path"], additionalProperties: false },
   async execute(input, context) {
-    const target = safePath(input.path, context.userId);
+    const target = await safePath(input.path, context.userId);
     switch (input.operation) {
       case "read": {
         const info = await stat(target); if (!info.isFile()) throw new Error("Path is not a file.");
@@ -48,8 +61,7 @@ toolRegistry.register({
         if (input.search === undefined || input.replace === undefined) throw new Error("search and replace are required for edit.");
         const original = await readFile(target, "utf8");
         if (!original.includes(input.search)) throw new Error("Search text was not found.");
-        const updated = original.replace(input.search, input.replace);
-        await writeFile(target, updated, "utf8");
+        await writeFile(target, original.replace(input.search, input.replace), "utf8");
         return { path: input.path, edited: true };
       }
       case "grep": {

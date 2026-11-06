@@ -1,5 +1,4 @@
 import { Bot } from "grammy";
-import { eq } from "drizzle-orm";
 import { config } from "./config.js";
 import { db } from "./db/client.js";
 import { users } from "./db/schema.js";
@@ -15,6 +14,7 @@ bot.command("start", async (ctx) => {
 });
 
 bot.on("message:text", async (ctx) => {
+  if (!ctx.from) return;
   await ctx.replyWithChatAction("typing");
   try {
     const telegramId = String(ctx.from.id);

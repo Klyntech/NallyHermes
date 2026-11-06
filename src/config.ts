@@ -7,9 +7,8 @@ const envSchema = z.object({
   NVIDIA_NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NVIDIA_NIM_MODEL: z.string().default("meta/llama-3.3-70b-instruct"),
   DATABASE_URL: z.string().min(1),
-  BRAVE_SEARCH_API_KEY: z.string().optional(),
-  FILE_WORKSPACE: z.string().default("./workspace"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.string().default("info")
 });
+
 export const config = envSchema.parse(process.env);
