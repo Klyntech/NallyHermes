@@ -43,7 +43,7 @@ Start the service locally with:
 
 Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node.js process only after the Python service is running. Keep the LightRAG API token private. Do not expose port 9621 publicly.
 
-The TypeScript client is in `src/agent/lightRag.ts`. Neon remains the source of truth for memory records. On a user's first request after startup, existing Neon memories are indexed into that user's isolated LightRAG workspace before semantic retrieval. New memories are indexed when saved; updates and forget operations are synchronized with the index.
+Run `/memorycheck` in Telegram to execute an isolated diagnostic: it initializes the caller's LightRAG workspace, inserts a uniquely tagged temporary document, checks naive vector retrieval, deletes only that temporary document, and verifies it no longer appears. It does not modify saved memories. This also tests the no-HNSW retrieval path. The TypeScript client is in `src/agent/lightRag.ts`. Neon remains the source of truth for memory records. On a user's first request after startup, existing Neon memories are indexed into that user's isolated LightRAG workspace before semantic retrieval. New memories are indexed when saved; updates and forget operations are synchronized with the index.
 
 ## Getting started
 
