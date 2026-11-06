@@ -46,14 +46,14 @@ RERANK_TARGETS = [
         "model": "nvidia/Nemotron-3.5-Rerank-8B-BF16",
         "url": os.getenv(
             "NVIDIA_NIM_NEMOTRON_RERANK_URL",
-            "https://ai.api.nvidia.com/v1/retrieval/nvidia/nemotron-3.5-rerank",
+            "https://ai.api.nvidia.com/v1/retrieval/nvidia/nemotron-3.5-rerank-8b/reranking",
         ),
     },
     {
         "model": "llama-nemotron-rerank-1b-v2",
         "url": os.getenv(
             "NVIDIA_NIM_LLAMA_RERANK_URL",
-            "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-nemotron-rerank",
+            "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-nemotron-rerank-1b-v2/reranking",
         ),
     },
 ]
