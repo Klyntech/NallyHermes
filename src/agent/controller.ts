@@ -33,10 +33,10 @@ function remainingTime(deadline: number): number {
 function collectStepEvidence(messages: ChatCompletionMessageParam[]): string {
   const observations = messages
     .filter((message) => message.role === "tool")
-    .slice(-20)
+    .slice(-8)
     .map((message) => ({
       role: "tool",
-      content: typeof message.content === "string" ? message.content.slice(0, 12_000) : "[non-text tool result]"
+      content: typeof message.content === "string" ? message.content.slice(0, 4_000) : "[non-text tool result]"
     }));
   const assistantNotes = messages
     .filter((message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim())
