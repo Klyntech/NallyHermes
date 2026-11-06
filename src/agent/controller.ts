@@ -24,7 +24,7 @@ export async function runAgent(
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<string> {
-  const { messages } = await prepareRequest(history, userMessage, telegramId, onProgress);
+  const { messages } = await prepareRequest(history, userMessage, telegramId);
 
   for (let round = 0; round < MAX_MODEL_ROUNDS; round++) {
     await onProgress?.({ type: "thinking", phase: "model" });
