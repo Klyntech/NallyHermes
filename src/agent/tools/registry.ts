@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { ToolContext, ToolDefinition, ToolResult } from "./types.js";
 
 export class ToolRegistry {
@@ -21,7 +20,7 @@ export class ToolRegistry {
 
     const parsed = tool.schema.safeParse(input);
     if (!parsed.success) {
-      return { ok: false, error: { code: "INVALID_INPUT", message: z.prettifyError(parsed.error) } };
+      return { ok: false, error: { code: "INVALID_INPUT", message: JSON.stringify(parsed.error.flatten()) } };
     }
 
     try {
