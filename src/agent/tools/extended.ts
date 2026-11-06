@@ -337,9 +337,10 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
       .where(eq(scheduledJobs.userId, userId))
       .orderBy(asc(scheduledJobs.runAt))
       .limit(50);
+    const fallbackTimezone = await getUserTimezone(telegramId);
     return jobs.map((job) => ({
       ...job,
-      run_at_local: formatDateTimeInTimezone(job.runAt, job.timezone ?? await getUserTimezone(telegramId))
+      run_at_local: formatDateTimeInTimezone(job.runAt, job.timezone ?? fallbackTimezone)
     }));
   }
 
@@ -356,7 +357,7 @@ export function startScheduleWorker(sendMessage: (telegramId: string, text: stri
     if (running) return;
     running = true;
     try {
-      const due = await db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, telegramId: users.telegramId })
+      const due = await db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, telegramId: users.telegramId, userTimezone: users.timezone })
         .from(scheduledJobs).innerJoin(users, eq(scheduledJobs.userId, users.id))
         .where(and(eq(scheduledJobs.status, "pending"), lte(scheduledJobs.runAt, new Date()))).orderBy(asc(scheduledJobs.runAt)).limit(20);
       for (const job of due) {
@@ -365,8 +366,8 @@ export function startScheduleWorker(sendMessage: (telegramId: string, text: stri
         if (!claimed.length) continue;
         try {
           await sendMessage(job.telegramId, "⏰ Reminder: " + job.task);
-          if (job.recurrence && job.timezone) {
-            const nextRun = nextOccurrence(job.runAt, job.recurrence as Recurrence, job.timezone);
+          if (job.recurrence) {
+            const nextRun = nextOccurrence(job.runAt, job.recurrence as Recurrence, job.timezone ?? job.userTimezone);
             await db.update(scheduledJobs).set({ runAt: nextRun, status: "pending" }).where(eq(scheduledJobs.id, job.id));
           }
         } catch (error) {
