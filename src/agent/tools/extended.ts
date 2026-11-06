@@ -161,7 +161,7 @@ async function getUserId(telegramId: string): Promise<string> {
 const indexedMemoryUsers = new Set<string>();
 const memorySyncJobs = new Map<string, Promise<void>>();
 
-export async function syncUserMemories(telegramId: string): Promise<void> {
+export async function syncUserMemories(telegramId: string, onProgress?: ToolProgressReporter): Promise<void> {
   if (!config.LIGHTRAG_ENABLED || indexedMemoryUsers.has(telegramId)) return;
   const existingJob = memorySyncJobs.get(telegramId);
   if (existingJob) return existingJob;
@@ -170,6 +170,7 @@ export async function syncUserMemories(telegramId: string): Promise<void> {
     const userId = await getUserId(telegramId);
     const rows = await db.select({ id: memories.id, content: memories.content })
       .from(memories).where(eq(memories.userId, userId));
+    if (rows.length) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
     for (const memory of rows) {
       await indexMemory(telegramId, memory.id, memory.content);
     }
