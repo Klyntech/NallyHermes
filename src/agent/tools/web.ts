@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { config } from "../../config.js";
+import type { ToolProgressReporter } from "../progress.js";
 
 const searchInput = z.object({
   query: z.string().min(1).max(400),
@@ -9,7 +10,7 @@ const searchInput = z.object({
 export type WebSearchInput = z.input<typeof searchInput>;
 
 /** Search the web with Tavily and return concise, source-linked results. */
-export async function searchWeb(input: WebSearchInput): Promise<unknown> {
+export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const { query, max_results } = searchInput.parse(input);
   if (!config.TAVILY_API_KEY) {
     throw new Error("Web search is not configured. Add TAVILY_API_KEY to the environment.");
@@ -40,6 +41,8 @@ export async function searchWeb(input: WebSearchInput): Promise<unknown> {
     answer?: string;
     results?: Array<{ title: string; url: string; content: string; score: number }>;
   };
+
+  await onProgress?.({ type: "tool_progress", tool: "web_search", stage: "search_complete", resultCount: data.results?.length ?? 0 });
 
   return {
     answer: data.answer ?? null,
