@@ -13,7 +13,32 @@ import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
-const histories = new Map<number, ChatCompletionMessageParam[]>();
+const histories = new Map<string, ChatCompletionMessageParam[]>();
+const MAX_ACTIVE_CONVERSATIONS = 1_000;
+
+function conversationKey(chatId: number, userId: number): string {
+  // A group chat has one private history per participant; it never shares
+  // context with another participant or the user's private chat.
+  return `${chatId}:${userId}`;
+}
+
+function getHistory(key: string): ChatCompletionMessageParam[] {
+  const history = histories.get(key) ?? [];
+  // Refresh insertion order so the map behaves as a small LRU cache.
+  histories.delete(key);
+  histories.set(key, history);
+  return history;
+}
+
+function saveHistory(key: string, history: ChatCompletionMessageParam[]): void {
+  histories.delete(key);
+  histories.set(key, history.slice(-20));
+  while (histories.size > MAX_ACTIVE_CONVERSATIONS) {
+    const oldest = histories.keys().next().value;
+    if (oldest === undefined) break;
+    histories.delete(oldest);
+  }
+}
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
 const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
@@ -174,11 +199,12 @@ bot.on("message:text", async (ctx) => {
       set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
     });
 
-    const history = histories.get(ctx.chat.id) ?? [];
+    const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
+    const history = getHistory(historyKey);
     const answer = await respond(history, ctx.message.text, telegramId, onProgress);
     await closeProgress();
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
-    histories.set(ctx.chat.id, history.slice(-20));
+    saveHistory(historyKey, history);
     await editFormatted(
       (text, options) => ctx.api.editMessageText(ctx.chat.id, progressMessageId!, text, options),
       (text, options) => ctx.reply(text, options),
