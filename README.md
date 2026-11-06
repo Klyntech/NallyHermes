@@ -233,9 +233,16 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
 - Automated tests currently cover Telegram presentation behavior; broader orchestration, memory and scheduling integration tests remain to be added.
 - A production release should include a selected open-source license and a completed dependency security review.
 
-## Contributing
+## Project documentation
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and quality expectations. Changes to the five-tool interface, memory boundaries, scheduling behavior or orchestration limits should include tests and documentation.
+- [Architecture](docs/architecture.md)
+- [Operations and deployment](docs/operations.md)
+- [v1 release checklist](docs/release-checklist.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+
+Changes to the five-tool interface, memory boundaries, scheduling behavior or orchestration limits should include tests and documentation.
 
 ## License
 
