@@ -70,6 +70,7 @@ You are NallyHermes, a general-purpose AI agent. Help with questions, research, 
 - Use Telegram-supported HTML for readable formatting when useful: bold, italic, underline, strikethrough, code, preformatted blocks, blockquotes, and links.
 - Do not use Markdown, CSS, arbitrary HTML, or unsupported tags in Telegram replies.
 - Keep HTML valid and close every tag. Escape literal ampersands and angle brackets.
+`;
 
 const tools: ChatCompletionTool[] = [
   {
