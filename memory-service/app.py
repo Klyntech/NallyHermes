@@ -41,8 +41,22 @@ NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.co
 LLM_MODEL = os.environ["LIGHTRAG_LLM_MODEL"]
 EMBEDDING_MODEL = os.getenv("LIGHTRAG_EMBEDDING_MODEL", "nvidia/nemotron-3-embed-1b")
 EMBEDDING_DIM = int(os.getenv("LIGHTRAG_EMBEDDING_DIM", "2048"))
-RERANK_URL = os.getenv("NVIDIA_NIM_RERANK_URL", NIM_BASE_URL.rstrip("/") + "/ranking")
-RERANK_MODELS = ["nvidia/Nemotron-3.5-Rerank-8B-BF16", "llama-nemotron-rerank-1b-v2"]
+RERANK_TARGETS = [
+    {
+        "model": "nvidia/Nemotron-3.5-Rerank-8B-BF16",
+        "url": os.getenv(
+            "NVIDIA_NIM_NEMOTRON_RERANK_URL",
+            "https://ai.api.nvidia.com/v1/retrieval/nvidia/nemotron-3.5-rerank",
+        ),
+    },
+    {
+        "model": "llama-nemotron-rerank-1b-v2",
+        "url": os.getenv(
+            "NVIDIA_NIM_LLAMA_RERANK_URL",
+            "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-nemotron-rerank",
+        ),
+    },
+]
 
 if len(API_TOKEN) < 32:
     raise RuntimeError("LIGHTRAG_API_TOKEN must contain at least 32 characters.")
@@ -198,13 +212,20 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
         "The water cycle includes evaporation, condensation, and precipitation.",
     ]
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
-        async def run_once(model: str):
+        async def run_once(target: dict):
             started = time.perf_counter()
             response = await client.post(
-                RERANK_URL,
-                headers={"Authorization": f"Bearer {NIM_API_KEY}", "Content-Type": "application/json"},
-                json={"model": model, "query": query,
-                      "passages": [{"text": item} for item in passages], "top_n": len(passages)},
+                target["url"],
+                headers={
+                    "Authorization": f"Bearer {NIM_API_KEY}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "query": query,
+                    "passages": [{"text": item} for item in passages],
+                    "top_n": len(passages),
+                },
             )
             elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
             if response.is_error:
@@ -216,10 +237,11 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
                     "returned": len(rankings), "response_keys": list(data.keys())}
 
         results = {}
-        for model in RERANK_MODELS:
+        for target in RERANK_TARGETS:
+            model = target["model"]
             try:
-                warmup = await run_once(model)
-                samples = [await run_once(model) for _ in range(5)]
+                warmup = await run_once(target)
+                samples = [await run_once(target) for _ in range(5)]
                 successful = [item["latency_ms"] for item in samples if item["ok"]]
                 failures = [item for item in samples if not item["ok"]]
                 ordered = sorted(successful)
@@ -239,8 +261,13 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
                 }
             except Exception as exc:
                 results[model] = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:500]}"}
-    return {"query_passages": len(passages), "warmup_runs": 1, "measured_runs": 5,
-            "endpoint": RERANK_URL, "results": results}
+    return {
+        "query_passages": len(passages),
+        "warmup_runs": 1,
+        "measured_runs": 5,
+        "endpoints": {target["model"]: target["url"] for target in RERANK_TARGETS},
+        "results": results,
+    }
 
 
 @app.post("/v1/memory/insert")
