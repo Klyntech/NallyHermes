@@ -163,7 +163,7 @@ const tools: ChatCompletionTool[] = [
 
 function progressForTool(name: string, args: Record<string, unknown>): string {
   const short = (value: unknown, max = 72) => typeof value === "string"
-    ? (value.replace(/\\s+/g, " ").trim().slice(0, max) || "")
+    ? (value.replace(/\s+/g, " ").trim().slice(0, max) || "")
     : "";
   switch (name) {
     case "web_search": return short(args.query) ? `Searching ${short(args.query)}…` : "Searching the web…";
@@ -178,7 +178,7 @@ function progressForTool(name: string, args: Record<string, unknown>): string {
         delete: "Deleting", list: "Listing", mkdir: "Creating folder"
       };
       const verb = action[String(args.operation)] ?? "Working on";
-      return `${verb} ${path}${args.operation === "list" || args.operation === "grep" ? "…" : "…"}`;
+      return `${verb} ${path}…`;
     }
     case "memory": {
       const labels: Record<string, string> = {
