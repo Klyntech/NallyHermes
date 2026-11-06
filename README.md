@@ -38,7 +38,7 @@ Configure `DATABASE_URL`, `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_BASE_URL`, `LIGHTRAG
 Start the service locally with:
 
 ```bash
-.venv/bin/uvicorn memory-service.app:app --host 127.0.0.1 --port 9621
+.venv/bin/uvicorn app:app --app-dir memory-service --host 127.0.0.1 --port 9621
 ```
 
 Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node.js process only after the Python service is running. Keep the LightRAG API token private. Do not expose port 9621 publicly.
