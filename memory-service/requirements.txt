@@ -1,4 +1,4 @@
-lightrag-hku[offline-storage]>=1.5.8,<2.0.0
+lightrag-hku[offline-storage]==1.5.7
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 openai>=2.0,<3.0
