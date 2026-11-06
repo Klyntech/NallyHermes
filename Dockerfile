@@ -14,8 +14,8 @@ COPY . .
 RUN npm run build
 
 RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir -r memory-service/requirements.txt
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip --index-url https://pypi.org/simple \
+    && /opt/venv/bin/pip install --no-cache-dir --index-url https://pypi.org/simple -r memory-service/requirements.txt
 
 ENV PATH="/opt/venv/bin:${PATH}"
 EXPOSE 3000
