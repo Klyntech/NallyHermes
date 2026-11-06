@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   telegramId: text("telegram_id").notNull().unique(),
   username: text("username"),
   firstName: text("first_name"),
+  timezone: text("timezone").notNull().default("Africa/Lagos"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
