@@ -53,11 +53,29 @@ The TypeScript client is in `src/agent/lightRag.ts`. Existing Neon memory record
 4. Set `TELEGRAM_BOT_TOKEN`, `WEBHOOK_URL`, `WEBHOOK_SECRET`, `NVIDIA_NIM_API_KEY`, `DATABASE_URL`, and `TAVILY_API_KEY`.
 5. Start the server: `npm run dev`.
 
-## Webhook deployment
+## Render deployment
 
-Deploy NallyHermes as a **Render Web Service**. Set `WEBHOOK_URL` to the service's public HTTPS URL and `WEBHOOK_SECRET` to a random secret of at least 32 characters (letters, numbers, underscores, or hyphens). Render supplies `PORT` automatically.
+Deploy NallyHermes as a **Render Web Service** using the repository's `Dockerfile`. The container runs the Node.js Telegram agent and the Python LightRAG service together. Render supplies the public `PORT`; LightRAG remains private on `127.0.0.1:9621`.
 
-The app registers its Telegram webhook on startup and validates Telegram's webhook secret-token header. A health endpoint is available at `/health`.
+Set these environment variables in Render:
+
+- `TELEGRAM_BOT_TOKEN`
+- `WEBHOOK_URL` — the public HTTPS URL of the Render service
+- `WEBHOOK_SECRET` — at least 32 characters
+- `NVIDIA_NIM_API_KEY`
+- `NVIDIA_NIM_BASE_URL`
+- `NVIDIA_NIM_MODEL`
+- `DATABASE_URL` — Neon PostgreSQL connection string
+- `TAVILY_API_KEY`
+- `LIGHTRAG_ENABLED=true`
+- `LIGHTRAG_API_TOKEN` — generate a separate random secret of at least 32 characters
+- `LIGHTRAG_LLM_MODEL`
+- `LIGHTRAG_EMBEDDING_MODEL`
+- `LIGHTRAG_EMBEDDING_DIM`
+
+Keep `LIGHTRAG_URL` at its default `http://127.0.0.1:9621`. Do not expose port 9621 publicly. Confirm that the selected NVIDIA NIM embedding model is enabled for your API key and that its output dimension matches `LIGHTRAG_EMBEDDING_DIM`.
+
+The app registers its Telegram webhook on startup and validates Telegram's webhook secret-token header. The public health endpoint is `/health`; the internal LightRAG health endpoint is bound to localhost only.
 
 ## Database setup
 
