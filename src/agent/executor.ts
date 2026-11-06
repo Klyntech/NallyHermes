@@ -59,7 +59,7 @@ function parseToolArguments(name: string, raw: string): Record<string, unknown> 
   return parsed.data as Record<string, unknown>;
 }
 
-export async function executeToolCall(
+async function executeToolCallOnce(
   call: ToolCallInput,
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
@@ -97,6 +97,40 @@ export async function executeToolCall(
     await onProgress?.({ type: "tool_error", tool: call.function.name });
     return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: reason }) };
   }
+}
+
+
+function isTransientToolFailure(result: Extract<ChatCompletionMessageParam, { role: "tool" }>): boolean {
+  try {
+    const parsed = JSON.parse(String(result.content)) as { error?: unknown };
+    if (typeof parsed.error !== "string") return false;
+    return /timeout|timed out|temporar|rate.?limit|\b429\b|\b500\b|\b502\b|\b503\b|\b504\b|ECONNRESET|ECONNREFUSED|ENOTFOUND|network|socket|fetch failed/i.test(parsed.error);
+  } catch {
+    return false;
+  }
+}
+
+/** Retry only transient failures from read-only calls; mutations are never replayed automatically. */
+export async function executeToolCall(
+  call: ToolCallInput,
+  telegramId: string,
+  onProgress?: (event: ProgressEvent) => Promise<void> | void
+): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
+  const retryable = isReadOnlyCall(call);
+  const maxAttempts = retryable ? config.AGENT_MAX_READ_RETRIES + 1 : 1;
+  let result = await executeToolCallOnce(call, telegramId, onProgress);
+  for (let attempt = 2; attempt <= maxAttempts && isTransientToolFailure(result); attempt++) {
+    await onProgress?.({
+      type: "recovery_retry",
+      tool: call.function.name,
+      attempt,
+      maxAttempts
+    });
+    const delayMs = Math.min(1_000 * 2 ** (attempt - 2), 4_000);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    result = await executeToolCallOnce(call, telegramId, onProgress);
+  }
+  return result;
 }
 
 export function isReadOnlyCall(call: ToolCallInput): boolean {
