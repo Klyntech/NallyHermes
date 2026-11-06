@@ -137,6 +137,7 @@ LightRAG is disabled by default. To enable it locally, configure the LightRAG va
 | `npm run typecheck` | Run TypeScript without emitting files |
 | `npm test` | Run automated regression tests |
 | `npm run build` | Compile TypeScript into `dist/` |
+| `npm run check` | Run typecheck, tests and production build |
 | `npm start` | Run the compiled application |
 
 ## Configuration
@@ -162,6 +163,7 @@ See [`.env.example`](.env.example) for the complete template.
 | `LIGHTRAG_URL` | No | Defaults to `http://127.0.0.1:9621` |
 | `LIGHTRAG_EMBEDDING_MODEL` | If enabled | Defaults to `nvidia/nemotron-3-embed-1b` |
 | `LIGHTRAG_EMBEDDING_DIM` | If enabled | Defaults to `2048`; must match the model output |
+| `LIGHTRAG_WORKING_DIR` | No | Defaults to `./lightrag_data` |
 | `AGENT_*` | No | Bounded planning, tool, retry, parallelism and timeout budgets; individual model calls default to 120 seconds |
 | `NODE_ENV` | No | Runtime environment |
 | `LOG_LEVEL` | No | Logging configuration |
