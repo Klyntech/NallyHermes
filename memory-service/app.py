@@ -90,6 +90,58 @@ embedding_function = EmbeddingFunc(
     ),
 )
 
+NEMOTRON_RERANK_TARGET = RERANK_TARGETS[0]
+
+
+async def nemotron_rerank_func(
+    query: str,
+    documents: list[str],
+    top_n: int | None = None,
+) -> list[dict]:
+    """Rerank LightRAG chunks with NVIDIA Nemotron 3.5 Rerank 8B."""
+    if not documents:
+        return []
+
+    timeout = httpx.Timeout(45.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            NEMOTRON_RERANK_TARGET["url"],
+            headers={
+                "Authorization": f"Bearer {NIM_API_KEY}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": NEMOTRON_RERANK_TARGET["api_model"],
+                "query": {"text": query},
+                "passages": [{"text": document} for document in documents],
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    rankings = data.get("rankings")
+    if not isinstance(rankings, list):
+        raise RuntimeError("NVIDIA reranker response did not contain a rankings list.")
+
+    results = []
+    for item in rankings:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        score = item.get("relevance_score", item.get("score", item.get("logit")))
+        if isinstance(index, bool) or not isinstance(index, int):
+            continue
+        if not 0 <= index < len(documents):
+            continue
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            continue
+        results.append({"index": index, "relevance_score": float(score)})
+
+    if not results:
+        raise RuntimeError("NVIDIA reranker returned no valid ranked passages.")
+    return results[:top_n] if top_n else results
+
 rag_instances = {}
 rag_locks: dict[str, asyncio.Lock] = {}
 
@@ -113,6 +165,7 @@ async def get_rag(user_id: str) -> LightRAG:
                 workspace=workspace,
                 llm_model_func=llm_model_func,
                 embedding_func=embedding_function,
+                rerank_model_func=nemotron_rerank_func,
                 kv_storage="PGKVStorage",
                 vector_storage="PGVectorStorage",
                 graph_storage="PGTableGraphStorage",
@@ -321,7 +374,7 @@ async def query_memory(payload: QueryRequest, authorization: str | None = Header
     rag = await get_rag(payload.user_id)
     answer = await rag.aquery(
         payload.query,
-        param=QueryParam(mode="hybrid", only_need_context=True),
+        param=QueryParam(mode="hybrid", only_need_context=True, enable_rerank=True),
     )
     return {"answer": answer or ""}
 
