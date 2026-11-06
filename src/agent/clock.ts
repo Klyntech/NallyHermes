@@ -26,7 +26,7 @@ export async function setUserTimezone(telegramId: string, timezone: string): Pro
 }
 
 export function assertTimestampMatchesTimezone(timestamp: string, date: Date, timezone: string): void {
-  const suffix = /(Z|([+-])(\\d{2}):(\\d{2}))$/i.exec(timestamp);
+  const suffix = /(Z|([+-])(\d{2}):(\d{2}))$/i.exec(timestamp);
   if (!suffix) throw new Error("The timestamp must include an explicit UTC offset.");
   const suppliedOffset = suffix[1]?.toUpperCase() === "Z"
     ? 0
@@ -35,7 +35,7 @@ export function assertTimestampMatchesTimezone(timestamp: string, date: Date, ti
     timeZone: timezone,
     timeZoneName: "longOffset"
   }).formatToParts(date).find((part) => part.type === "timeZoneName")?.value ?? "GMT";
-  const actualMatch = /^GMT(?:([+-])(\\d{2}):(\\d{2}))?$/.exec(offsetLabel);
+  const actualMatch = /^GMT(?:([+-])(\d{2}):(\d{2}))?$/.exec(offsetLabel);
   const actualOffset = actualMatch?.[1]
     ? (actualMatch[1] === "-" ? -1 : 1) * (Number(actualMatch[2]) * 60 + Number(actualMatch[3]))
     : 0;
