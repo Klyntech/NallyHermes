@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { config } from "../config.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool } from "./tools/extended.js";
@@ -119,7 +120,7 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
   }
 }
 
-const MAX_PARALLEL_TOOL_CALLS = 3;
+const MAX_PARALLEL_TOOL_CALLS = config.AGENT_MAX_PARALLEL_TOOL_CALLS;
 
 /** Preserve model call order while running only bounded, read-only batches concurrently. */
 export async function executeToolCalls(
