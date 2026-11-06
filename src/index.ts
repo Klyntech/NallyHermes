@@ -8,6 +8,7 @@ import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
 import { benchmarkRerankers } from "./agent/lightRag.js";
 import { displayProgress } from "./agent/progress.js";
+import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
@@ -81,6 +82,7 @@ bot.on("message:text", async (ctx) => {
   await ctx.replyWithChatAction("typing");
   let progressMessageId: number | undefined;
   let thinkingTimer: ReturnType<typeof setInterval> | undefined;
+  let closeProgress: (() => Promise<void>) | undefined;
   try {
     const telegramId = String(ctx.from.id);
     const progressMessage = await ctx.reply("Thinking…");
@@ -122,7 +124,13 @@ bot.on("message:text", async (ctx) => {
       }
       return update;
     };
-    const onProgress = async (event: Parameters<typeof respond>[3] extends (event: infer E) => unknown ? E : never): Promise<void> => {
+    closeProgress = async () => {
+      stopThinkingAnimation();
+      progressClosed = true;
+      progressRevision++;
+      await progressQueue;
+    };
+    const onProgress = async (event: ProgressEvent): Promise<void> => {
       const display = displayProgress(event);
       if (display) await showProgress(display.text, display.animateThinking);
     };
@@ -139,10 +147,7 @@ bot.on("message:text", async (ctx) => {
 
     const history = histories.get(ctx.chat.id) ?? [];
     const answer = await respond(history, ctx.message.text, telegramId, onProgress);
-    stopThinkingAnimation();
-    progressClosed = true;
-    progressRevision++;
-    await progressQueue;
+    await closeProgress();
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
     histories.set(ctx.chat.id, history.slice(-20));
     await editFormatted(
@@ -151,7 +156,8 @@ bot.on("message:text", async (ctx) => {
       answer
     );
   } catch (error) {
-    if (thinkingTimer) clearInterval(thinkingTimer);
+    if (closeProgress) await closeProgress();
+    else if (thinkingTimer) clearInterval(thinkingTimer);
     console.error("Agent request failed:", error);
     const failure = "I ran into a problem processing that. Please try again shortly.";
     if (progressMessageId !== undefined) {
