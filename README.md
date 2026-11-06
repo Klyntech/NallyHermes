@@ -55,9 +55,9 @@ Run `/memorycheck` in Telegram to execute an isolated diagnostic: it initializes
 
 The agent uses a model-led smart planner with deterministic execution controls. A planning pass decides whether a request benefits from decomposition; simple requests fall through to the normal tool loop. Complex requests are split into up to six validated steps with explicit dependencies.
 
-The controller executes dependency-ready steps, tracks their states, skips steps whose prerequisites failed, and synthesizes the final answer from completed results. Independent steps may run concurrently only when the planner marks them read-only; the executor independently checks that every tool call is read-only before allowing that concurrency. Mutating steps remain sequential. Planned execution is bounded by a shared 12-tool-round budget, with up to three tool rounds per step. Malformed plans safely fall back to direct execution.
+The controller executes dependency-ready steps, tracks their states, skips steps whose prerequisites failed, and synthesizes the final answer from completed results. Independent steps may run concurrently only when the planner marks them read-only; the executor independently checks that every tool call is read-only before allowing that concurrency. Parallel work is capped at three steps and three tool calls per batch. Tool arguments are validated against strict Zod schemas before dispatch, and invalid calls return structured tool errors. Mutating operations run sequentially. Planned execution is bounded by a shared 12-tool-round budget, with up to three tool rounds per step. Malformed plans safely fall back to direct execution.
 
-The five agent tools remain unchanged: `web_search`, `fetch`, `file_io`, `memory`, and `schedule`. Telegram progress edits reflect planning and actual step execution states.
+The five agent tools remain unchanged: `web_search`, `fetch`, `file_io`, `memory`, and `schedule`. Tool selection guidance distinguishes broad discovery from targeted fetching and read-only operations from mutations. Telegram progress edits reflect planning and actual tool/step execution states.
 
 ## Getting started
 
