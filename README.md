@@ -51,6 +51,12 @@ Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node
 
 Run `/memorycheck` in Telegram to execute an isolated diagnostic: it initializes the caller's LightRAG workspace, inserts a uniquely tagged temporary document, checks naive vector retrieval, deletes only that temporary document, and verifies it no longer appears. It does not modify saved memories. This also tests the no-HNSW retrieval path. The TypeScript client is in `src/agent/lightRag.ts`. Neon remains the source of truth for memory records. On a user's first request after startup, existing Neon memories are indexed into that user's isolated LightRAG workspace before semantic retrieval. New memories are indexed when saved; updates and forget operations are synchronized with the index.
 
+## Context and memory intelligence
+
+Memory retrieval is model-directed for each task. Request preparation does not automatically load stored memories: Nally decides whether prior personal or project context would materially improve the current task, then calls the memory tool with a focused query only when needed. The recall result separates structured Neon records from LightRAG semantic context and reports whether semantic retrieval was available. Nally should apply only relevant records, prefer current conversation instructions over conflicting older memories, refine a recall query only for a specific unresolved gap, and stop once sufficient context is available. Greetings, general knowledge, simple calculations, and unrelated tasks should not trigger memory retrieval.
+
+Neon remains the source of truth for durable memory records; LightRAG provides semantic and relational retrieval. Recall is read-only. Memory writes remain explicit tool operations and follow consent and confirmation rules. If LightRAG is unavailable, structured Neon memories remain available and ordinary task execution continues.
+
 ## Agent orchestration
 
 The agent uses a model-led smart planner with deterministic execution controls. A planning pass decides whether a request benefits from decomposition; simple requests fall through to the normal tool loop. Complex requests are split into up to ten validated steps with explicit dependencies.
