@@ -44,6 +44,7 @@ EMBEDDING_DIM = int(os.getenv("LIGHTRAG_EMBEDDING_DIM", "2048"))
 RERANK_TARGETS = [
     {
         "model": "nvidia/Nemotron-3.5-Rerank-8B-BF16",
+        "api_model": "nvidia/nemotron-3.5-rerank-8b",
         "url": os.getenv(
             "NVIDIA_NIM_NEMOTRON_RERANK_URL",
             "https://ai.api.nvidia.com/v1/retrieval/nvidia/nemotron-3.5-rerank-8b/reranking",
@@ -55,6 +56,8 @@ RERANK_TARGETS = [
             "NVIDIA_NIM_LLAMA_RERANK_URL",
             "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-nemotron-rerank-1b-v2/reranking",
         ),
+        "retired": True,
+        "retirement_note": "NVIDIA endpoint reached end of life on 2026-08-25.",
     },
 ]
 
@@ -222,9 +225,9 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "query": query,
+                    "model": target["api_model"],
+                    "query": {"text": query},
                     "passages": [{"text": item} for item in passages],
-                    "top_n": len(passages),
                 },
             )
             elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
@@ -239,6 +242,13 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
         results = {}
         for target in RERANK_TARGETS:
             model = target["model"]
+            if target.get("retired"):
+                results[model] = {
+                    "ok": False,
+                    "skipped": True,
+                    "error": target.get("retirement_note", "Endpoint is retired."),
+                }
+                continue
             try:
                 warmup = await run_once(target)
                 samples = [await run_once(target) for _ in range(5)]
