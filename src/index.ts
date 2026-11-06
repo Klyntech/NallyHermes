@@ -8,7 +8,7 @@ import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
 import { benchmarkRerankers } from "./agent/lightRag.js";
 import { displayProgress } from "./agent/progress.js";
-import { getUserTimezone, setUserTimezone } from "./agent/clock.js";
+import { getDefaultTimezone, getUserTimezone, setUserTimezone } from "./agent/clock.js";
 import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
@@ -32,7 +32,8 @@ bot.command("timezone", async (ctx) => {
   await db.insert(users).values({
     telegramId,
     username: ctx.from.username ?? null,
-    firstName: ctx.from.first_name ?? null
+    firstName: ctx.from.first_name ?? null,
+    timezone: getDefaultTimezone()
   }).onConflictDoUpdate({
     target: users.telegramId,
     set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
@@ -166,7 +167,8 @@ bot.on("message:text", async (ctx) => {
     await db.insert(users).values({
       telegramId,
       username: ctx.from.username ?? null,
-      firstName: ctx.from.first_name ?? null
+      firstName: ctx.from.first_name ?? null,
+      timezone: getDefaultTimezone()
     }).onConflictDoUpdate({
       target: users.telegramId,
       set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
