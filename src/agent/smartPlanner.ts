@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
+import { config } from "../config.js";
 
 export interface ExecutionPlanStep {
   id: string;
@@ -27,7 +28,7 @@ export async function createExecutionPlan(
   userMessage: string
 ): Promise<ExecutionPlan | null> {
   const response = await llm.chat.completions.create({
-    model: (await import("../config.js")).config.NVIDIA_NIM_MODEL,
+    model: config.NVIDIA_NIM_MODEL,
     messages: [
       {
         role: "system",
