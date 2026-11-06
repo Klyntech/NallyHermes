@@ -232,6 +232,8 @@ async function runPlannedRequest(
   let totalToolRounds = 0;
   const deadline = Date.now() + config.AGENT_PLAN_TIMEOUT_MS;
   let stopReason = "All executable plan steps were processed.";
+  let recoveryAttempts = 0;
+  const recoveryAttempted = new Set<string>();
 
   while (pending.size) {
     if (Date.now() >= deadline) {
@@ -242,8 +244,93 @@ async function runPlannedRequest(
       pending.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
     );
     if (!ready.length) {
-      stopReason = "Some steps could not run because one or more prerequisite steps did not complete.";
-      break;
+      // A failed read-only prerequisite may be recoverable. Recover it before
+      // declaring its dependents blocked, then recompute readiness on the next pass.
+      const recoverable = steps.find((step) => {
+        if (!step.parallel_safe || recoveryAttempts >= 2) return false;
+        const outcome = outcomes.find((item) => item.id === step.id);
+        return Boolean(outcome && outcome.status !== "completed" && !recoveryAttempted.has(step.id));
+      });
+      if (!recoverable || Date.now() >= deadline) {
+        stopReason = "Some steps could not run because one or more prerequisite steps did not complete.";
+        break;
+      }
+      const previous = outcomes.find((item) => item.id === recoverable.id)!;
+      recoveryAttempts++;
+      recoveryAttempted.add(recoverable.id);
+      await onProgress?.({ type: "recovery_adjusting" });
+      await onProgress?.({
+        type: "plan_step_start",
+        index: steps.findIndex((item) => item.id === recoverable.id) + 1,
+        total: steps.length,
+        task: "Recovering prerequisite: " + recoverable.task
+      });
+      const recoveryStep: ExecutionPlanStep = {
+        id: "recovery_" + recoverable.id,
+        task: [
+          "Recover the unresolved read-only task: " + recoverable.task,
+          "Previous limitation: " + (previous.failureReason ?? "The task did not reach a verified result") + ".",
+          "Use existing evidence first. Choose a materially different read-only approach only if a necessary gap remains.",
+          "Do not repeat completed searches or fetches without a clear reason. Never perform mutations."
+        ].join(" "),
+        depends_on: [],
+        parallel_safe: true
+      };
+      const remainingRecoveryBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+      if (remainingRecoveryBudget <= 0) {
+        stopReason = "The total planned tool-round budget was reached.";
+        break;
+      }
+      const recovered = await runPlannedStep(
+        [...messages],
+        recoveryStep,
+        telegramId,
+        Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingRecoveryBudget)),
+        true,
+        deadline,
+        onProgress
+      );
+      totalToolRounds += recovered.toolRounds;
+      if (recovered.status === "completed") {
+        const outcomeIndex = outcomes.findIndex((item) => item.id === recoverable.id);
+        outcomes[outcomeIndex] = {
+          ...previous,
+          status: "completed",
+          toolRounds: previous.toolRounds + recovered.toolRounds,
+          answer: recovered.answer,
+          evidence: recovered.evidence,
+          failureReason: undefined
+        };
+        completed.add(recoverable.id);
+        messages.push({
+          role: "assistant",
+          content: JSON.stringify({
+            plan_step: recoverable.id,
+            status: "completed",
+            answer: recovered.answer,
+            evidence: recovered.evidence,
+            recovered: true
+          })
+        });
+        await onProgress?.({
+          type: "plan_step_complete",
+          index: steps.findIndex((item) => item.id === recoverable.id) + 1,
+          total: steps.length
+        });
+        continue;
+      }
+      const outcomeIndex = outcomes.findIndex((item) => item.id === recoverable.id);
+      outcomes[outcomeIndex] = {
+        ...previous,
+        toolRounds: previous.toolRounds + recovered.toolRounds,
+        answer: previous.answer + "\nRecovery attempt: " + recovered.answer,
+        evidence: {
+          observations: [...previous.evidence.observations, ...recovered.evidence.observations].slice(-8),
+          assistantNotes: [...previous.evidence.assistantNotes, ...recovered.evidence.assistantNotes].slice(-4)
+        },
+        failureReason: recovered.failureReason ?? previous.failureReason
+      };
+      continue;
     }
 
     const remainingBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
@@ -343,12 +430,11 @@ async function runPlannedRequest(
     }
   }
 
-  // One bounded replanning pass for failed read-only steps. Mutating steps are
-  // deliberately excluded so recovery can never replay a write or deletion.
-  let recoveryAttempts = 0;
+  // One bounded replanning pass for remaining failed read-only steps.
+  // Prerequisites recovered above have already reopened dependency scheduling.
   for (const step of steps) {
     if (recoveryAttempts >= 2 || Date.now() >= deadline) break;
-    if (!step.parallel_safe) continue;
+    if (!step.parallel_safe || recoveryAttempted.has(step.id)) continue;
     const outcomeIndex = outcomes.findIndex((item) => item.id === step.id);
     const previous = outcomes[outcomeIndex];
     if (!previous || previous.status === "completed") continue;
@@ -356,6 +442,7 @@ async function runPlannedRequest(
     if (remainingBudget <= 0) break;
 
     recoveryAttempts++;
+    recoveryAttempted.add(step.id);
     await onProgress?.({ type: "recovery_adjusting" });
     await onProgress?.({
       type: "plan_step_start",
