@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { Bot, webhookCallback } from "grammy";
+import { Bot } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
@@ -11,9 +11,6 @@ import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<number, ChatCompletionMessageParam[]>();
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
-const handleUpdate = webhookCallback(bot, "http", {
-  secretToken: config.WEBHOOK_SECRET
-});
 
 const helpText = "<b>NallyHermes</b> — your AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n<b>Commands</b>\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion";
 
@@ -139,7 +136,48 @@ const server = createServer((req, res) => {
     return;
   }
 
-  void handleUpdate(req, res);
+  if (req.headers["x-telegram-bot-api-secret-token"] !== config.WEBHOOK_SECRET) {
+    res.writeHead(401);
+    res.end("Unauthorized");
+    return;
+  }
+
+  void (async () => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > 1_000_000) {
+        res.writeHead(413);
+        res.end("Payload too large");
+        return;
+      }
+      chunks.push(buffer);
+    }
+
+    let update: Parameters<typeof bot.handleUpdate>[0];
+    try {
+      update = JSON.parse(Buffer.concat(chunks).toString("utf8")) as typeof update;
+    } catch {
+      res.writeHead(400);
+      res.end("Invalid update");
+      return;
+    }
+
+    // Acknowledge Telegram before running database or LightRAG work.
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("OK");
+    void bot.handleUpdate(update).catch((error) => {
+      console.error("Telegram update processing failed:", error);
+    });
+  })().catch((error) => {
+    console.error("Telegram webhook request failed:", error);
+    if (!res.headersSent) {
+      res.writeHead(500);
+      res.end("Webhook processing failed");
+    }
+  });
 });
 
 await new Promise<void>((resolve, reject) => {
