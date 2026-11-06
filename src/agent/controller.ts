@@ -7,16 +7,12 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
+import { collectStepEvidence, type StepEvidence } from "./executionState.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
   baseURL: config.NVIDIA_NIM_BASE_URL
 });
-
-type StepEvidence = {
-  observations: Array<{ tool_call_id: string; content: string }>;
-  assistantNotes: string[];
-};
 
 type StepOutcome = {
   id: string;
@@ -34,21 +30,6 @@ function isFunctionCall(call: ModelToolCall): call is Extract<ModelToolCall, { t
 
 function remainingTime(deadline: number): number {
   return Math.max(1_000, deadline - Date.now());
-}
-
-function collectStepEvidence(messages: ChatCompletionMessageParam[]): StepEvidence {
-  const observations = messages
-    .filter((message): message is Extract<ChatCompletionMessageParam, { role: "tool" }> => message.role === "tool")
-    .slice(-8)
-    .map((message) => ({
-      tool_call_id: message.tool_call_id,
-      content: typeof message.content === "string" ? message.content.slice(0, 4_000) : "[non-text tool result]"
-    }));
-  const assistantNotes = messages
-    .filter((message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim())
-    .slice(-4)
-    .map((message) => (message as { content: string }).content.slice(0, 4_000));
-  return { observations, assistantNotes };
 }
 
 async function runPlannedStep(
