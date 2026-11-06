@@ -23,7 +23,7 @@ A general-purpose AI agent for Telegram, powered by NVIDIA NIM, Neon PostgreSQL 
 
 ## LightRAG memory service
 
-The Python service is an internal HTTP service. It binds to `127.0.0.1:9621`, requires a bearer token, and assigns a separate LightRAG workspace to each Telegram user.
+The Python service is an internal HTTP service. It binds to `127.0.0.1:9621`, requires a bearer token, and assigns a separate LightRAG workspace to each Telegram user. It uses `PGTableGraphStorage` rather than Apache AGE, so the graph can run on Neon PostgreSQL without the AGE extension; vectors use Neon’s pgvector support.
 
 Install its dependencies with:
 
