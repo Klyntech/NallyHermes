@@ -21,24 +21,24 @@ function renderInline(source: string): string {
   const protectedParts: string[] = [];
   const protect = (html: string) => {
     const index = protectedParts.push(html) - 1;
-    return `\\u0000PART${index}\\u0000`;
+    return `\u0000PART${index}\u0000`;
   };
 
-  let value = source.replace(/`([^`\\n]+)`/g, (_match, text: string) =>
+  let value = source.replace(/`([^`\n]+)`/g, (_match, text: string) =>
     protect("<code>" + escapeHtml(text) + "</code>")
   );
-  value = value.replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+|mailto:[^\\s)]+)\\)/g, (match, label: string, href: string) => {
+  value = value.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, (match, label: string, href: string) => {
     const safe = safeLink(href);
     return safe ? protect(`<a href="${safe}">${escapeHtml(label)}</a>`) : match;
   });
   value = escapeHtml(value)
-    .replace(/\\*\\*\\*(.+?)\\*\\*\\*/g, "<b><i>$1</i></b>")
-    .replace(/\\*\\*(.+?)\\*\\*/g, "<b>$1</b>")
+    .replace(/\*\*\*(.+?)\*\*\*/g, "<b><i>$1</i></b>")
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
     .replace(/__(.+?)__/g, "<b>$1</b>")
     .replace(/~~(.+?)~~/g, "<s>$1</s>")
-    .replace(/(^|[^*])\\*([^*\\n]+)\\*(?!\\*)/g, "$1<i>$2</i>")
-    .replace(/(^|[^_])_([^_\\n]+)_(?!_)/g, "$1<i>$2</i>");
-  return value.replace(/\\u0000PART(\\d+)\\u0000/g, (_match, index: string) => protectedParts[Number(index)] ?? "");
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<i>$2</i>")
+    .replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<i>$2</i>");
+  return value.replace(/\u0000PART(\d+)\u0000/g, (_match, index: string) => protectedParts[Number(index)] ?? "");
 }
 
 /** Converts the Markdown emitted by the agent into Telegram's supported HTML subset. */
