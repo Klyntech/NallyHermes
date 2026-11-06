@@ -1,5 +1,13 @@
 const CONTEXT_CUES = [
   "what do you remember",
+  "what do you know about me",
+  "what have we settled on",
+  "what model did we pick",
+  "which model did we settle on",
+  "where did we leave off",
+  "continue our project",
+  "continue my project",
+  "based on my preferences",
   "what did i tell you",
   "what did we discuss",
   "what did we decide",
