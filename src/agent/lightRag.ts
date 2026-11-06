@@ -33,13 +33,14 @@ export async function indexMemory(
   telegramId: string,
   memoryId: string,
   content: string
-): Promise<void> {
-  if (!config.LIGHTRAG_ENABLED) return;
-  await request<{ success: boolean }>("/v1/memory/insert", {
+): Promise<boolean> {
+  if (!config.LIGHTRAG_ENABLED) return false;
+  const result = await request<{ success: boolean }>("/v1/memory/insert", {
     user_id: telegramId,
     memory_id: memoryId,
     content
   });
+  return result.success;
 }
 
 export async function retrieveMemory(
