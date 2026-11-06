@@ -51,7 +51,7 @@ test("a recovered prerequisite makes its dependent ready on the next scheduling 
   assert.deepEqual(getReadyPlanSteps(steps, new Set(), pending).map((item) => item.id), ["source"]);
   // Recovery changes the prerequisite state to completed; readiness is recalculated.
   assert.deepEqual(
-    getReadyPlanSteps(steps, new Set(["source"]), pending).map((item) => item.id),
-    ["source", "dependent"]
+    getReadyPlanSteps(steps, new Set(["source"]), new Set(["dependent"])).map((item) => item.id),
+    ["dependent"]
   );
 });
