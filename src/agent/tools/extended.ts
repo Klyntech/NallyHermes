@@ -6,7 +6,7 @@ import { lookup } from "node:dns/promises";
 import { db } from "../../db/client.js";
 import { memories, scheduledJobs, users } from "../../db/schema.js";
 import { config } from "../../config.js";
-import { deleteMemory, indexMemory, retrieveMemory } from "../lightRag.js";
+import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } from "../lightRag.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -322,4 +322,8 @@ export function startScheduleWorker(sendMessage: (telegramId: string, text: stri
   };
   setInterval(() => { void tick(); }, 15_000);
   void tick();
+}
+
+export async function checkMemoryPipeline(telegramId: string): Promise<unknown> {
+  return diagnoseMemoryPipeline(telegramId);
 }
