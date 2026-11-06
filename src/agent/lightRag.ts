@@ -53,3 +53,11 @@ export async function retrieveMemory(
   });
   return result.answer ?? result.response ?? "";
 }
+
+export async function deleteMemory(telegramId: string, memoryId: string): Promise<void> {
+  if (!config.LIGHTRAG_ENABLED) return;
+  await request<{ success: boolean }>("/v1/memory/delete", {
+    user_id: telegramId,
+    memory_id: memoryId
+  });
+}
