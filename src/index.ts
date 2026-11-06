@@ -1,16 +1,15 @@
 import { Bot } from "grammy";
 import { config } from "./config.js";
-import { db } from "./db/client.js";
+import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
 import { respond } from "./agent/orchestrator.js";
-import { deliverDueJobs } from "./agent/tools/index.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<number, ChatCompletionMessageParam[]>();
 
 bot.command("start", async (ctx) => {
-  await ctx.reply("Hello! I'm NallyHermes. I can research, fetch webpages, manage workspace files, remember useful details and schedule reminders. What can I help you with?");
+  await ctx.reply("Hello! I'm NallyHermes. I can research the web and help with your requests. What can I do for you?");
 });
 
 bot.on("message:text", async (ctx) => {
@@ -27,7 +26,7 @@ bot.on("message:text", async (ctx) => {
       set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
     }).returning({ id: users.id });
     const history = histories.get(ctx.chat.id) ?? [];
-    const answer = await respond(history, ctx.message.text, { userId: user.id, telegramChatId: ctx.chat.id });
+    const answer = await respond(history, ctx.message.text);
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
     histories.set(ctx.chat.id, history.slice(-20));
     await ctx.reply(answer);
@@ -38,9 +37,7 @@ bot.on("message:text", async (ctx) => {
 });
 
 bot.catch((error) => console.error("Telegram bot error:", error));
+
 console.info("Starting NallyHermes...");
-setInterval(() => {
-  void deliverDueJobs((chatId, message) => bot.api.sendMessage(chatId, message))
-    .catch((error) => console.error("Scheduler polling failed:", error));
-}, 15_000);
+await ensureDatabase();
 await bot.start();
