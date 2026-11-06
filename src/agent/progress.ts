@@ -96,6 +96,8 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
           return { text: event.stage === "memory_indexing" ? "Adding memory to semantic search…" : "Searching related memories…" };
         case "schedule":
           return { text: "Saving reminder details…" };
+        default:
+          return { text: "Working…" };
       }
     case "tool_error":
       return { text: "A tool encountered an issue. Continuing…" };
