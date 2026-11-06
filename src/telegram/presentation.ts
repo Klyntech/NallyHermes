@@ -135,7 +135,7 @@ function splitHtml(html: string): string[] {
     blockquote: "</blockquote>", a: "</a>"
   };
   const opening = (token: string): HtmlTag | undefined => {
-    const match = token.match(/^<(b|i|s|code|pre|blockquote|a)(?:\\s+[^>]*)?>$/i);
+    const match = token.match(/^<(b|i|s|code|pre|blockquote|a)(?:\s+[^>]*)?>$/i);
     if (!match) return undefined;
     const name = match[1]!.toLowerCase();
     return { name, open: token, close: closing[name]! };
@@ -159,7 +159,7 @@ function splitHtml(html: string): string[] {
       appendText(token);
       continue;
     }
-    const closeMatch = token.match(/^<\\/(b|i|s|code|pre|blockquote|a)>$/i);
+    const closeMatch = token.match(/^<\/(b|i|s|code|pre|blockquote|a)>$/i);
     const closeName = closeMatch?.[1]?.toLowerCase();
     const opened = opening(token);
     const closingLength = stack.reduce((sum, tag) => sum + tag.close.length, 0);
