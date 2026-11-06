@@ -44,12 +44,16 @@ export async function ensureDatabase(): Promise<void> {
       task text NOT NULL,
       run_at timestamptz NOT NULL,
       status text NOT NULL DEFAULT 'pending',
+      recurrence text,
+      timezone text,
       payload jsonb NOT NULL DEFAULT '{}'::jsonb,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     "CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations(user_id)",
     "CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id)",
     "CREATE INDEX IF NOT EXISTS memories_user_id_idx ON memories(user_id)",
+    "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS recurrence text",
+    "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS timezone text",
     "CREATE INDEX IF NOT EXISTS scheduled_jobs_run_at_idx ON scheduled_jobs(run_at)"
   ];
 
