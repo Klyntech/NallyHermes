@@ -1,4 +1,5 @@
-import { Bot } from "grammy";
+import { createServer } from "node:http";
+import { Bot, webhookCallback } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
@@ -7,6 +8,10 @@ import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<number, ChatCompletionMessageParam[]>();
+const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
+const handleUpdate = webhookCallback(bot, "http", {
+  secretToken: config.WEBHOOK_SECRET
+});
 
 bot.command("start", async (ctx) => {
   await ctx.reply("Hello! I'm NallyHermes. I can research the web and help with your requests. What can I do for you?");
@@ -17,14 +22,14 @@ bot.on("message:text", async (ctx) => {
   await ctx.replyWithChatAction("typing");
   try {
     const telegramId = String(ctx.from.id);
-    const [user] = await db.insert(users).values({
+    await db.insert(users).values({
       telegramId,
       username: ctx.from.username ?? null,
       firstName: ctx.from.first_name ?? null
     }).onConflictDoUpdate({
       target: users.telegramId,
       set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
-    }).returning({ id: users.id });
+    });
     const history = histories.get(ctx.chat.id) ?? [];
     const answer = await respond(history, ctx.message.text);
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
@@ -38,6 +43,34 @@ bot.on("message:text", async (ctx) => {
 
 bot.catch((error) => console.error("Telegram bot error:", error));
 
-console.info("Starting NallyHermes...");
+console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
-await bot.start();
+
+const server = createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("OK");
+    return;
+  }
+
+  if (req.method !== "POST" || req.url !== webhookPath) {
+    res.writeHead(404);
+    res.end("Not found");
+    return;
+  }
+
+  void handleUpdate(req, res);
+});
+
+await new Promise<void>((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(config.PORT, "0.0.0.0", resolve);
+});
+
+const webhookUrl = `${config.WEBHOOK_URL.replace(/\/$/, "")}${webhookPath}`;
+await bot.api.setWebhook(webhookUrl, {
+  secret_token: config.WEBHOOK_SECRET,
+  allowed_updates: ["message"]
+});
+
+console.info(`Telegram webhook listening on port ${config.PORT}`);
