@@ -33,14 +33,14 @@ bot.command("memorycheck", async (ctx) => {
       deleted: boolean; absent_after_delete: boolean; success: boolean;
     };
     const lines = [
-      "<b>LightRAG pipeline check</b>",
+      "# LightRAG pipeline check",
       `Workspace initialized: ${result.initialized ? "PASS" : "FAIL"}`,
       `Temporary memory written: ${result.written ? "PASS" : "FAIL"}`,
       `Temporary memory retrieved: ${result.read ? "PASS" : "FAIL"}`,
       `Temporary memory deleted: ${result.deleted ? "PASS" : "FAIL"}`,
       `Absent after deletion: ${result.absent_after_delete ? "PASS" : "FAIL"}`,
       "",
-      result.success ? "<b>Pipeline verified.</b>" : "<b>Pipeline check incomplete.</b> Check Render logs."
+      result.success ? "**Pipeline verified.**" : "**Pipeline check incomplete.** Check Render logs."
     ];
     await replyFormatted((text, options) => ctx.reply(text, options), lines.join("\n"));
   } catch (error) {
