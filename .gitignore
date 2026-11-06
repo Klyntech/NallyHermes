@@ -1,7 +1,16 @@
 node_modules/
 dist/
+coverage/
 .env
 .env.*
 !.env.example
-.DS_Store
+workspace/
+lightrag_data/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.log
+.DS_Store
