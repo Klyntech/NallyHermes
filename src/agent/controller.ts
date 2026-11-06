@@ -16,6 +16,7 @@ const llm = new OpenAI({
 const MAX_MODEL_ROUNDS = 6;
 const MAX_PLAN_TOOL_ROUNDS = 12;
 const MAX_STEP_ROUNDS = 4;
+const MAX_PARALLEL_PLAN_STEPS = 3;
 
 function isFunctionCall(call: ModelToolCall): call is Extract<ModelToolCall, { type: "function" }> {
   return call.type === "function";
@@ -106,7 +107,7 @@ async function runPlannedRequest(
     const candidateBatch = ready[0]!.parallel_safe
       ? ready.filter((step) => step.parallel_safe)
       : [ready[0]!];
-    const batch = candidateBatch.slice(0, Math.max(1, remainingBudget));
+    const batch = candidateBatch.slice(0, Math.min(MAX_PARALLEL_PLAN_STEPS, Math.max(1, remainingBudget)));
     if (remainingBudget <= 0) {
       for (const step of batch) {
         pending.delete(step.id);
