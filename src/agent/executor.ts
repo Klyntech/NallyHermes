@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool } from "./tools/extended.js";
@@ -9,13 +10,61 @@ export interface ToolCallInput {
   function: { name: string; arguments: string };
 }
 
+const schemas = {
+  web_search: z.object({
+    query: z.string().trim().min(1).max(400),
+    max_results: z.number().int().min(1).max(10).optional()
+  }).strict(),
+  fetch: z.object({ url: z.string().url().max(2048) }).strict(),
+  file_io: z.object({
+    operation: z.enum(["read", "write", "edit", "grep", "delete", "list", "mkdir"]),
+    path: z.string().trim().min(1).max(500),
+    content: z.string().max(1_000_000).optional(),
+    search: z.string().max(1_000_000).optional(),
+    replace: z.string().max(1_000_000).optional()
+  }).strict(),
+  memory: z.object({
+    operation: z.enum(["recall", "remember", "forget", "update"]),
+    content: z.string().max(4000).optional(),
+    id: z.string().max(100).optional(),
+    query: z.string().max(1000).optional()
+  }).strict(),
+  schedule: z.object({
+    operation: z.enum(["create", "list", "cancel"]),
+    task: z.string().max(1000).optional(),
+    run_at: z.string().max(64).optional(),
+    recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
+    timezone: z.string().max(100).optional(),
+    id: z.string().max(100).optional()
+  }).strict()
+};
+
+type ToolName = keyof typeof schemas;
+
+function parseToolArguments(name: string, raw: string): Record<string, unknown> {
+  const schema = schemas[name as ToolName];
+  if (!schema) throw new Error("Unknown tool: " + name);
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error("Tool arguments must be valid JSON.");
+  }
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new Error("Invalid " + name + " arguments: " + (issue?.message ?? "schema validation failed") + ".");
+  }
+  return parsed.data as Record<string, unknown>;
+}
+
 export async function executeToolCall(
   call: ToolCallInput,
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
   try {
-    const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+    const args = parseToolArguments(call.function.name, call.function.arguments);
     await onProgress?.({ type: "tool_start", tool: call.function.name, args });
     const reportToolProgress: ToolProgressReporter = (event) => onProgress?.(event);
     let result: unknown;
@@ -37,7 +86,7 @@ export async function executeToolCall(
         result = await scheduleTool(telegramId, args as Parameters<typeof scheduleTool>[1], reportToolProgress);
         break;
       default:
-        result = { error: "Unknown tool." };
+        throw new Error("Unknown tool.");
     }
 
     await onProgress?.({ type: "tool_complete", tool: call.function.name });
@@ -49,42 +98,60 @@ export async function executeToolCall(
   }
 }
 
-
 export function isReadOnlyCall(call: ToolCallInput): boolean {
-  let args: Record<string, unknown>;
   try {
-    args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+    const args = parseToolArguments(call.function.name, call.function.arguments);
+    switch (call.function.name) {
+      case "web_search":
+      case "fetch":
+        return true;
+      case "file_io":
+        return ["read", "grep", "list"].includes(String(args.operation));
+      case "memory":
+        return args.operation === "recall";
+      case "schedule":
+        return args.operation === "list";
+      default:
+        return false;
+    }
   } catch {
     return false;
   }
-  switch (call.function.name) {
-    case "web_search":
-    case "fetch":
-      return true;
-    case "file_io":
-      return ["read", "grep", "list"].includes(String(args.operation));
-    case "memory":
-      return args.operation === "recall";
-    case "schedule":
-      return args.operation === "list";
-    default:
-      return false;
-  }
 }
 
-/** Parallelize only independent read-only calls; keep all mutations sequential. */
+const MAX_PARALLEL_TOOL_CALLS = 3;
+
+/** Preserve model call order while running only bounded, read-only batches concurrently. */
 export async function executeToolCalls(
   calls: ToolCallInput[],
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
-  if (calls.length > 1 && calls.every(isReadOnlyCall)) {
-    return Promise.all(calls.map((call) => executeToolCall(call, telegramId, onProgress)));
-  }
+  let progressQueue: Promise<void> = Promise.resolve();
+  const reportProgress = onProgress
+    ? (event: ProgressEvent): Promise<void> => {
+        progressQueue = progressQueue.then(() => onProgress(event)).catch((error) => {
+          console.warn("Tool progress reporting failed:", error);
+        });
+        return progressQueue;
+      }
+    : undefined;
 
   const results: Extract<ChatCompletionMessageParam, { role: "tool" }>[] = [];
-  for (const call of calls) {
-    results.push(await executeToolCall(call, telegramId, onProgress));
+  let index = 0;
+  while (index < calls.length) {
+    if (!isReadOnlyCall(calls[index]!)) {
+      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress));
+      index++;
+      continue;
+    }
+
+    const batch: ToolCallInput[] = [];
+    while (index < calls.length && batch.length < MAX_PARALLEL_TOOL_CALLS && isReadOnlyCall(calls[index]!)) {
+      batch.push(calls[index]!);
+      index++;
+    }
+    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress))));
   }
   return results;
 }
