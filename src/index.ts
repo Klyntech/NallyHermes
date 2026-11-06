@@ -51,11 +51,11 @@ bot.command("rerankbench", async (ctx) => {
   await ctx.reply("Benchmarking rerankers…");
   try {
     const result = await benchmarkRerankers();
-    const lines = ["NVIDIA reranker benchmark", "Passages: " + result.query_passages];
+    const lines = ["NVIDIA reranker benchmark", "Endpoint: " + result.endpoint, "Passages: " + result.query_passages];
     for (const [model, metrics] of Object.entries(result.results)) {
       lines.push(model);
       if (metrics.ok) lines.push("Median: " + metrics.median_ms + " ms", "P95: " + metrics.p95_ms + " ms");
-      else lines.push("FAILED: " + (metrics.error || "Request failed"));
+      else lines.push("FAILED: " + (metrics.error || "No successful response; inspect Render logs"));
     }
     await ctx.reply(lines.join("\n"));
   } catch (error) {
