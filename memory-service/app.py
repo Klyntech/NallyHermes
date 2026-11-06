@@ -236,8 +236,21 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
                         "error": response.text[:600]}
             data = response.json()
             rankings = data.get("rankings") or data.get("results") or []
+            preview = []
+            for item in rankings[:10]:
+                if not isinstance(item, dict):
+                    continue
+                index = item.get("index")
+                score = item.get("relevance_score", item.get("score", item.get("logit")))
+                entry = {"index": index}
+                if isinstance(score, (int, float)):
+                    entry["score"] = round(float(score), 6)
+                if isinstance(index, int) and 0 <= index < len(passages):
+                    entry["passage"] = passages[index][:140]
+                preview.append(entry)
             return {"ok": True, "latency_ms": elapsed_ms, "status": response.status_code,
-                    "returned": len(rankings), "response_keys": list(data.keys())}
+                    "returned": len(rankings), "response_keys": list(data.keys()),
+                    "ranking_preview": preview}
 
         results = {}
         for target in RERANK_TARGETS:
@@ -262,6 +275,8 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
                     "median_ms": ordered[len(ordered) // 2] if ordered else None,
                     "p95_ms": ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))] if ordered else None,
                     "returned": next((item.get("returned") for item in samples if item["ok"]), None),
+                    "response_keys": next((item.get("response_keys") for item in samples if item["ok"]), []),
+                    "ranking_preview": next((item.get("ranking_preview") for item in samples if item["ok"]), []),
                     "error": (
                         f'HTTP {first_failure["status"]}: {first_failure["error"]}'
                         if first_failure and "status" in first_failure
