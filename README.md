@@ -33,7 +33,7 @@ python3 -m venv .venv
 pip install -r memory-service/requirements.txt
 ```
 
-Configure `DATABASE_URL`, `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_BASE_URL`, `LIGHTRAG_API_TOKEN`, `LIGHTRAG_LLM_MODEL`, `LIGHTRAG_EMBEDDING_MODEL`, and `LIGHTRAG_EMBEDDING_DIM`. The selected NIM embedding model must support the OpenAI-compatible embeddings endpoint and match the configured vector dimension.
+Configure `DATABASE_URL`, `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_BASE_URL`, `LIGHTRAG_API_TOKEN`, `LIGHTRAG_LLM_MODEL`, `LIGHTRAG_EMBEDDING_MODEL`, and `LIGHTRAG_EMBEDDING_DIM`. The default embedding model is `nvidia/nemotron-3-embed-1b` with 2048 dimensions. The selected NIM embedding model must support the OpenAI-compatible embeddings endpoint and return vectors matching the configured dimension.
 
 Start the service locally with:
 
@@ -70,8 +70,8 @@ Set these environment variables in Render:
 - `LIGHTRAG_ENABLED=true`
 - `LIGHTRAG_API_TOKEN` — generate a separate random secret of at least 32 characters
 - `LIGHTRAG_LLM_MODEL`
-- `LIGHTRAG_EMBEDDING_MODEL`
-- `LIGHTRAG_EMBEDDING_DIM`
+- `LIGHTRAG_EMBEDDING_MODEL=nvidia/nemotron-3-embed-1b`
+- `LIGHTRAG_EMBEDDING_DIM=2048`
 
 Keep `LIGHTRAG_URL` at its default `http://127.0.0.1:9621`. Do not expose port 9621 publicly. Confirm that the selected NVIDIA NIM embedding model is enabled for your API key and that its output dimension matches `LIGHTRAG_EMBEDDING_DIM`.
 
