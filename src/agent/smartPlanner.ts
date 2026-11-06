@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { config } from "../config.js";
+import { orderPlanSteps } from "./executionState.js";
 
 export interface ExecutionPlanStep {
   id: string;
@@ -73,23 +74,10 @@ export async function createExecutionPlan(
       steps.push({ id: step.id, task: step.task.trim(), depends_on: step.depends_on as string[], parallel_safe: step.parallel_safe });
     }
 
-    for (const step of steps) {
-      if (step.depends_on.some((id) => !ids.has(id) || id === step.id)) return null;
-    }
-
-    // Topological sort also rejects cyclic dependencies.
-    const ordered: ExecutionPlanStep[] = [];
-    const completed = new Set<string>();
-    while (ordered.length < steps.length) {
-      const ready = steps.filter((step) =>
-        !completed.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
-      );
-      if (!ready.length) return null;
-      for (const step of ready) {
-        ordered.push(step);
-        completed.add(step.id);
-      }
-    }
+    // The shared deterministic graph validator rejects unknown dependencies,
+    // self-links, duplicate edges, and cycles before execution can begin.
+    const ordered = orderPlanSteps(steps);
+    if (!ordered) return null;
 
     return {
       reason: typeof parsed.reason === "string" ? parsed.reason.slice(0, 240) : "Multi-step request",
