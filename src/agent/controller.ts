@@ -401,7 +401,7 @@ async function runPlannedRequest(
       outcomes[outcomeIndex] = {
         ...previous,
         toolRounds: previous.toolRounds + recovered.toolRounds,
-        answer: previous.answer + "\\nRecovery attempt: " + recovered.answer,
+        answer: previous.answer + "\nRecovery attempt: " + recovered.answer,
         failureReason: recovered.failureReason ?? previous.failureReason
       };
       await onProgress?.({
