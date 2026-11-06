@@ -30,6 +30,14 @@ const envSchema = z.object({
   AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().min(10000).max(300000).default(120000),
   AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2)
 }).superRefine((env, context) => {
+  if (new URL(env.WEBHOOK_URL).protocol !== "https:") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["WEBHOOK_URL"],
+      message: "WEBHOOK_URL must use HTTPS because Telegram webhooks require a secure public endpoint."
+    });
+  }
+
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: env.DEFAULT_TIMEZONE });
   } catch {
