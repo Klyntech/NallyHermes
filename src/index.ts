@@ -4,7 +4,7 @@ import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
 import { respond } from "./agent/orchestrator.js";
-import { startScheduleWorker } from "./agent/tools/extended.js";
+import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
@@ -23,6 +23,30 @@ bot.command("start", async (ctx) => {
 
 bot.command("help", async (ctx) => {
   await replyFormatted((text, options) => ctx.reply(text, options), helpText);
+});
+
+bot.command("memorycheck", async (ctx) => {
+  if (!ctx.from) return;
+  try {
+    const result = await checkMemoryPipeline(String(ctx.from.id)) as {
+      initialized: boolean; written: boolean; read: boolean;
+      deleted: boolean; absent_after_delete: boolean; success: boolean;
+    };
+    const lines = [
+      "<b>LightRAG pipeline check</b>",
+      `Workspace initialized: ${result.initialized ? "PASS" : "FAIL"}`,
+      `Temporary memory written: ${result.written ? "PASS" : "FAIL"}`,
+      `Temporary memory retrieved: ${result.read ? "PASS" : "FAIL"}`,
+      `Temporary memory deleted: ${result.deleted ? "PASS" : "FAIL"}`,
+      `Absent after deletion: ${result.absent_after_delete ? "PASS" : "FAIL"}`,
+      "",
+      result.success ? "<b>Pipeline verified.</b>" : "<b>Pipeline check incomplete.</b> Check Render logs."
+    ];
+    await replyFormatted((text, options) => ctx.reply(text, options), lines.join("\n"));
+  } catch (error) {
+    console.error("LightRAG pipeline diagnostic failed:", error);
+    await ctx.reply("Memory pipeline check failed. Check the Render logs for the LightRAG diagnostic error.");
+  }
 });
 
 bot.on("message:text", async (ctx) => {
@@ -98,7 +122,8 @@ console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
-  { command: "help", description: "See what NallyHermes can do" }
+  { command: "help", description: "See what NallyHermes can do" },
+  { command: "memorycheck", description: "Test memory storage, retrieval and deletion" }
 ]);
 
 const server = createServer((req, res) => {
