@@ -39,6 +39,24 @@ function saveHistory(key: string, history: ChatCompletionMessageParam[]): void {
     histories.delete(oldest);
   }
 }
+const conversationQueues = new Map<string, Promise<void>>();
+
+async function serializeConversation<T>(key: string, operation: () => Promise<T>): Promise<T> {
+  const previous = conversationQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.catch(() => undefined).then(() => current);
+  conversationQueues.set(key, queued);
+
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (conversationQueues.get(key) === queued) conversationQueues.delete(key);
+  }
+}
+
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
 const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
@@ -132,6 +150,8 @@ bot.command("rerankbench", async (ctx) => {
 
 bot.on("message:text", async (ctx) => {
   if (!ctx.from) return;
+  const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
+  await serializeConversation(historyKey, async () => {
   await ctx.replyWithChatAction("typing");
   let progressMessageId: number | undefined;
   let thinkingTimer: ReturnType<typeof setInterval> | undefined;
@@ -199,7 +219,6 @@ bot.on("message:text", async (ctx) => {
       set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
     });
 
-    const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
     const history = getHistory(historyKey);
     const answer = await respond(history, ctx.message.text, telegramId, onProgress);
     await closeProgress();
@@ -225,6 +244,7 @@ bot.on("message:text", async (ctx) => {
       await ctx.reply(failure);
     }
   }
+  });
 });
 
 bot.catch((error) => console.error("Telegram bot error:", error));
