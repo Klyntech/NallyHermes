@@ -13,7 +13,7 @@ const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<number, ChatCompletionMessageParam[]>();
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
-const helpText = "<b>NallyHermes</b> — your AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n<b>Commands</b>\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion";
+const helpText = "<b>NallyHermes</b> — your AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n<b>Commands</b>\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency";
 
 bot.command("start", async (ctx) => {
   await replyFormatted((text, options) => ctx.reply(text, options), "Hello! <b>NallyHermes</b> is ready. What can I help you with?");
@@ -139,7 +139,8 @@ await bot.init();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
   { command: "help", description: "See what NallyHermes can do" },
-  { command: "memorycheck", description: "Test memory storage, retrieval and deletion" }
+  { command: "memorycheck", description: "Test memory storage, retrieval and deletion" },
+  { command: "rerankbench", description: "Benchmark NVIDIA reranker latency" }
 ]);
 
 const server = createServer((req, res) => {
