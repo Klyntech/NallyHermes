@@ -17,7 +17,13 @@ const envSchema = z.object({
   LIGHTRAG_URL: z.string().url().default("http://127.0.0.1:9621"),
   LIGHTRAG_API_TOKEN: z.string().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  LOG_LEVEL: z.string().default("info")
+  LOG_LEVEL: z.string().default("info"),
+  AGENT_MAX_MODEL_ROUNDS: z.coerce.number().int().min(1).max(100).default(12),
+  AGENT_MAX_PLAN_TOOL_ROUNDS: z.coerce.number().int().min(1).max(500).default(60),
+  AGENT_MAX_STEP_TOOL_ROUNDS: z.coerce.number().int().min(1).max(100).default(15),
+  AGENT_MAX_PARALLEL_PLAN_STEPS: z.coerce.number().int().min(1).max(20).default(5),
+  AGENT_MAX_PARALLEL_TOOL_CALLS: z.coerce.number().int().min(1).max(20).default(5),
+  AGENT_PLAN_TIMEOUT_MS: z.coerce.number().int().min(30000).max(1800000).default(480000)
 });
 
 export const config = envSchema.parse(process.env);
