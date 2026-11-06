@@ -5,6 +5,7 @@ import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
 import { respond } from "./agent/orchestrator.js";
 import { startScheduleWorker } from "./agent/tools/extended.js";
+import { replyFormatted } from "./telegram/presentation.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
@@ -14,8 +15,14 @@ const handleUpdate = webhookCallback(bot, "http", {
   secretToken: config.WEBHOOK_SECRET
 });
 
+const helpText = "<b>NallyHermes</b> — your AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n<b>Commands</b>\n/start — start the bot\n/help — show this help";
+
 bot.command("start", async (ctx) => {
-  await ctx.reply("Hello! I'm NallyHermes. I can search and fetch web pages, manage your files and memories, and set reminders. What can I do for you?");
+  await replyFormatted((text, options) => ctx.reply(text, options), "Hello! <b>NallyHermes</b> is ready. What can I help you with?");
+});
+
+bot.command("help", async (ctx) => {
+  await replyFormatted((text, options) => ctx.reply(text, options), helpText);
 });
 
 bot.on("message:text", async (ctx) => {
@@ -35,7 +42,7 @@ bot.on("message:text", async (ctx) => {
     const answer = await respond(history, ctx.message.text, telegramId);
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
     histories.set(ctx.chat.id, history.slice(-20));
-    await ctx.reply(answer);
+    await replyFormatted((text, options) => ctx.reply(text, options), answer);
   } catch (error) {
     console.error("Agent request failed:", error);
     await ctx.reply("I ran into a problem processing that. Please try again shortly.");
@@ -46,6 +53,10 @@ bot.catch((error) => console.error("Telegram bot error:", error));
 
 console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
+await bot.api.setMyCommands([
+  { command: "start", description: "Start NallyHermes" },
+  { command: "help", description: "See what NallyHermes can do" }
+]);
 
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
