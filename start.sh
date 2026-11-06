@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m uvicorn app:app --app-dir memory-service --host 127.0.0.1 --port 9621 &
-LIGHTRAG_PID=$!
+LIGHTRAG_PID=""
+NODE_PID=""
 
 cleanup() {
-  kill "$LIGHTRAG_PID" 2>/dev/null || true
+  if [[ -n "$NODE_PID" ]]; then kill "$NODE_PID" 2>/dev/null || true; fi
+  if [[ -n "$LIGHTRAG_PID" ]]; then kill "$LIGHTRAG_PID" 2>/dev/null || true; fi
+  wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-python - <<'PY'
+if [[ "${LIGHTRAG_ENABLED:-false}" == "true" ]]; then
+  python -m uvicorn app:app --app-dir memory-service --host 127.0.0.1 --port 9621 &
+  LIGHTRAG_PID=$!
+
+  python - <<'PY'
 import time
 import urllib.request
 
@@ -22,15 +28,21 @@ for attempt in range(60):
 else:
     raise SystemExit("LightRAG service did not become healthy within 60 seconds.")
 PY
+fi
 
 npm start &
 NODE_PID=$!
 
-set +e
-wait -n "$LIGHTRAG_PID" "$NODE_PID"
-STATUS=$?
-set -e
+if [[ -n "$LIGHTRAG_PID" ]]; then
+  set +e
+  wait -n "$LIGHTRAG_PID" "$NODE_PID"
+  STATUS=$?
+  set -e
+else
+  set +e
+  wait "$NODE_PID"
+  STATUS=$?
+  set -e
+fi
 
-kill "$LIGHTRAG_PID" "$NODE_PID" 2>/dev/null || true
-wait 2>/dev/null || true
 exit "$STATUS"
