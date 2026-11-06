@@ -13,7 +13,7 @@ process.env.WEBHOOK_SECRET = "a".repeat(32);
 process.env.FILE_WORKSPACE = workspace;
 process.env.LIGHTRAG_ENABLED = "false";
 
-const { fileIO } = await import("../src/agent/tools/extended.js");
+const { fileIO, fetchUrl } = await import("../src/agent/tools/extended.js");
 
 after(async () => {
   await rm(workspace, { recursive: true, force: true });
@@ -46,4 +46,13 @@ test("rejects symbolic links that point outside the user's workspace", async () 
   } finally {
     await rm(external, { recursive: true, force: true });
   }
+});
+
+test("blocks loopback and IPv4-mapped private network destinations", async () => {
+  await assert.rejects(fetchUrl({ url: "http://127.0.0.1/" }), /Private network addresses/);
+  await assert.rejects(fetchUrl({ url: "http://[::ffff:7f00:1]/" }), /Private network addresses/);
+});
+
+test("blocks non-standard destination ports", async () => {
+  await assert.rejects(fetchUrl({ url: "https://example.com:8080/" }), /standard HTTP and HTTPS ports/);
 });
