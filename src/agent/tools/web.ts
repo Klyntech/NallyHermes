@@ -18,10 +18,10 @@ export async function searchWeb(input: WebSearchInput): Promise<unknown> {
   const response = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${config.TAVILY_API_KEY}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
+      api_key: config.TAVILY_API_KEY,
       query,
       max_results,
       search_depth: "basic",
