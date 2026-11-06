@@ -35,8 +35,8 @@ API_TOKEN = os.environ["LIGHTRAG_API_TOKEN"]
 NIM_API_KEY = os.environ["NVIDIA_NIM_API_KEY"]
 NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
 LLM_MODEL = os.environ["LIGHTRAG_LLM_MODEL"]
-EMBEDDING_MODEL = os.getenv("LIGHTRAG_EMBEDDING_MODEL", "nvidia/nv-embedqa-e5-v5")
-EMBEDDING_DIM = int(os.getenv("LIGHTRAG_EMBEDDING_DIM", "1024"))
+EMBEDDING_MODEL = os.getenv("LIGHTRAG_EMBEDDING_MODEL", "nvidia/nemotron-3-embed-1b")
+EMBEDDING_DIM = int(os.getenv("LIGHTRAG_EMBEDDING_DIM", "2048"))
 
 if len(API_TOKEN) < 32:
     raise RuntimeError("LIGHTRAG_API_TOKEN must contain at least 32 characters.")
