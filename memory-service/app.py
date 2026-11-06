@@ -96,6 +96,11 @@ class QueryRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
 
 
+class DeleteRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=25)
+    memory_id: str = Field(min_length=1, max_length=80)
+
+
 def authorize(authorization: str | None):
     if authorization != f"Bearer {API_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -115,6 +120,14 @@ async def insert_memory(payload: InsertRequest, authorization: str | None = Head
         ids=[payload.memory_id],
         file_paths=[f"memory:{payload.memory_id}"],
     )
+    return {"success": True, "memory_id": payload.memory_id}
+
+
+@app.post("/v1/memory/delete")
+async def delete_memory(payload: DeleteRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    rag = await get_rag(payload.user_id)
+    await rag.adelete_by_doc_id(payload.memory_id)
     return {"success": True, "memory_id": payload.memory_id}
 
 
