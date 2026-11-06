@@ -15,7 +15,7 @@ The current engine is a model-led controller with:
 - a final synthesis pass that reports partial work rather than claiming completion;
 - progress events consumed by the Telegram presentation layer.
 
-The engine currently lives primarily in `controller.ts`, with planning, tool execution, evaluation, context assembly, and progress formatting split across adjacent modules. This is a sound v1 foundation, but controller responsibilities and execution state are still tightly coupled.
+The engine currently lives primarily in `controller.ts`, with planning, tool execution, evaluation, context assembly, and progress formatting split across adjacent modules. This is a sound v1 foundation, but controller responsibilities and execution state are still tightly coupled. The V2 core is also being designed for future full-duplex voice: interfaces must consume semantic execution events and control a request by ID, without introducing voice-specific logic into the reasoning kernel.
 
 ## Findings to address
 
@@ -44,9 +44,11 @@ A request is represented by an execution context containing:
 - step records with status, dependencies, attempts, timestamps, and bounded evidence;
 - explicit budgets for elapsed time, model turns, tool calls, and retries;
 - a cancellation signal;
-- an append-only event stream for progress and diagnostics.
+- an append-only, ordered event stream for progress and diagnostics;
+- response lifecycle state and a cancellation boundary, independent of any transport;
+- correlation IDs that allow a future voice adapter to interrupt or supersede output safely.
 
-The orchestration kernel owns state transitions. The planner proposes a plan; deterministic validation checks its shape and dependency graph. The scheduler selects ready steps. The executor enforces tool schemas, permissions, concurrency and retry policy. The evaluator decides whether a model turn is complete or requests tools. The synthesizer receives the original request and verified execution record.
+The orchestration kernel owns state transitions. The planner proposes a plan; deterministic validation checks its shape and dependency graph. The scheduler selects ready steps. The executor enforces tool schemas, permissions, concurrency and retry policy. The evaluator decides whether a model turn is complete or requests tools. The synthesizer receives the original request and verified execution record. The interface adapter receives semantic response events; it decides whether to render them as Telegram text, streamed audio, or another modality. Full-duplex voice input, speech recognition, synthesis, and turn-taking remain separate adapter/session responsibilities (see [voice readiness](./voice-readiness.md)).
 
 No model-generated field can expand permissions, budgets, concurrency, or retry limits.
 
@@ -58,7 +60,9 @@ No model-generated field can expand permissions, budgets, concurrency, or retry 
 - Add tests for cycles, missing dependencies, failed prerequisites, and counter boundaries.
 - No change to runtime behavior until these primitives are covered.
 
-### Slice 2 — step-local evidence and structured outcomes
+### Slice 2 — step-local evidence and structured outcomes (implementation started)
+- Implemented step-local observation collection so inherited tool messages cannot make a new step appear to have evidence.
+- Preserve bounded observations and assistant notes in each step outcome and structured handoff messages.
 - Track observations produced by each step separately from inherited conversation context.
 - Preserve bounded tool observations and model conclusions in the step outcome.
 - Make final synthesis consume structured outcomes, not reconstructed prose alone.
