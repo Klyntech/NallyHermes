@@ -46,7 +46,7 @@ export async function createExecutionPlan(
       { role: "user", content: userMessage }
     ],
     temperature: 0.1
-  });
+  }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
 
   const raw = response.choices[0]?.message?.content;
   if (!raw) return null;
