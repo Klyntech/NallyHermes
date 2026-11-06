@@ -139,7 +139,7 @@ const tools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "schedule",
-      description: "Create a one-time reminder, list the current user's reminders, or cancel one.",
+      description: "Create one-time or recurring reminders, list the current user's reminders, or cancel one. Due reminders are proactively delivered by Telegram.",
       parameters: {
         type: "object",
         properties: {
