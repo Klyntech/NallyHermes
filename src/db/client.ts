@@ -15,6 +15,7 @@ export async function ensureDatabase(): Promise<void> {
       telegram_id text NOT NULL UNIQUE,
       username text,
       first_name text,
+      timezone text NOT NULL DEFAULT 'Africa/Lagos',
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -49,6 +50,7 @@ export async function ensureDatabase(): Promise<void> {
       payload jsonb NOT NULL DEFAULT '{}'::jsonb,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone text NOT NULL DEFAULT 'Africa/Lagos'",
     "CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations(user_id)",
     "CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id)",
     "CREATE INDEX IF NOT EXISTS memories_user_id_idx ON memories(user_id)",
