@@ -6,6 +6,7 @@ export interface ExecutionPlanStep {
   id: string;
   task: string;
   depends_on: string[];
+  parallel_safe: boolean;
 }
 
 export interface ExecutionPlan {
@@ -67,8 +68,9 @@ export async function createExecutionPlan(
       if (typeof step.id !== "string" || !/^[a-zA-Z0-9_-]{1,40}$/.test(step.id) || ids.has(step.id)) return null;
       if (typeof step.task !== "string" || !step.task.trim() || step.task.length > MAX_TASK_LENGTH) return null;
       if (!Array.isArray(step.depends_on) || !step.depends_on.every((id) => typeof id === "string")) return null;
+      if (typeof step.parallel_safe !== "boolean") return null;
       ids.add(step.id);
-      steps.push({ id: step.id, task: step.task.trim(), depends_on: step.depends_on as string[] });
+      steps.push({ id: step.id, task: step.task.trim(), depends_on: step.depends_on as string[], parallel_safe: step.parallel_safe });
     }
 
     for (const step of steps) {
