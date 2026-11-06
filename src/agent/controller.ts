@@ -102,10 +102,11 @@ async function runPlannedRequest(
     if (!ready.length) break;
 
     // Only explicitly read-only steps may run concurrently.
-    const batch = ready[0]!.parallel_safe
+    const remainingBudget = MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    const candidateBatch = ready[0]!.parallel_safe
       ? ready.filter((step) => step.parallel_safe)
       : [ready[0]!];
-    const remainingBudget = MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    const batch = candidateBatch.slice(0, Math.max(1, remainingBudget));
     if (remainingBudget <= 0) {
       for (const step of batch) {
         pending.delete(step.id);
