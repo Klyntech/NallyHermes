@@ -8,7 +8,7 @@ import { memories, scheduledJobs, users } from "../../db/schema.js";
 import { config } from "../../config.js";
 import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } from "../lightRag.js";
 import type { ToolProgressReporter } from "../progress.js";
-import { formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
+import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -304,6 +304,7 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
 
     const timezone = input.timezone ?? await getUserTimezone(telegramId);
     if (!isValidTimezone(timezone)) throw new Error("Invalid IANA timezone.");
+    assertTimestampMatchesTimezone(input.run_at, runAt, timezone);
     if (input.recurrence && !["daily", "weekly", "monthly"].includes(input.recurrence)) {
       throw new Error("Recurrence must be daily, weekly, or monthly.");
     }
