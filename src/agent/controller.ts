@@ -169,6 +169,7 @@ async function runPlannedRequest(
     return "I couldn't complete the planned steps. Please clarify the request or try again.";
   }
 
+  await onProgress?.({ type: "thinking", phase: "model" });
   messages.push({
     role: "system",
     content: [
