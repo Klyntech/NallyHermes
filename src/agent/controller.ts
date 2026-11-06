@@ -216,7 +216,7 @@ async function synthesizeReport(
     }
   ];
   try {
-    const options = deadline ? { timeout: remainingTime(deadline) } : undefined;
+    const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS };
     const final = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages: reportMessages,
@@ -452,7 +452,7 @@ export async function runAgent(
       tools: agentTools,
       tool_choice: "auto",
       temperature: 0.4
-    });
+    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
     const message = response.choices[0]?.message;
     if (!message) {
       stopReason = "The model returned an empty response.";
