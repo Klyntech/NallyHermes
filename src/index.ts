@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
 import { respond } from "./agent/orchestrator.js";
+import { startScheduleWorker } from "./agent/tools/extended.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
@@ -14,7 +15,7 @@ const handleUpdate = webhookCallback(bot, "http", {
 });
 
 bot.command("start", async (ctx) => {
-  await ctx.reply("Hello! I'm NallyHermes. I can research the web and help with your requests. What can I do for you?");
+  await ctx.reply("Hello! I'm NallyHermes. I can search and fetch web pages, manage your files and memories, and set reminders. What can I do for you?");
 });
 
 bot.on("message:text", async (ctx) => {
@@ -31,7 +32,7 @@ bot.on("message:text", async (ctx) => {
       set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
     });
     const history = histories.get(ctx.chat.id) ?? [];
-    const answer = await respond(history, ctx.message.text);
+    const answer = await respond(history, ctx.message.text, telegramId);
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
     histories.set(ctx.chat.id, history.slice(-20));
     await ctx.reply(answer);
@@ -74,3 +75,6 @@ await bot.api.setWebhook(webhookUrl, {
 });
 
 console.info(`Telegram webhook listening on port ${config.PORT}`);
+startScheduleWorker(async (telegramId, message) => {
+  await bot.api.sendMessage(Number(telegramId), message);
+});
