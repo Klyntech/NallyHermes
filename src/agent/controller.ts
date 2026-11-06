@@ -13,12 +13,18 @@ const llm = new OpenAI({
   baseURL: config.NVIDIA_NIM_BASE_URL
 });
 
+type StepEvidence = {
+  observations: Array<{ tool_call_id: string; content: string }>;
+  assistantNotes: string[];
+};
+
 type StepOutcome = {
   id: string;
   task: string;
   status: "completed" | "partial" | "failed";
   toolRounds: number;
   answer: string;
+  evidence: StepEvidence;
   failureReason?: string;
 };
 
@@ -30,19 +36,19 @@ function remainingTime(deadline: number): number {
   return Math.max(1_000, deadline - Date.now());
 }
 
-function collectStepEvidence(messages: ChatCompletionMessageParam[]): string {
+function collectStepEvidence(messages: ChatCompletionMessageParam[]): StepEvidence {
   const observations = messages
-    .filter((message) => message.role === "tool")
+    .filter((message): message is Extract<ChatCompletionMessageParam, { role: "tool" }> => message.role === "tool")
     .slice(-8)
     .map((message) => ({
-      role: "tool",
+      tool_call_id: message.tool_call_id,
       content: typeof message.content === "string" ? message.content.slice(0, 4_000) : "[non-text tool result]"
     }));
   const assistantNotes = messages
     .filter((message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim())
     .slice(-4)
     .map((message) => (message as { content: string }).content.slice(0, 4_000));
-  return JSON.stringify({ assistant_notes: assistantNotes, tool_observations: observations });
+  return { observations, assistantNotes };
 }
 
 async function runPlannedStep(
@@ -54,6 +60,7 @@ async function runPlannedStep(
   deadline: number,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<StepOutcome> {
+  const stepMessageStart = messages.length;
   messages.push({
     role: "system",
     content: [
@@ -98,7 +105,8 @@ async function runPlannedStep(
           task: step.task,
           status: "completed",
           toolRounds,
-          answer: finalResponse(evaluation.answer)
+          answer: finalResponse(evaluation.answer),
+          evidence: collectStepEvidence(messages.slice(stepMessageStart))
         };
       }
       if (evaluation.kind === "limit_reached") {
@@ -151,16 +159,17 @@ async function runPlannedStep(
     failureReason = error instanceof Error ? error.message : "Unexpected step execution error.";
   }
 
-  const evidence = collectStepEvidence(messages);
-  const hasEvidence = messages.some((message) => message.role === "tool");
+  const evidence = collectStepEvidence(messages.slice(stepMessageStart));
+  const hasEvidence = evidence.observations.length > 0;
   return {
     id: step.id,
     task: step.task,
     status: hasEvidence ? "partial" : "failed",
     toolRounds,
     answer: hasEvidence
-      ? "Step did not reach a verified final answer. Available observations: " + evidence
+      ? "Step did not reach a verified final answer. Available observations: " + JSON.stringify(evidence)
       : "No usable result was produced.",
+    evidence,
     failureReason
   };
 }
@@ -307,13 +316,24 @@ async function runPlannedRequest(
         completed.add(step.id);
         messages.push({
           role: "assistant",
-          content: `Completed plan step ${step.id}: ${outcome.answer}`
+          content: JSON.stringify({
+            plan_step: step.id,
+            status: outcome.status,
+            answer: outcome.answer,
+            evidence: outcome.evidence
+          })
         });
         await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
       } else {
         messages.push({
           role: "assistant",
-          content: `Plan step ${step.id} was ${outcome.status}: ${outcome.answer}. Limitation: ${outcome.failureReason ?? "Not completed"}`
+          content: JSON.stringify({
+            plan_step: step.id,
+            status: outcome.status,
+            answer: outcome.answer,
+            evidence: outcome.evidence,
+            limitation: outcome.failureReason ?? "Not completed"
+          })
         });
         await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
       }
@@ -329,6 +349,7 @@ async function runPlannedRequest(
         status: "failed",
         toolRounds: 0,
         answer: "This step was not executed.",
+        evidence: { observations: [], assistantNotes: [] },
         failureReason: blocked
           ? "A prerequisite step did not complete."
           : stopReason
