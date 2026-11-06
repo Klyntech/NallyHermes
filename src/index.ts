@@ -15,10 +15,10 @@ const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<number, ChatCompletionMessageParam[]>();
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
-const helpText = "<b>NallyHermes</b> — your AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n<b>Commands</b>\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency";
+const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency";
 
 bot.command("start", async (ctx) => {
-  await replyFormatted((text, options) => ctx.reply(text, options), "Hello! <b>NallyHermes</b> is ready. What can I help you with?");
+  await replyFormatted((text, options) => ctx.reply(text, options), "Hello! **NallyHermes** is ready. What can I help you with?");
 });
 
 bot.command("help", async (ctx) => {
@@ -70,7 +70,7 @@ bot.command("rerankbench", async (ctx) => {
         }
       } else lines.push("FAILED: " + (metrics.error || "No successful response; inspect Render logs"));
     }
-    await ctx.reply(lines.join("\n"));
+    await replyFormatted((text, options) => ctx.reply(text, options), "## NVIDIA reranker benchmark\n\n" + lines.slice(1).join("\n"));
   } catch (error) {
     console.error("Reranker benchmark failed:", error);
     await ctx.reply("Benchmark failed. Check Render logs and NIM configuration.");
