@@ -50,7 +50,7 @@ export async function executeToolCall(
 }
 
 
-function isReadOnlyCall(call: ToolCallInput): boolean {
+export function isReadOnlyCall(call: ToolCallInput): boolean {
   let args: Record<string, unknown>;
   try {
     args = JSON.parse(call.function.arguments) as Record<string, unknown>;
