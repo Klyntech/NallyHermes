@@ -51,6 +51,14 @@ Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node
 
 Run `/memorycheck` in Telegram to execute an isolated diagnostic: it initializes the caller's LightRAG workspace, inserts a uniquely tagged temporary document, checks naive vector retrieval, deletes only that temporary document, and verifies it no longer appears. It does not modify saved memories. This also tests the no-HNSW retrieval path. The TypeScript client is in `src/agent/lightRag.ts`. Neon remains the source of truth for memory records. On a user's first request after startup, existing Neon memories are indexed into that user's isolated LightRAG workspace before semantic retrieval. New memories are indexed when saved; updates and forget operations are synchronized with the index.
 
+## Agent orchestration
+
+The agent uses a model-led smart planner with deterministic execution controls. A planning pass decides whether a request benefits from decomposition; simple requests fall through to the normal tool loop. Complex requests are split into up to six validated steps with explicit dependencies.
+
+The controller executes dependency-ready steps, tracks their states, skips steps whose prerequisites failed, and synthesizes the final answer from completed results. Independent steps may run concurrently only when the planner marks them read-only; the executor independently checks that every tool call is read-only before allowing that concurrency. Mutating steps remain sequential. Planned execution is bounded by a shared 12-tool-round budget, with up to three tool rounds per step. Malformed plans safely fall back to direct execution.
+
+The five agent tools remain unchanged: `web_search`, `fetch`, `file_io`, `memory`, and `schedule`. Telegram progress edits reflect planning and actual step execution states.
+
 ## Getting started
 
 1. Install Node.js 20 or newer.
