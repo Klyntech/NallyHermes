@@ -43,7 +43,7 @@ Start the service locally with:
 
 Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node.js process only after the Python service is running. Keep the LightRAG API token private. Do not expose port 9621 publicly.
 
-The TypeScript client is in `src/agent/lightRag.ts`. Existing Neon memory records remain the source of truth; LightRAG is being added as a retrieval/index layer.
+The TypeScript client is in `src/agent/lightRag.ts`. Neon remains the source of truth for memory records. On a user's first request after startup, existing Neon memories are indexed into that user's isolated LightRAG workspace before semantic retrieval. New memories are indexed when saved; updates and forget operations are synchronized with the index.
 
 ## Getting started
 
