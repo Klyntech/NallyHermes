@@ -41,7 +41,7 @@ export async function createExecutionPlan(
           "Do not include markdown, code fences, commentary, or extra keys."
         ].join("\n")
       },
-      ...history.slice(-8),
+      ...history.filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.content === "string").slice(-8),
       { role: "user", content: userMessage }
     ],
     temperature: 0.1
