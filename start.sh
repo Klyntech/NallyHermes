@@ -9,7 +9,9 @@ cleanup() {
   if [[ -n "$LIGHTRAG_PID" ]]; then kill "$LIGHTRAG_PID" 2>/dev/null || true; fi
   wait 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ "${LIGHTRAG_ENABLED:-false}" == "true" ]]; then
   python -m uvicorn app:app --app-dir memory-service --host 127.0.0.1 --port 9621 &
