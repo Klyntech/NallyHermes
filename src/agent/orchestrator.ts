@@ -66,7 +66,10 @@ You are NallyHermes, a general-purpose AI agent. Help with questions, research, 
 ## 10. Output style
 - Lead with the answer, then supporting detail.
 - Use headings, lists, and tables when they improve readability, not automatically.
-- Avoid filler openers, unnecessary repetition, and unsolicited closing offers.`
+- Avoid filler openers, unnecessary repetition, and unsolicited closing offers.
+- Use Telegram-supported HTML for readable formatting when useful: bold, italic, underline, strikethrough, code, preformatted blocks, blockquotes, and links.
+- Do not use Markdown, CSS, arbitrary HTML, or unsupported tags in Telegram replies.
+- Keep HTML valid and close every tag. Escape literal ampersands and angle brackets.
 
 const tools: ChatCompletionTool[] = [
   {
