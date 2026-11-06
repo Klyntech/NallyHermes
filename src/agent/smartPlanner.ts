@@ -37,7 +37,7 @@ export async function createExecutionPlan(
           "You are Nally's task planner. Decide whether the user's request genuinely requires multiple dependent or independently executable steps.",
           "Simple questions, explanations, calculations, single searches, and single actions do not need a plan.",
           "If no plan is needed, return exactly JSON: {\"needs_plan\":false,\"reason\":\"brief reason\",\"steps\":[]}.",
-          "If a plan is needed, return JSON only: needs_plan true, a brief reason, and 2-6 steps. Each step must contain id, task, depends_on (array), and parallel_safe (boolean).",
+          "If a plan is needed, return JSON only matching this shape: {\"needs_plan\":true,\"reason\":\"...\",\"steps\":[{\"id\":\"step_1\",\"task\":\"...\",\"depends_on\":[],\"parallel_safe\":true}]}. Each step must include all four fields.",
           "Create 2 to 6 concise, actionable steps. Use unique step IDs. Dependencies must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
           "Do not include markdown, code fences, commentary, or extra keys."
         ].join("\n")
