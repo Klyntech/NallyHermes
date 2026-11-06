@@ -294,7 +294,7 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
     if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) {
       throw new Error("A task and ISO-8601 date/time are required.");
     }
-    if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:\\d{2})$/i.test(input.run_at)) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(input.run_at)) {
       throw new Error("run_at must be ISO-8601 with an explicit Z or timezone offset.");
     }
     const runAt = new Date(input.run_at);
