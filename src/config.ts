@@ -11,12 +11,15 @@ const envSchema = z.object({
   TAVILY_API_KEY: z.string().optional(),
   WEBHOOK_URL: z.string().url(),
   WEBHOOK_SECRET: z.string().min(32).regex(/^[A-Za-z0-9_-]+$/),
-  PORT: z.coerce.number().int().positive().default(3000),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   FILE_WORKSPACE: z.string().min(1).default("./workspace"),
   LIGHTRAG_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   LIGHTRAG_URL: z.string().url().default("http://127.0.0.1:9621"),
   LIGHTRAG_API_TOKEN: z.string().optional(),
   LIGHTRAG_LLM_MODEL: z.string().optional(),
+  LIGHTRAG_EMBEDDING_MODEL: z.string().default("nvidia/nemotron-3-embed-1b"),
+  LIGHTRAG_EMBEDDING_DIM: z.coerce.number().int().min(1).max(8192).default(2048),
+  LIGHTRAG_WORKING_DIR: z.string().min(1).default("./lightrag_data"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.string().default("info"),
   AGENT_MAX_MODEL_ROUNDS: z.coerce.number().int().min(1).max(100).default(12),
@@ -28,6 +31,16 @@ const envSchema = z.object({
   AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().min(10000).max(300000).default(120000),
   AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2)
 }).superRefine((env, context) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: env.DEFAULT_TIMEZONE });
+  } catch {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["DEFAULT_TIMEZONE"],
+      message: "DEFAULT_TIMEZONE must be a valid IANA timezone."
+    });
+  }
+
   if (!env.LIGHTRAG_ENABLED) return;
   if (!env.LIGHTRAG_API_TOKEN || env.LIGHTRAG_API_TOKEN.length < 32) {
     context.addIssue({
