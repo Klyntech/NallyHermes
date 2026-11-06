@@ -8,6 +8,7 @@ import { memories, scheduledJobs, users } from "../../db/schema.js";
 import { config } from "../../config.js";
 import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } from "../lightRag.js";
 import type { ToolProgressReporter } from "../progress.js";
+import { formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -87,7 +88,14 @@ export async function fetchUrl(input: { url: string }, onProgress?: ToolProgress
     }
     await onProgress?.({ type: "tool_progress", tool: "fetch", stage: "fetch_reading" });
     const text = await response.text();
-    return { url: url.toString(), status: response.status, contentType: type, content: text.slice(0, MAX_FETCH_BYTES) };
+    return {
+      url: url.toString(),
+      status: response.status,
+      contentType: type,
+      fetched_at: new Date().toISOString(),
+      last_modified: response.headers.get("last-modified"),
+      content: text.slice(0, MAX_FETCH_BYTES)
+    };
   }
   throw new Error("Unable to fetch this URL.");
 }
@@ -283,28 +291,62 @@ function nextOccurrence(previous: Date, recurrence: Recurrence, timezone: string
 export async function scheduleTool(telegramId: string, input: ScheduleInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
   if (input.operation === "create") {
-    if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) throw new Error("A task and ISO-8601 date/time are required.");
-    const runAt = new Date(input.run_at);
-    if (!Number.isFinite(runAt.getTime()) || runAt <= new Date() || runAt.getTime() > Date.now() + 365 * 86400_000) throw new Error("The first run must be in the future and within one year.");
-    let timezone: string | null = null;
-    if (input.recurrence) {
-      if (!["daily", "weekly", "monthly"].includes(input.recurrence)) throw new Error("Recurrence must be daily, weekly, or monthly.");
-      if (!input.timezone) throw new Error("An IANA timezone is required for recurring schedules (for example, Africa/Lagos).");
-      try { new Intl.DateTimeFormat("en-US", { timeZone: input.timezone }); } catch { throw new Error("Invalid IANA timezone."); }
-      timezone = input.timezone;
+    if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) {
+      throw new Error("A task and ISO-8601 date/time are required.");
     }
+    if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:\\d{2})$/i.test(input.run_at)) {
+      throw new Error("run_at must be ISO-8601 with an explicit Z or timezone offset.");
+    }
+    const runAt = new Date(input.run_at);
+    if (!Number.isFinite(runAt.getTime()) || runAt <= new Date() || runAt.getTime() > Date.now() + 365 * 86400_000) {
+      throw new Error("The first run must be in the future and within one year.");
+    }
+
+    const timezone = input.timezone ?? await getUserTimezone(telegramId);
+    if (!isValidTimezone(timezone)) throw new Error("Invalid IANA timezone.");
+    if (input.recurrence && !["daily", "weekly", "monthly"].includes(input.recurrence)) {
+      throw new Error("Recurrence must be daily, weekly, or monthly.");
+    }
+
     await onProgress?.({ type: "tool_progress", tool: "schedule", stage: "schedule_saving" });
-    const [job] = await db.insert(scheduledJobs).values({ userId, task: input.task.trim(), runAt, recurrence: input.recurrence ?? null, timezone })
-      .returning({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone });
-    return job;
+    const [job] = await db.insert(scheduledJobs).values({
+      userId,
+      task: input.task.trim(),
+      runAt,
+      recurrence: input.recurrence ?? null,
+      timezone
+    }).returning({
+      id: scheduledJobs.id,
+      task: scheduledJobs.task,
+      runAt: scheduledJobs.runAt,
+      recurrence: scheduledJobs.recurrence,
+      timezone: scheduledJobs.timezone
+    });
+    return job ? { ...job, run_at_local: formatDateTimeInTimezone(job.runAt, timezone) } : null;
   }
+
   if (input.operation === "list") {
-    return db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, status: scheduledJobs.status })
-      .from(scheduledJobs).where(eq(scheduledJobs.userId, userId)).orderBy(asc(scheduledJobs.runAt)).limit(50);
+    const jobs = await db.select({
+      id: scheduledJobs.id,
+      task: scheduledJobs.task,
+      runAt: scheduledJobs.runAt,
+      recurrence: scheduledJobs.recurrence,
+      timezone: scheduledJobs.timezone,
+      status: scheduledJobs.status
+    }).from(scheduledJobs)
+      .where(eq(scheduledJobs.userId, userId))
+      .orderBy(asc(scheduledJobs.runAt))
+      .limit(50);
+    return jobs.map((job) => ({
+      ...job,
+      run_at_local: formatDateTimeInTimezone(job.runAt, job.timezone ?? await getUserTimezone(telegramId))
+    }));
   }
+
   if (!input.id) throw new Error("Provide the scheduled job ID to cancel.");
   const cancelled = await db.update(scheduledJobs).set({ status: "cancelled" })
-    .where(and(eq(scheduledJobs.id, input.id), eq(scheduledJobs.userId, userId), eq(scheduledJobs.status, "pending"))).returning({ id: scheduledJobs.id });
+    .where(and(eq(scheduledJobs.id, input.id), eq(scheduledJobs.userId, userId), eq(scheduledJobs.status, "pending")))
+    .returning({ id: scheduledJobs.id });
   return { cancelled: cancelled.length > 0 };
 }
 
