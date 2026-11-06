@@ -6,6 +6,7 @@ import { lookup } from "node:dns/promises";
 import { db } from "../../db/client.js";
 import { memories, scheduledJobs, users } from "../../db/schema.js";
 import { config } from "../../config.js";
+import { deleteMemory, indexMemory, retrieveMemory } from "../lightRag.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -160,24 +161,44 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
     case "remember": {
       if (!input.content?.trim() || input.content.length > 4000) throw new Error("Memory content must be 1–4000 characters.");
       const [saved] = await db.insert(memories).values({ userId, content: input.content.trim() }).returning({ id: memories.id, content: memories.content });
-      return saved;
+      let indexed = false;
+      try { await indexMemory(telegramId, saved.id, saved.content); indexed = true; }
+      catch (error) { console.error("LightRAG memory indexing failed:", error); }
+      return { ...saved, indexed };
     }
     case "recall": {
       const rows = await db.select({ id: memories.id, content: memories.content, updatedAt: memories.updatedAt })
         .from(memories).where(input.query ? and(eq(memories.userId, userId), ilike(memories.content, `%${input.query.slice(0, 100)}%`)) : eq(memories.userId, userId))
         .orderBy(asc(memories.createdAt)).limit(20);
-      return rows;
+      let semanticContext = "";
+      if (input.query) {
+        try { semanticContext = await retrieveMemory(telegramId, input.query); }
+        catch (error) { console.error("LightRAG memory retrieval failed:", error); }
+      }
+      return { memories: rows, semantic_context: semanticContext };
     }
     case "forget": {
       if (!input.id) throw new Error("Provide the memory ID to forget.");
+      const [existing] = await db.select({ id: memories.id }).from(memories)
+        .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).limit(1);
+      if (!existing) return { deleted: false };
+      await deleteMemory(telegramId, input.id);
       const removed = await db.delete(memories).where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id });
       return { deleted: removed.length > 0 };
     }
     case "update": {
       if (!input.id || !input.content?.trim() || input.content.length > 4000) throw new Error("A memory ID and new content (1–4000 characters) are required.");
+      const [existing] = await db.select({ id: memories.id }).from(memories)
+        .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).limit(1);
+      if (!existing) return { updated: false };
+      await deleteMemory(telegramId, input.id);
       const [updated] = await db.update(memories).set({ content: input.content.trim(), updatedAt: new Date() })
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id, content: memories.content });
-      return updated ?? { updated: false };
+      if (!updated) return { updated: false };
+      let indexed = false;
+      try { await indexMemory(telegramId, updated.id, updated.content); indexed = true; }
+      catch (error) { console.error("LightRAG memory re-indexing failed:", error); }
+      return { ...updated, indexed };
     }
   }
 }
