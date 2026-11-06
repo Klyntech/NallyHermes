@@ -1,6 +1,10 @@
+export type ModelToolCall =
+  | { id: string; type: "function"; function: { name: string; arguments: string } }
+  | { id: string; type: "custom" };
+
 export interface ModelTurn {
   content?: string | null;
-  tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }> | null;
+  tool_calls?: ModelToolCall[] | null;
 }
 
 export type TurnEvaluation =
