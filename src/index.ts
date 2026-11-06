@@ -152,98 +152,98 @@ bot.on("message:text", async (ctx) => {
   if (!ctx.from) return;
   const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
   await serializeConversation(historyKey, async () => {
-  await ctx.replyWithChatAction("typing");
-  let progressMessageId: number | undefined;
-  let thinkingTimer: ReturnType<typeof setInterval> | undefined;
-  let closeProgress: (() => Promise<void>) | undefined;
-  try {
-    const telegramId = String(ctx.from.id);
-    const progressMessage = await ctx.reply("Thinking…");
-    progressMessageId = progressMessage.message_id;
-    let lastStatus = "Thinking…";
-    let thinkingFrame = 0;
-    let progressRevision = 0;
-    let progressQueue: Promise<void> = Promise.resolve();
-    let progressClosed = false;
-    const thinkingFrames = ["Thinking…", "Thinking.", "Thinking..", "Thinking..."];
-    const stopThinkingAnimation = () => {
-      if (thinkingTimer) clearInterval(thinkingTimer);
-      thinkingTimer = undefined;
-    };
-    const queueProgressEdit = (status: string, revision: number): Promise<void> => {
-      progressQueue = progressQueue.then(async () => {
-        if (progressClosed || revision !== progressRevision || status === lastStatus) return;
-        try {
-          await ctx.api.editMessageText(ctx.chat.id, progressMessageId!, status);
-          lastStatus = status;
-        } catch (error) {
-          console.warn("Could not update agent progress message:", error);
-        }
-      });
-      return progressQueue;
-    };
-    const showProgress = (status: string, animateThinking = false): Promise<void> => {
-      stopThinkingAnimation();
-      const revision = ++progressRevision;
-      const update = queueProgressEdit(status, revision);
-      if (animateThinking) {
-        void update.then(() => {
-          if (progressClosed || revision !== progressRevision) return;
-          thinkingTimer = setInterval(() => {
-            thinkingFrame = (thinkingFrame + 1) % thinkingFrames.length;
-            void queueProgressEdit(thinkingFrames[thinkingFrame]!, revision);
-          }, 3000);
+    await ctx.replyWithChatAction("typing");
+    let progressMessageId: number | undefined;
+    let thinkingTimer: ReturnType<typeof setInterval> | undefined;
+    let closeProgress: (() => Promise<void>) | undefined;
+    try {
+      const telegramId = String(ctx.from.id);
+      const progressMessage = await ctx.reply("Thinking…");
+      progressMessageId = progressMessage.message_id;
+      let lastStatus = "Thinking…";
+      let thinkingFrame = 0;
+      let progressRevision = 0;
+      let progressQueue: Promise<void> = Promise.resolve();
+      let progressClosed = false;
+      const thinkingFrames = ["Thinking…", "Thinking.", "Thinking..", "Thinking..."];
+      const stopThinkingAnimation = () => {
+        if (thinkingTimer) clearInterval(thinkingTimer);
+        thinkingTimer = undefined;
+      };
+      const queueProgressEdit = (status: string, revision: number): Promise<void> => {
+        progressQueue = progressQueue.then(async () => {
+          if (progressClosed || revision !== progressRevision || status === lastStatus) return;
+          try {
+            await ctx.api.editMessageText(ctx.chat.id, progressMessageId!, status);
+            lastStatus = status;
+          } catch (error) {
+            console.warn("Could not update agent progress message:", error);
+          }
         });
-      }
-      return update;
-    };
-    closeProgress = async () => {
-      stopThinkingAnimation();
-      progressClosed = true;
-      progressRevision++;
-      await progressQueue;
-    };
-    const onProgress = async (event: ProgressEvent): Promise<void> => {
-      const display = displayProgress(event);
-      if (display) await showProgress(display.text, display.animateThinking);
-    };
-    await showProgress("Thinking…", true);
+        return progressQueue;
+      };
+      const showProgress = (status: string, animateThinking = false): Promise<void> => {
+        stopThinkingAnimation();
+        const revision = ++progressRevision;
+        const update = queueProgressEdit(status, revision);
+        if (animateThinking) {
+          void update.then(() => {
+            if (progressClosed || revision !== progressRevision) return;
+            thinkingTimer = setInterval(() => {
+              thinkingFrame = (thinkingFrame + 1) % thinkingFrames.length;
+              void queueProgressEdit(thinkingFrames[thinkingFrame]!, revision);
+            }, 3000);
+          });
+        }
+        return update;
+      };
+      closeProgress = async () => {
+        stopThinkingAnimation();
+        progressClosed = true;
+        progressRevision++;
+        await progressQueue;
+      };
+      const onProgress = async (event: ProgressEvent): Promise<void> => {
+        const display = displayProgress(event);
+        if (display) await showProgress(display.text, display.animateThinking);
+      };
+      await showProgress("Thinking…", true);
 
-    await db.insert(users).values({
-      telegramId,
-      username: ctx.from.username ?? null,
-      firstName: ctx.from.first_name ?? null,
-      timezone: getDefaultTimezone()
-    }).onConflictDoUpdate({
-      target: users.telegramId,
-      set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
-    });
+      await db.insert(users).values({
+        telegramId,
+        username: ctx.from.username ?? null,
+        firstName: ctx.from.first_name ?? null,
+        timezone: getDefaultTimezone()
+      }).onConflictDoUpdate({
+        target: users.telegramId,
+        set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
+      });
 
-    const history = getHistory(historyKey);
-    const answer = await respond(history, ctx.message.text, telegramId, onProgress);
-    await closeProgress();
-    history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
-    saveHistory(historyKey, history);
-    await editFormatted(
-      (text, options) => ctx.api.editMessageText(ctx.chat.id, progressMessageId!, text, options),
-      (text, options) => ctx.reply(text, options),
-      answer
-    );
-  } catch (error) {
-    if (closeProgress) await closeProgress();
-    else if (thinkingTimer) clearInterval(thinkingTimer);
-    console.error("Agent request failed:", error);
-    const failure = "I ran into a problem processing that. Please try again shortly.";
-    if (progressMessageId !== undefined) {
-      try {
-        await ctx.api.editMessageText(ctx.chat.id, progressMessageId, failure);
-      } catch {
+      const history = getHistory(historyKey);
+      const answer = await respond(history, ctx.message.text, telegramId, onProgress);
+      await closeProgress();
+      history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
+      saveHistory(historyKey, history);
+      await editFormatted(
+        (text, options) => ctx.api.editMessageText(ctx.chat.id, progressMessageId!, text, options),
+        (text, options) => ctx.reply(text, options),
+        answer
+      );
+    } catch (error) {
+      if (closeProgress) await closeProgress();
+      else if (thinkingTimer) clearInterval(thinkingTimer);
+      console.error("Agent request failed:", error);
+      const failure = "I ran into a problem processing that. Please try again shortly.";
+      if (progressMessageId !== undefined) {
+        try {
+          await ctx.api.editMessageText(ctx.chat.id, progressMessageId, failure);
+        } catch {
+          await ctx.reply(failure);
+        }
+      } else {
         await ctx.reply(failure);
       }
-    } else {
-      await ctx.reply(failure);
     }
-  }
   });
 });
 
