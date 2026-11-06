@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from contextlib import asynccontextmanager
@@ -67,6 +68,7 @@ embedding_function = EmbeddingFunc(
 )
 
 rag_instances = {}
+rag_locks: dict[str, asyncio.Lock] = {}
 
 
 def workspace_for(user_id: str) -> str:
@@ -77,19 +79,24 @@ def workspace_for(user_id: str) -> str:
 
 async def get_rag(user_id: str) -> LightRAG:
     workspace = workspace_for(user_id)
-    if workspace not in rag_instances:
-        rag = LightRAG(
-            working_dir=os.getenv("LIGHTRAG_WORKING_DIR", "./lightrag_data"),
-            workspace=workspace,
-            llm_model_func=llm_model_func,
-            embedding_func=embedding_function,
-            kv_storage="PGKVStorage",
-            vector_storage="PGVectorStorage",
-            graph_storage="PGTableGraphStorage",
-            doc_status_storage="PGDocStatusStorage",
-        )
-        await rag.initialize_storages()
-        rag_instances[workspace] = rag
+    if workspace in rag_instances:
+        return rag_instances[workspace]
+
+    lock = rag_locks.setdefault(workspace, asyncio.Lock())
+    async with lock:
+        if workspace not in rag_instances:
+            rag = LightRAG(
+                working_dir=os.getenv("LIGHTRAG_WORKING_DIR", "./lightrag_data"),
+                workspace=workspace,
+                llm_model_func=llm_model_func,
+                embedding_func=embedding_function,
+                kv_storage="PGKVStorage",
+                vector_storage="PGVectorStorage",
+                graph_storage="PGTableGraphStorage",
+                doc_status_storage="PGDocStatusStorage",
+            )
+            await rag.initialize_storages()
+            rag_instances[workspace] = rag
     return rag_instances[workspace]
 
 
