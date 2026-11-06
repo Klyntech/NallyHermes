@@ -1,9 +1,19 @@
+export type ToolProgressEvent =
+  | { type: "tool_progress"; tool: "web_search"; stage: "search_complete"; resultCount: number }
+  | { type: "tool_progress"; tool: "fetch"; stage: "fetch_redirect" | "fetch_reading" }
+  | { type: "tool_progress"; tool: "file_io"; stage: "file_processing"; operation: string; path: string }
+  | { type: "tool_progress"; tool: "memory"; stage: "memory_indexing" | "memory_retrieving" }
+  | { type: "tool_progress"; tool: "schedule"; stage: "schedule_saving" };
+
+export type ToolProgressReporter = (event: ToolProgressEvent) => Promise<void> | void;
+
 export type ProgressEvent =
   | { type: "thinking"; phase: "model" | "between_tools" }
   | { type: "memory_start" }
   | { type: "memory_complete" }
   | { type: "memory_error" }
   | { type: "tool_start"; tool: string; args: Record<string, unknown> }
+  | ToolProgressEvent
   | { type: "tool_complete"; tool: string }
   | { type: "tool_error"; tool: string }
   | { type: "response_ready" };
@@ -18,6 +28,7 @@ function short(value: unknown, max = 72): string {
     ? value.replaceAll("\n", " ").replaceAll("\r", " ").replaceAll("\t", " ").trim().slice(0, max)
     : "";
 }
+
 function toolStatus(tool: string, args: Record<string, unknown>): string {
   switch (tool) {
     case "web_search":
@@ -68,6 +79,24 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
       return { text: "Thinking…", animateThinking: true };
     case "tool_start":
       return { text: toolStatus(event.tool, event.args) };
+    case "tool_progress":
+      switch (event.tool) {
+        case "web_search":
+          return { text: `Found ${event.resultCount} search results…` };
+        case "fetch":
+          return { text: event.stage === "fetch_redirect" ? "Following webpage redirect…" : "Reading webpage content…" };
+        case "file_io": {
+          const labels: Record<string, string> = {
+            read: "Opening", write: "Writing", edit: "Applying changes to",
+            grep: "Searching", delete: "Removing", list: "Listing", mkdir: "Creating"
+          };
+          return { text: `${labels[event.operation] ?? "Working on"} ${short(event.path, 90)}…` };
+        }
+        case "memory":
+          return { text: event.stage === "memory_indexing" ? "Adding memory to semantic search…" : "Searching related memories…" };
+        case "schedule":
+          return { text: "Saving reminder details…" };
+      }
     case "tool_error":
       return { text: "A tool encountered an issue. Continuing…" };
     case "response_ready":
