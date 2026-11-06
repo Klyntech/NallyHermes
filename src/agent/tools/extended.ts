@@ -37,10 +37,10 @@ async function safePath(telegramId: string, relativePath: string, allowMissing =
 
 function isPrivateAddress(address: string): boolean {
   if (isIP(address) === 4) {
-    const p = address.split(".").map(Number);
-    return p[0] === 10 || p[0] === 127 || p[0] === 0 || p[0] >= 224 ||
-      (p[0] === 169 && p[1] === 254) || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) ||
-      (p[0] === 192 && p[1] === 168);
+    const [first = -1, second = -1] = address.split(".").map(Number);
+    return first === 10 || first === 127 || first === 0 || first >= 224 ||
+      (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168);
   }
   const v = address.toLowerCase();
   return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") ||
