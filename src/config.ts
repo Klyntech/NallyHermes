@@ -23,7 +23,8 @@ const envSchema = z.object({
   AGENT_MAX_STEP_TOOL_ROUNDS: z.coerce.number().int().min(1).max(100).default(15),
   AGENT_MAX_PARALLEL_PLAN_STEPS: z.coerce.number().int().min(1).max(20).default(5),
   AGENT_MAX_PARALLEL_TOOL_CALLS: z.coerce.number().int().min(1).max(20).default(5),
-  AGENT_PLAN_TIMEOUT_MS: z.coerce.number().int().min(30000).max(1800000).default(480000)
+  AGENT_PLAN_TIMEOUT_MS: z.coerce.number().int().min(30000).max(1800000).default(480000),
+  AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2)
 });
 
 export const config = envSchema.parse(process.env);
