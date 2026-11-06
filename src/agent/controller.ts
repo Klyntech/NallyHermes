@@ -60,6 +60,10 @@ async function runPlannedStep(
       `Execute this plan step now: ${step.task}`,
       "Use the available tools when needed. Do not attempt later steps.",
       "When this step is complete, give a concise factual result for this step only.",
+      "Assess whether the evidence already collected is sufficient for this step. Stop as soon as it is; do not keep researching for completeness.",
+      "Reuse earlier tool results. Seek more information only to resolve a specific necessary gap.",
+      "If a tool fails, inspect the error and adapt the method instead of repeating the same call blindly. Never repeat a mutation as a retry.",
+      "Verify important findings using the available evidence, but do not perform redundant checks.",
       "If blocked, explain what is missing instead of claiming success."
     ].join("\n")
   });
@@ -119,10 +123,14 @@ async function runPlannedStep(
         onProgress
       );
       const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
+      let hadToolErrors = false;
       for (const call of evaluation.calls) {
         if (call.type === "function") {
           const result = resultById.get(call.id);
-          if (result) messages.push(result);
+          if (result) {
+            messages.push(result);
+            try { hadToolErrors ||= Boolean((JSON.parse(String(result.content)) as { error?: unknown }).error); } catch { /* non-JSON tool response */ }
+          }
         } else {
           messages.push({
             role: "tool",
@@ -130,6 +138,13 @@ async function runPlannedStep(
             content: JSON.stringify({ error: "Unsupported tool call type." })
           });
         }
+      }
+      if (hadToolErrors) {
+        await onProgress?.({ type: "recovery_adjusting" });
+        messages.push({
+          role: "system",
+          content: "One or more tool calls failed. Diagnose the returned error. Continue only if the missing information is necessary; if so, try a materially different safe approach. Do not repeat the same call unless the error is transient. Do not repeat mutations. If the existing evidence is already sufficient, finish with it and disclose any irrelevant failed call only if it affects confidence."
+        });
       }
     }
   } catch (error) {
@@ -190,6 +205,8 @@ async function synthesizeReport(
       role: "system",
       content: [
         "Produce the best useful report you can for the user's original request using only the execution evidence provided.",
+        "First assess whether the evidence already collected is sufficient for the user's actual request. If it is sufficient, use it directly and do not imply that more research was needed.",
+        "Do not discard useful results or request more information merely to make the report exhaustive. Prefer the minimum sufficient evidence.",
         "Execution may be incomplete. Synthesize all verified findings, including useful partial observations.",
         "Clearly separate confirmed findings from uncertainty. Identify steps that remain incomplete and explain why when known.",
         "Never invent facts, sources, tool results, or claim unfinished work succeeded.",
@@ -324,7 +341,7 @@ async function runPlannedRequest(
     }
   }
 
-  await onProgress?.({ type: "thinking", phase: "model" });
+  await onProgress?.({ type: "verifying" });
   return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
 }
 
@@ -393,10 +410,14 @@ export async function runAgent(
       onProgress
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
+    let hadToolErrors = false;
     for (const call of evaluation.calls) {
       if (call.type === "function") {
         const result = resultById.get(call.id);
-        if (result) messages.push(result);
+        if (result) {
+          messages.push(result);
+          try { hadToolErrors ||= Boolean((JSON.parse(String(result.content)) as { error?: unknown }).error); } catch { /* non-JSON tool response */ }
+        }
       } else {
         messages.push({
           role: "tool",
@@ -405,9 +426,16 @@ export async function runAgent(
         });
       }
     }
+    if (hadToolErrors) {
+      await onProgress?.({ type: "recovery_adjusting" });
+      messages.push({
+        role: "system",
+        content: "One or more tool calls failed. Diagnose the returned error. Continue only if the missing information is necessary; if so, try a materially different safe approach. Do not repeat the same call unless the error is transient. Do not repeat mutations. If the existing evidence is already sufficient, finish with it and disclose any relevant limitation."
+      });
+    }
   }
 
-  await onProgress?.({ type: "thinking", phase: "model" });
+  await onProgress?.({ type: "verifying" });
   const answer = await synthesizeReport(messages, [], 0, stopReason);
   await onProgress?.({ type: "response_ready" });
   return answer;
