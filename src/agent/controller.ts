@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import type { ProgressEvent } from "./progress.js";
 import { agentTools } from "./definitions.js";
 import { prepareRequest } from "./planner.js";
-import { executeToolCalls, type ToolCallInput } from "./executor.js";
+import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 
@@ -26,6 +26,7 @@ async function runPlannedStep(
   step: ExecutionPlanStep,
   telegramId: string,
   maxToolRounds: number,
+  readOnlyOnly: boolean,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<{ answer: string; toolRounds: number } | null> {
   messages.push({
@@ -60,6 +61,7 @@ async function runPlannedStep(
 
     toolRounds++;
     const functionCalls = evaluation.calls.filter(isFunctionCall);
+    if (readOnlyOnly && !functionCalls.every((call) => isReadOnlyCall(call as ToolCallInput))) return null;
     const results = await executeToolCalls(
       functionCalls as ToolCallInput[],
       telegramId,
@@ -90,36 +92,76 @@ async function runPlannedRequest(
 ): Promise<string> {
   const completed = new Set<string>();
   const results: Array<{ id: string; task: string; answer: string }> = [];
+  const pending = new Set(steps.map((step) => step.id));
   let totalToolRounds = 0;
 
-  for (let index = 0; index < steps.length; index++) {
-    const step = steps[index]!;
-    const stepNumber = index + 1;
-    if (!step.depends_on.every((dependency) => completed.has(dependency))) {
-      await onProgress?.({ type: "plan_step_failed", index: stepNumber, total: steps.length });
-      continue;
-    }
-    if (totalToolRounds >= MAX_PLAN_TOOL_ROUNDS) {
-      await onProgress?.({ type: "plan_step_failed", index: stepNumber, total: steps.length });
+  while (pending.size) {
+    const ready = steps.filter((step) =>
+      pending.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
+    );
+    if (!ready.length) break;
+
+    // Only explicitly read-only steps may run concurrently.
+    const batch = ready[0]!.parallel_safe
+      ? ready.filter((step) => step.parallel_safe)
+      : [ready[0]!];
+    const remainingBudget = MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    if (remainingBudget <= 0) {
+      for (const step of batch) {
+        pending.delete(step.id);
+        await onProgress?.({
+          type: "plan_step_failed",
+          index: steps.findIndex((item) => item.id === step.id) + 1,
+          total: steps.length
+        });
+      }
       continue;
     }
 
-    await onProgress?.({
-      type: "plan_step_start",
-      index: stepNumber,
-      total: steps.length,
-      task: step.task
-    });
-    const remainingToolRounds = MAX_PLAN_TOOL_ROUNDS - totalToolRounds;\n    const outcome = await runPlannedStep(messages, step, telegramId, Math.min(MAX_STEP_ROUNDS - 1, remainingToolRounds), onProgress);
-    if (!outcome) {
-      await onProgress?.({ type: "plan_step_failed", index: stepNumber, total: steps.length });
-      continue;
+    const perStepBudget = Math.min(MAX_STEP_ROUNDS - 1, Math.max(1, Math.floor(remainingBudget / batch.length)));
+    for (const step of batch) {
+      await onProgress?.({
+        type: "plan_step_start",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length,
+        task: step.task
+      });
     }
 
-    totalToolRounds += outcome.toolRounds;
-    completed.add(step.id);
-    results.push({ id: step.id, task: step.task, answer: outcome.answer });
-    await onProgress?.({ type: "plan_step_complete", index: stepNumber, total: steps.length });
+    const outcomes = await Promise.all(batch.map((step) =>
+      runPlannedStep([...messages], step, telegramId, perStepBudget, step.parallel_safe, onProgress)
+    ));
+
+    for (let i = 0; i < batch.length; i++) {
+      const step = batch[i]!;
+      const outcome = outcomes[i];
+      pending.delete(step.id);
+      const index = steps.findIndex((item) => item.id === step.id) + 1;
+      if (!outcome) {
+        await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
+        continue;
+      }
+
+      totalToolRounds += outcome.toolRounds;
+      completed.add(step.id);
+      results.push({ id: step.id, task: step.task, answer: outcome.answer });
+      messages.push({
+        role: "assistant",
+        content: "Completed plan step " + step.id + ": " + outcome.answer
+      });
+      await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
+    }
+  }
+
+  for (const step of steps) {
+    if (pending.has(step.id)) {
+      pending.delete(step.id);
+      await onProgress?.({
+        type: "plan_step_failed",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length
+      });
+    }
   }
 
   if (!results.length) {
