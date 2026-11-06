@@ -212,7 +212,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
     case "recall": {
       const rows = await db.select({ id: memories.id, content: memories.content, updatedAt: memories.updatedAt })
         .from(memories).where(input.query ? and(eq(memories.userId, userId), ilike(memories.content, `%${input.query.slice(0, 100)}%`)) : eq(memories.userId, userId))
-        .orderBy(asc(memories.createdAt)).limit(20);
+        .orderBy(asc(memories.updatedAt)).limit(20);
       let semanticContext = "";
       if (input.query && config.LIGHTRAG_ENABLED) {
         try {
@@ -223,7 +223,13 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
         }
         catch (error) { console.error("LightRAG memory retrieval failed:", error); }
       }
-      return { memories: rows, semantic_context: semanticContext };
+      return {
+        memories: rows.map((memory) => ({ id: memory.id, content: memory.content, updated_at: memory.updatedAt })),
+        semantic_context: semanticContext,
+        retrieval_status: config.LIGHTRAG_ENABLED
+          ? (semanticContext ? "structured_and_semantic" : "structured_only")
+          : "structured_only"
+      };
     }
     case "forget": {
       if (!input.id) throw new Error("Provide the memory ID to forget.");
