@@ -68,11 +68,12 @@ No model-generated field can expand permissions, budgets, concurrency, or retry 
 - Make final synthesis consume structured outcomes, not reconstructed prose alone.
 - Ensure old conversation tool messages cannot affect a new step's status.
 
-### Slice 3 — dependency-aware recovery
-- Re-run readiness calculation after every state transition and recovery attempt.
-- Permit dependents to proceed only when all prerequisites are completed.
-- Keep recovery bounded and read-only by default; never automatically replay mutations.
-- Ensure a recovered prerequisite can unblock its dependents.
+### Slice 3 — dependency-aware recovery (implemented; CI verification pending)
+- Recalculate ready steps on every scheduler pass and immediately after a recovery transition.
+- Recover unresolved read-only prerequisites before finalizing dependent steps as blocked.
+- A successful recovery marks the prerequisite complete and returns control to the scheduler, allowing newly-ready dependents to execute.
+- Keep recovery bounded to two attempts per request and exclude non-read-only steps; mutations are never automatically replayed.
+- Preserve final blocked outcomes when prerequisites remain unresolved.
 
 ### Slice 4 — hard budget enforcement
 - Count each tool call, including retries, independently of model rounds.
