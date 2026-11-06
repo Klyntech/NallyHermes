@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool, syncUserMemories } from "./tools/extended.js";
 import { retrieveMemory } from "./lightRag.js";
+import type { ProgressEvent } from "./progress.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -163,47 +164,11 @@ const tools: ChatCompletionTool[] = [
 ];
 
 
-function progressForTool(name: string, args: Record<string, unknown>): string {
-  const short = (value: unknown, max = 72) => typeof value === "string"
-    ? (value.replace(/\s+/g, " ").trim().slice(0, max) || "")
-    : "";
-  switch (name) {
-    case "web_search": return short(args.query) ? `Searching ${short(args.query)}…` : "Searching the web…";
-    case "fetch": {
-      try { return `Looking up ${new URL(String(args.url)).hostname}…`; }
-      catch { return "Retrieving a webpage…"; }
-    }
-    case "file_io": {
-      const path = short(args.path, 90) || "workspace";
-      const action: Record<string, string> = {
-        read: "Reading", write: "Writing", edit: "Editing", grep: "Searching",
-        delete: "Deleting", list: "Listing", mkdir: "Creating folder"
-      };
-      const verb = action[String(args.operation)] ?? "Working on";
-      return `${verb} ${path}…`;
-    }
-    case "memory": {
-      const labels: Record<string, string> = {
-        recall: "Looking up saved information…", remember: "Saving information…",
-        update: "Updating saved information…", forget: "Removing saved information…"
-      };
-      return labels[String(args.operation)] ?? "Working with memory…";
-    }
-    case "schedule": {
-      const labels: Record<string, string> = {
-        create: "Creating a reminder…", list: "Checking reminders…", cancel: "Updating a reminder…"
-      };
-      return labels[String(args.operation)] ?? "Checking schedules…";
-    }
-    default: return "Working…";
-  }
-}
-
 export async function respond(
   history: ChatCompletionMessageParam[],
   userMessage: string,
   telegramId: string,
-  onProgress?: (status: string) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<string> {
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -211,11 +176,14 @@ export async function respond(
     { role: "user", content: userMessage }
   ];
 
+  await onProgress?.({ type: "thinking", phase: "model" });
+
   if (config.LIGHTRAG_ENABLED) {
     try {
-      await onProgress?.("Recalling relevant memory…");
+      await onProgress?.({ type: "memory_start" });
       await syncUserMemories(telegramId);
       const memoryContext = await retrieveMemory(telegramId, userMessage);
+      await onProgress?.({ type: "memory_complete" });
       if (memoryContext.trim()) {
         messages.splice(messages.length - 1, 0, {
           role: "system",
@@ -223,11 +191,13 @@ export async function respond(
         });
       }
     } catch (error) {
+      await onProgress?.({ type: "memory_error" });
       console.error("LightRAG retrieval failed; continuing without retrieved memory:", error);
     }
   }
 
   for (let round = 0; round < 6; round++) {
+    await onProgress?.({ type: "thinking", phase: "model" });
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages,
@@ -241,6 +211,7 @@ export async function respond(
     messages.push(message);
 
     if (!message.tool_calls?.length) {
+      await onProgress?.({ type: "response_ready" });
       return message.content?.trim() || "I couldn't generate a response. Please try again.";
     }
 
@@ -248,7 +219,7 @@ export async function respond(
       if (call.type !== "function") continue;
       try {
         const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
-        await onProgress?.(progressForTool(call.function.name, args));
+        await onProgress?.({ type: "tool_start", tool: call.function.name, args });
         let result: unknown;
         switch (call.function.name) {
           case "web_search":
@@ -270,9 +241,11 @@ export async function respond(
             result = { error: "Unknown tool." };
         }
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        await onProgress?.({ type: "tool_complete", tool: call.function.name });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "Tool execution failed";
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: reason }) });
+        await onProgress?.({ type: "tool_error", tool: call.function.name });
       }
     }
   }
