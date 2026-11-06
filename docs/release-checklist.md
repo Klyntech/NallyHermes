@@ -8,6 +8,7 @@ Use this checklist before promoting the beta to a stable v1 release.
 - [ ] CI passes typecheck, unit tests, build and Python syntax checks.
 - [ ] Expand automated tests to cover planner validation, executor permissions, scheduling, memory isolation and webhook handling.
 - [ ] Review all dependency advisories and resolve or explicitly accept each high/critical finding.
+- [ ] Pin validated DNS addresses for outbound fetch connections to close DNS-rebinding gaps.
 - [ ] Select and add the repository license.
 - [ ] Confirm version, changelog and release notes.
 
