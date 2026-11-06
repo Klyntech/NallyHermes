@@ -13,13 +13,36 @@ const llm = new OpenAI({
   baseURL: config.NVIDIA_NIM_BASE_URL
 });
 
-const MAX_MODEL_ROUNDS = 6;
-const MAX_PLAN_TOOL_ROUNDS = 12;
-const MAX_STEP_ROUNDS = 4;
-const MAX_PARALLEL_PLAN_STEPS = 3;
+type StepOutcome = {
+  id: string;
+  task: string;
+  status: "completed" | "partial" | "failed";
+  toolRounds: number;
+  answer: string;
+  failureReason?: string;
+};
 
 function isFunctionCall(call: ModelToolCall): call is Extract<ModelToolCall, { type: "function" }> {
   return call.type === "function";
+}
+
+function remainingTime(deadline: number): number {
+  return Math.max(1_000, deadline - Date.now());
+}
+
+function collectStepEvidence(messages: ChatCompletionMessageParam[]): string {
+  const observations = messages
+    .filter((message) => message.role === "tool")
+    .slice(-20)
+    .map((message) => ({
+      role: "tool",
+      content: typeof message.content === "string" ? message.content.slice(0, 12_000) : "[non-text tool result]"
+    }));
+  const assistantNotes = messages
+    .filter((message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim())
+    .slice(-4)
+    .map((message) => (message as { content: string }).content.slice(0, 4_000));
+  return JSON.stringify({ assistant_notes: assistantNotes, tool_observations: observations });
 }
 
 async function runPlannedStep(
@@ -28,8 +51,9 @@ async function runPlannedStep(
   telegramId: string,
   maxToolRounds: number,
   readOnlyOnly: boolean,
+  deadline: number,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
-): Promise<{ answer: string; toolRounds: number } | null> {
+): Promise<StepOutcome> {
   messages.push({
     role: "system",
     content: [
@@ -41,48 +65,152 @@ async function runPlannedStep(
   });
 
   let toolRounds = 0;
-  for (let round = 0; round < maxToolRounds + 1; round++) {
-    await onProgress?.({ type: "thinking", phase: "model" });
-    const response = await llm.chat.completions.create({
-      model: config.NVIDIA_NIM_MODEL,
-      messages,
-      tools: agentTools,
-      tool_choice: "auto",
-      temperature: 0.4
-    });
-    const message = response.choices[0]?.message;
-    if (!message) return null;
-    messages.push(message);
+  let failureReason = "The step stopped before the model produced a final result.";
+  try {
+    for (let round = 0; round <= maxToolRounds; round++) {
+      if (Date.now() >= deadline) {
+        failureReason = "The overall planned-execution time budget was reached.";
+        break;
+      }
+      await onProgress?.({ type: "thinking", phase: "model" });
+      const response = await llm.chat.completions.create({
+        model: config.NVIDIA_NIM_MODEL,
+        messages,
+        tools: agentTools,
+        tool_choice: "auto",
+        temperature: 0.4
+      }, { timeout: remainingTime(deadline) });
+      const message = response.choices[0]?.message;
+      if (!message) {
+        failureReason = "The model returned an empty response.";
+        break;
+      }
+      messages.push(message);
 
-    const evaluation = evaluateTurn(message, round, maxToolRounds + 1);
-    if (evaluation.kind === "complete") {
-      return { answer: finalResponse(evaluation.answer), toolRounds };
-    }
-    if (evaluation.kind !== "execute_tools") return null;
+      const evaluation = evaluateTurn(message, round, maxToolRounds + 1);
+      if (evaluation.kind === "complete") {
+        return {
+          id: step.id,
+          task: step.task,
+          status: "completed",
+          toolRounds,
+          answer: finalResponse(evaluation.answer)
+        };
+      }
+      if (evaluation.kind === "limit_reached") {
+        failureReason = "Reached the tool-round limit for this step.";
+        break;
+      }
+      if (evaluation.kind === "empty_turn") {
+        failureReason = "The model returned an empty turn.";
+        break;
+      }
 
-    toolRounds++;
-    const functionCalls = evaluation.calls.filter(isFunctionCall);
-    if (readOnlyOnly && !functionCalls.every((call) => isReadOnlyCall(call as ToolCallInput))) return null;
-    const results = await executeToolCalls(
-      functionCalls as ToolCallInput[],
-      telegramId,
-      onProgress
-    );
-    const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
-    for (const call of evaluation.calls) {
-      if (call.type === "function") {
-        const result = resultById.get(call.id);
-        if (result) messages.push(result);
-      } else {
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify({ error: "Unsupported tool call type." })
-        });
+      const functionCalls = evaluation.calls.filter(isFunctionCall);
+      if (readOnlyOnly && !functionCalls.every((call) => isReadOnlyCall(call as ToolCallInput))) {
+        failureReason = "The step requested a non-read-only tool operation, so it was not executed.";
+        break;
+      }
+
+      toolRounds++;
+      const results = await executeToolCalls(
+        functionCalls as ToolCallInput[],
+        telegramId,
+        onProgress
+      );
+      const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
+      for (const call of evaluation.calls) {
+        if (call.type === "function") {
+          const result = resultById.get(call.id);
+          if (result) messages.push(result);
+        } else {
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({ error: "Unsupported tool call type." })
+          });
+        }
       }
     }
+  } catch (error) {
+    failureReason = error instanceof Error ? error.message : "Unexpected step execution error.";
   }
-  return null;
+
+  const evidence = collectStepEvidence(messages);
+  const hasEvidence = messages.some((message) => message.role === "tool");
+  return {
+    id: step.id,
+    task: step.task,
+    status: hasEvidence ? "partial" : "failed",
+    toolRounds,
+    answer: hasEvidence
+      ? "Step did not reach a verified final answer. Available observations: " + evidence
+      : "No usable result was produced.",
+    failureReason
+  };
+}
+
+function fallbackReport(outcomes: StepOutcome[], totalSteps: number, reason: string): string {
+  const completed = outcomes.filter((item) => item.status === "completed").length;
+  const partial = outcomes.filter((item) => item.status === "partial").length;
+  const lines = [
+    "Execution report",
+    `Completed steps: ${completed}/${totalSteps}; partial steps: ${partial}/${totalSteps}.`,
+    reason
+  ];
+  for (const item of outcomes) {
+    lines.push(`- ${item.task} — ${item.status}: ${item.answer}`);
+    if (item.failureReason) lines.push(`  Limitation: ${item.failureReason}`);
+  }
+  if (!outcomes.length) lines.push("No verified findings were produced before execution stopped.");
+  return lines.join("\n");
+}
+
+async function synthesizeReport(
+  messages: ChatCompletionMessageParam[],
+  outcomes: StepOutcome[],
+  totalSteps: number,
+  reason: string,
+  deadline?: number
+): Promise<string> {
+  const reportData = {
+    execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
+      ? "complete"
+      : "partial_or_incomplete",
+    completed_steps: outcomes.filter((item) => item.status === "completed").length,
+    partial_steps: outcomes.filter((item) => item.status === "partial").length,
+    failed_steps: totalSteps - outcomes.filter((item) => item.status !== "failed").length,
+    total_steps: totalSteps,
+    stop_reason: reason,
+    step_results: outcomes
+  };
+  const reportMessages: ChatCompletionMessageParam[] = [
+    ...messages,
+    {
+      role: "system",
+      content: [
+        "Produce the best useful report you can for the user's original request using only the execution evidence provided.",
+        "Execution may be incomplete. Synthesize all verified findings, including useful partial observations.",
+        "Clearly separate confirmed findings from uncertainty. Identify steps that remain incomplete and explain why when known.",
+        "Never invent facts, sources, tool results, or claim unfinished work succeeded.",
+        "Do not ask the user to clarify or retry merely because an execution limit was reached. Give the useful report first.",
+        JSON.stringify(reportData)
+      ].join("\n\n")
+    }
+  ];
+  try {
+    const options = deadline ? { timeout: remainingTime(deadline) } : undefined;
+    const final = await llm.chat.completions.create({
+      model: config.NVIDIA_NIM_MODEL,
+      messages: reportMessages,
+      temperature: 0.4
+    }, options);
+    const answer = final.choices[0]?.message?.content;
+    if (answer?.trim()) return finalResponse(answer);
+  } catch (error) {
+    console.warn("Final execution report synthesis failed:", error);
+  }
+  return fallbackReport(outcomes, totalSteps, reason);
 }
 
 async function runPlannedRequest(
@@ -92,35 +220,43 @@ async function runPlannedRequest(
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<string> {
   const completed = new Set<string>();
-  const results: Array<{ id: string; task: string; answer: string }> = [];
+  const outcomes: StepOutcome[] = [];
   const pending = new Set(steps.map((step) => step.id));
   let totalToolRounds = 0;
+  const deadline = Date.now() + config.AGENT_PLAN_TIMEOUT_MS;
+  let stopReason = "All executable plan steps were processed.";
 
   while (pending.size) {
+    if (Date.now() >= deadline) {
+      stopReason = "The overall planned-execution time limit was reached.";
+      break;
+    }
     const ready = steps.filter((step) =>
       pending.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
     );
-    if (!ready.length) break;
+    if (!ready.length) {
+      stopReason = "Some steps could not run because one or more prerequisite steps did not complete.";
+      break;
+    }
 
-    // Only explicitly read-only steps may run concurrently.
-    const remainingBudget = MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    const remainingBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    if (remainingBudget <= 0) {
+      stopReason = "The total planned tool-round budget was reached.";
+      break;
+    }
+
     const candidateBatch = ready[0]!.parallel_safe
       ? ready.filter((step) => step.parallel_safe)
       : [ready[0]!];
-    const batch = candidateBatch.slice(0, Math.min(MAX_PARALLEL_PLAN_STEPS, Math.max(1, remainingBudget)));
-    if (remainingBudget <= 0) {
-      for (const step of batch) {
-        pending.delete(step.id);
-        await onProgress?.({
-          type: "plan_step_failed",
-          index: steps.findIndex((item) => item.id === step.id) + 1,
-          total: steps.length
-        });
-      }
-      continue;
-    }
+    const batch = candidateBatch.slice(0, Math.min(
+      config.AGENT_MAX_PARALLEL_PLAN_STEPS,
+      remainingBudget
+    ));
+    const perStepBudget = Math.max(1, Math.min(
+      config.AGENT_MAX_STEP_TOOL_ROUNDS,
+      Math.floor(remainingBudget / batch.length)
+    ));
 
-    const perStepBudget = Math.min(MAX_STEP_ROUNDS - 1, Math.max(1, Math.floor(remainingBudget / batch.length)));
     for (const step of batch) {
       await onProgress?.({
         type: "plan_step_start",
@@ -130,34 +266,56 @@ async function runPlannedRequest(
       });
     }
 
-    const outcomes = await Promise.all(batch.map((step) =>
-      runPlannedStep([...messages], step, telegramId, perStepBudget, step.parallel_safe, onProgress)
+    const batchOutcomes = await Promise.all(batch.map((step) =>
+      runPlannedStep(
+        [...messages],
+        step,
+        telegramId,
+        perStepBudget,
+        step.parallel_safe,
+        deadline,
+        onProgress
+      )
     ));
 
     for (let i = 0; i < batch.length; i++) {
       const step = batch[i]!;
-      const outcome = outcomes[i];
-      pending.delete(step.id);
-      const index = steps.findIndex((item) => item.id === step.id) + 1;
-      if (!outcome) {
-        await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
-        continue;
-      }
-
+      const outcome = batchOutcomes[i]!;
       totalToolRounds += outcome.toolRounds;
-      completed.add(step.id);
-      results.push({ id: step.id, task: step.task, answer: outcome.answer });
-      messages.push({
-        role: "assistant",
-        content: "Completed plan step " + step.id + ": " + outcome.answer
-      });
-      await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
+      pending.delete(step.id);
+      outcomes.push(outcome);
+      const index = steps.findIndex((item) => item.id === step.id) + 1;
+
+      if (outcome.status === "completed") {
+        completed.add(step.id);
+        messages.push({
+          role: "assistant",
+          content: `Completed plan step ${step.id}: ${outcome.answer}`
+        });
+        await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
+      } else {
+        messages.push({
+          role: "assistant",
+          content: `Plan step ${step.id} was ${outcome.status}: ${outcome.answer}. Limitation: ${outcome.failureReason ?? "Not completed"}`
+        });
+        await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
+      }
     }
   }
 
-  for (const step of steps) {
-    if (pending.has(step.id)) {
-      pending.delete(step.id);
+  if (pending.size) {
+    for (const step of steps.filter((item) => pending.has(item.id))) {
+      const blocked = step.depends_on.some((dependency) => !completed.has(dependency));
+      outcomes.push({
+        id: step.id,
+        task: step.task,
+        status: "failed",
+        toolRounds: 0,
+        answer: "This step was not executed.",
+        failureReason: blocked
+          ? "A prerequisite step did not complete."
+          : stopReason
+      });
       await onProgress?.({
         type: "plan_step_failed",
         index: steps.findIndex((item) => item.id === step.id) + 1,
@@ -166,30 +324,13 @@ async function runPlannedRequest(
     }
   }
 
-  if (!results.length) {
-    return "I couldn't complete the planned steps. Please clarify the request or try again.";
-  }
-
   await onProgress?.({ type: "thinking", phase: "model" });
-  messages.push({
-    role: "system",
-    content: [
-      "All executable plan steps have finished. Produce the final response to the user's original request.",
-      "Synthesize the verified step results below. Clearly identify incomplete work; do not claim skipped or failed steps succeeded.",
-      JSON.stringify({ completed_steps: results, total_steps: steps.length })
-    ].join("\n\n")
-  });
-  const final = await llm.chat.completions.create({
-    model: config.NVIDIA_NIM_MODEL,
-    messages,
-    temperature: 0.4
-  });
-  return finalResponse(final.choices[0]?.message?.content ?? results.map((item) => item.answer).join("\n\n"));
+  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
 }
 
 /**
- * Orchestra controller: uses model-led decomposition for complex work and
- * deterministic validation, dependency tracking, execution limits, and tool dispatch.
+ * Orchestra controller: model-led planning with bounded execution, preserved
+ * partial evidence, and a final synthesis pass even when execution is incomplete.
  */
 export async function runAgent(
   history: ChatCompletionMessageParam[],
@@ -214,7 +355,8 @@ export async function runAgent(
     return answer;
   }
 
-  for (let round = 0; round < MAX_MODEL_ROUNDS; round++) {
+  let stopReason = "The direct tool-round budget was reached.";
+  for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
     await onProgress?.({ type: "thinking", phase: "model" });
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
@@ -223,17 +365,26 @@ export async function runAgent(
       tool_choice: "auto",
       temperature: 0.4
     });
-
     const message = response.choices[0]?.message;
-    if (!message) break;
+    if (!message) {
+      stopReason = "The model returned an empty response.";
+      break;
+    }
     messages.push(message);
 
-    const evaluation = evaluateTurn(message, round, MAX_MODEL_ROUNDS);
+    const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
       await onProgress?.({ type: "response_ready" });
       return finalResponse(evaluation.answer);
     }
-    if (evaluation.kind === "limit_reached" || evaluation.kind === "empty_turn") break;
+    if (evaluation.kind === "limit_reached") {
+      stopReason = "The direct tool-round budget was reached before the model completed its answer.";
+      break;
+    }
+    if (evaluation.kind === "empty_turn") {
+      stopReason = "The model returned an empty turn.";
+      break;
+    }
 
     const functionCalls = evaluation.calls.filter(isFunctionCall);
     const results = await executeToolCalls(
@@ -256,6 +407,8 @@ export async function runAgent(
     }
   }
 
+  await onProgress?.({ type: "thinking", phase: "model" });
+  const answer = await synthesizeReport(messages, [], 0, stopReason);
   await onProgress?.({ type: "response_ready" });
-  return "I couldn't complete that request within the tool-call limit. Please try again.";
+  return answer;
 }
