@@ -2,6 +2,9 @@ import asyncio
 import os
 import re
 import uuid
+import time
+
+import httpx
 from contextlib import asynccontextmanager
 from functools import partial
 from urllib.parse import unquote, urlsplit
@@ -38,6 +41,8 @@ NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.co
 LLM_MODEL = os.environ["LIGHTRAG_LLM_MODEL"]
 EMBEDDING_MODEL = os.getenv("LIGHTRAG_EMBEDDING_MODEL", "nvidia/nemotron-3-embed-1b")
 EMBEDDING_DIM = int(os.getenv("LIGHTRAG_EMBEDDING_DIM", "2048"))
+RERANK_URL = os.getenv("NVIDIA_NIM_RERANK_URL", NIM_BASE_URL.rstrip("/") + "/ranking")
+RERANK_MODELS = ["nvidia/Nemotron-3.5-Rerank-8B-BF16", "llama-nemotron-rerank-1b-v2"]
 
 if len(API_TOKEN) < 32:
     raise RuntimeError("LIGHTRAG_API_TOKEN must contain at least 32 characters.")
@@ -174,6 +179,61 @@ async def diagnose_pipeline(payload: QueryRequest, authorization: str | None = H
         "initialized", "written", "read", "deleted", "absent_after_delete"
     ))
     return result
+
+
+@app.post("/v1/diagnostics/rerank")
+async def diagnose_rerank(authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    query = "What are the legal requirements for forming a valid contract?"
+    passages = [
+        "A contract generally requires an offer, acceptance, consideration, and an intention to create legal relations.",
+        "Photosynthesis is the process by which plants convert light energy into chemical energy.",
+        "Acceptance is an unqualified agreement to the terms of an offer and may be communicated by words or conduct.",
+        "In contract law, consideration is something of value exchanged between the parties.",
+        "The capital city of Nigeria is Abuja.",
+        "An offer must be sufficiently certain and communicated to the offeree.",
+        "A tort is a civil wrong that may give rise to a claim for damages.",
+        "The doctrine of privity generally concerns who may enforce contractual rights.",
+        "A valid contract may be affected by capacity, legality, or defects in consent.",
+        "The water cycle includes evaporation, condensation, and precipitation.",
+    ]
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
+        async def run_once(model: str):
+            started = time.perf_counter()
+            response = await client.post(
+                RERANK_URL,
+                headers={"Authorization": f"Bearer {NIM_API_KEY}", "Content-Type": "application/json"},
+                json={"model": model, "query": query,
+                      "passages": [{"text": item} for item in passages], "top_n": len(passages)},
+            )
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+            if response.is_error:
+                return {"ok": False, "latency_ms": elapsed_ms, "status": response.status_code,
+                        "error": response.text[:600]}
+            data = response.json()
+            rankings = data.get("rankings") or data.get("results") or []
+            return {"ok": True, "latency_ms": elapsed_ms, "status": response.status_code,
+                    "returned": len(rankings), "response_keys": list(data.keys())}
+
+        results = {}
+        for model in RERANK_MODELS:
+            try:
+                await run_once(model)
+                samples = [await run_once(model) for _ in range(5)]
+                successful = [item["latency_ms"] for item in samples if item["ok"]]
+                ordered = sorted(successful)
+                results[model] = {
+                    "ok": len(successful) == len(samples),
+                    "samples_ms": [item["latency_ms"] for item in samples],
+                    "median_ms": ordered[len(ordered) // 2] if ordered else None,
+                    "p95_ms": ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))] if ordered else None,
+                    "returned": next((item.get("returned") for item in samples if item["ok"]), None),
+                    "errors": [item for item in samples if not item["ok"]],
+                }
+            except Exception as exc:
+                results[model] = {"ok": False, "error": str(exc)[:600]}
+    return {"query_passages": len(passages), "warmup_runs": 1, "measured_runs": 5,
+            "endpoint": RERANK_URL, "results": results}
 
 
 @app.post("/v1/memory/insert")
