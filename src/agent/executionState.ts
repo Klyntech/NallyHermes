@@ -43,3 +43,30 @@ export function getReadyPlanSteps(
     pendingIds.has(step.id) && step.depends_on.every((dependency) => completedIds.has(dependency))
   );
 }
+
+export interface StepEvidence {
+  observations: Array<{ tool_call_id: string; content: string }>;
+  assistantNotes: string[];
+}
+
+interface EvidenceMessage {
+  role: string;
+  tool_call_id?: string;
+  content?: unknown;
+}
+
+/** Collect only evidence in the supplied step-local message slice. */
+export function collectStepEvidence(messages: readonly EvidenceMessage[]): StepEvidence {
+  const observations = messages
+    .filter((message) => message.role === "tool")
+    .slice(-8)
+    .map((message) => ({
+      tool_call_id: message.tool_call_id ?? "unknown",
+      content: typeof message.content === "string" ? message.content.slice(0, 4_000) : "[non-text tool result]"
+    }));
+  const assistantNotes = messages
+    .filter((message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim())
+    .slice(-4)
+    .map((message) => (message.content as string).slice(0, 4_000));
+  return { observations, assistantNotes };
+}
