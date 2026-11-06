@@ -7,6 +7,7 @@ import { db } from "../../db/client.js";
 import { memories, scheduledJobs, users } from "../../db/schema.js";
 import { config } from "../../config.js";
 import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } from "../lightRag.js";
+import type { ToolProgressReporter } from "../progress.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -64,7 +65,7 @@ async function validatePublicUrl(raw: string): Promise<URL> {
   return url;
 }
 
-export async function fetchUrl(input: { url: string }): Promise<unknown> {
+export async function fetchUrl(input: { url: string }, onProgress?: ToolProgressReporter): Promise<unknown> {
   let url = await validatePublicUrl(input.url);
   for (let redirects = 0; redirects <= 3; redirects++) {
     const response = await fetch(url, {
@@ -76,6 +77,7 @@ export async function fetchUrl(input: { url: string }): Promise<unknown> {
       const location = response.headers.get("location");
       if (!location || redirects === 3) throw new Error("Too many or invalid redirects.");
       url = await validatePublicUrl(new URL(location, url).toString());
+      await onProgress?.({ type: "tool_progress", tool: "fetch", stage: "fetch_redirect" });
       continue;
     }
     if (!response.ok) throw new Error(`Fetch failed with HTTP ${response.status}.`);
@@ -83,6 +85,7 @@ export async function fetchUrl(input: { url: string }): Promise<unknown> {
     if (!/(text\/|application\/(json|xml|javascript|xhtml\+xml))/.test(type)) {
       throw new Error("This tool only retrieves text-based web content.");
     }
+    await onProgress?.({ type: "tool_progress", tool: "fetch", stage: "fetch_reading" });
     const text = await response.text();
     return { url: url.toString(), status: response.status, contentType: type, content: text.slice(0, MAX_FETCH_BYTES) };
   }
@@ -90,8 +93,9 @@ export async function fetchUrl(input: { url: string }): Promise<unknown> {
 }
 
 type FileInput = { operation: "read" | "write" | "edit" | "grep" | "delete" | "list" | "mkdir"; path: string; content?: string; search?: string; replace?: string };
-export async function fileIO(telegramId: string, input: FileInput): Promise<unknown> {
+export async function fileIO(telegramId: string, input: FileInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const target = await safePath(telegramId, input.path, ["write", "mkdir"].includes(input.operation));
+  await onProgress?.({ type: "tool_progress", tool: "file_io", stage: "file_processing", operation: input.operation, path: input.path });
   switch (input.operation) {
     case "read": {
       const info = await stat(target);
@@ -181,7 +185,7 @@ export async function syncUserMemories(telegramId: string): Promise<void> {
 }
 
 type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string };
-export async function memoryTool(telegramId: string, input: MemoryInput): Promise<unknown> {
+export async function memoryTool(telegramId: string, input: MemoryInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
   switch (input.operation) {
     case "remember": {
@@ -189,7 +193,10 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
       const [saved] = await db.insert(memories).values({ userId, content: input.content.trim() }).returning({ id: memories.id, content: memories.content });
       if (!saved) throw new Error("Memory could not be saved.");
       let indexed = false;
-      try { indexed = await indexMemory(telegramId, saved.id, saved.content); }
+      try {
+        await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
+        indexed = await indexMemory(telegramId, saved.id, saved.content);
+      }
       catch (error) { console.error("LightRAG memory indexing failed:", error); }
       return { ...saved, indexed };
     }
@@ -199,7 +206,10 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
         .orderBy(asc(memories.createdAt)).limit(20);
       let semanticContext = "";
       if (input.query) {
-        try { semanticContext = await retrieveMemory(telegramId, input.query); }
+        try {
+          await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
+          semanticContext = await retrieveMemory(telegramId, input.query);
+        }
         catch (error) { console.error("LightRAG memory retrieval failed:", error); }
       }
       return { memories: rows, semantic_context: semanticContext };
@@ -223,7 +233,10 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id, content: memories.content });
       if (!updated) return { updated: false };
       let indexed = false;
-      try { indexed = await indexMemory(telegramId, updated.id, updated.content); }
+      try {
+        await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
+        indexed = await indexMemory(telegramId, updated.id, updated.content);
+      }
       catch (error) { console.error("LightRAG memory re-indexing failed:", error); }
       return { ...updated, indexed };
     }
@@ -266,7 +279,7 @@ function nextOccurrence(previous: Date, recurrence: Recurrence, timezone: string
   return next;
 }
 
-export async function scheduleTool(telegramId: string, input: ScheduleInput): Promise<unknown> {
+export async function scheduleTool(telegramId: string, input: ScheduleInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
   if (input.operation === "create") {
     if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) throw new Error("A task and ISO-8601 date/time are required.");
@@ -279,6 +292,7 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput): Pr
       try { new Intl.DateTimeFormat("en-US", { timeZone: input.timezone }); } catch { throw new Error("Invalid IANA timezone."); }
       timezone = input.timezone;
     }
+    await onProgress?.({ type: "tool_progress", tool: "schedule", stage: "schedule_saving" });
     const [job] = await db.insert(scheduledJobs).values({ userId, task: input.task.trim(), runAt, recurrence: input.recurrence ?? null, timezone })
       .returning({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone });
     return job;
