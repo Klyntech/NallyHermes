@@ -48,7 +48,7 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
   return {
     answer: data.answer ?? null,
     searched_at: retrievedAt.toISOString(),
-    freshness_guidance: "searched_at is retrieval time, not publication time. Publication dates may be absent. A recent retrieval does not prove a page is current.",
+    freshness_guidance: "searched_at is retrieval time, not publication time. Publication dates may be absent. The 30-day age label is only a rough heuristic, not proof of currentness; fast-changing topics can become outdated much sooner.",
     results: (data.results ?? []).map(({ title, url, content, score, published_date }) => {
       const publishedAt = published_date ? new Date(published_date) : null;
       const validPublicationDate = publishedAt && Number.isFinite(publishedAt.getTime());
