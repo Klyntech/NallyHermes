@@ -6,9 +6,10 @@ A general-purpose AI agent for Telegram, powered by NVIDIA NIM, Neon PostgreSQL 
 
 - **TypeScript / Node.js** — application runtime
 - **grammY** — Telegram bot interface and webhook handling
-- **NVIDIA NIM** — LLM inference through its OpenAI-compatible API
+- **NVIDIA NIM** — LLM and embedding inference through OpenAI-compatible APIs
 - **Neon** — serverless PostgreSQL
-- **Drizzle ORM** — database queries and schema
+- **Drizzle ORM** — application database queries and schema
+- **LightRAG (Python / FastAPI)** — graph and vector retrieval for long-term memory
 - **Tavily** — web search
 - **Zod** — runtime validation
 
@@ -19,6 +20,30 @@ A general-purpose AI agent for Telegram, powered by NVIDIA NIM, Neon PostgreSQL 
 - `file_io` — read, write, edit, grep, delete, list and create directories in each user's isolated workspace
 - `memory` — recall, remember, update and forget user-scoped memories in Neon
 - `schedule` — create, list and cancel one-time reminders, delivered by the bot
+
+## LightRAG memory service
+
+The Python service is an internal HTTP service. It binds to `127.0.0.1:9621`, requires a bearer token, and assigns a separate LightRAG workspace to each Telegram user.
+
+Install its dependencies with:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r memory-service/requirements.txt
+```
+
+Configure `DATABASE_URL`, `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_BASE_URL`, `LIGHTRAG_API_TOKEN`, `LIGHTRAG_LLM_MODEL`, `LIGHTRAG_EMBEDDING_MODEL`, and `LIGHTRAG_EMBEDDING_DIM`. The selected NIM embedding model must support the OpenAI-compatible embeddings endpoint and match the configured vector dimension.
+
+Start the service locally with:
+
+```bash
+.venv/bin/uvicorn memory-service.app:app --host 127.0.0.1 --port 9621
+```
+
+Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node.js process only after the Python service is running. Keep the LightRAG API token private. Do not expose port 9621 publicly.
+
+The TypeScript client is in `src/agent/lightRag.ts`. Existing Neon memory records remain the source of truth; LightRAG is being added as a retrieval/index layer.
 
 ## Getting started
 
