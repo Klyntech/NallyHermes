@@ -188,7 +188,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
       if (!input.content?.trim() || input.content.length > 4000) throw new Error("Memory content must be 1–4000 characters.");
       const [saved] = await db.insert(memories).values({ userId, content: input.content.trim() }).returning({ id: memories.id, content: memories.content });
       let indexed = false;
-      try { await indexMemory(telegramId, saved.id, saved.content); indexed = true; }
+      try { indexed = await indexMemory(telegramId, saved.id, saved.content); }
       catch (error) { console.error("LightRAG memory indexing failed:", error); }
       return { ...saved, indexed };
     }
@@ -222,7 +222,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id, content: memories.content });
       if (!updated) return { updated: false };
       let indexed = false;
-      try { await indexMemory(telegramId, updated.id, updated.content); indexed = true; }
+      try { indexed = await indexMemory(telegramId, updated.id, updated.content); }
       catch (error) { console.error("LightRAG memory re-indexing failed:", error); }
       return { ...updated, indexed };
     }
