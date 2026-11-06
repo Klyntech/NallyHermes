@@ -45,6 +45,8 @@ export const scheduledJobs = pgTable("scheduled_jobs", {
   task: text("task").notNull(),
   runAt: timestamp("run_at", { withTimezone: true }).notNull(),
   status: text("status").notNull().default("pending"),
+  recurrence: text("recurrence"),
+  timezone: text("timezone"),
   payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("scheduled_jobs_run_at_idx").on(table.runAt)]);
