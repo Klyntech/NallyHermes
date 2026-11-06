@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool, syncUserMemories } from "./tools/extended.js";
 import { retrieveMemory } from "./lightRag.js";
-import type { ProgressEvent } from "./progress.js";
+import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -220,22 +220,23 @@ export async function respond(
       try {
         const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
         await onProgress?.({ type: "tool_start", tool: call.function.name, args });
+        const reportToolProgress: ToolProgressReporter = (event) => onProgress?.(event);
         let result: unknown;
         switch (call.function.name) {
           case "web_search":
-            result = await searchWeb(args as { query: string; max_results?: number });
+            result = await searchWeb(args as { query: string; max_results?: number }, reportToolProgress);
             break;
           case "fetch":
-            result = await fetchUrl(args as { url: string });
+            result = await fetchUrl(args as { url: string }, reportToolProgress);
             break;
           case "file_io":
-            result = await fileIO(telegramId, args as Parameters<typeof fileIO>[1]);
+            result = await fileIO(telegramId, args as Parameters<typeof fileIO>[1], reportToolProgress);
             break;
           case "memory":
-            result = await memoryTool(telegramId, args as Parameters<typeof memoryTool>[1]);
+            result = await memoryTool(telegramId, args as Parameters<typeof memoryTool>[1], reportToolProgress);
             break;
           case "schedule":
-            result = await scheduleTool(telegramId, args as Parameters<typeof scheduleTool>[1]);
+            result = await scheduleTool(telegramId, args as Parameters<typeof scheduleTool>[1], reportToolProgress);
             break;
           default:
             result = { error: "Unknown tool." };
