@@ -12,6 +12,9 @@ const envSchema = z.object({
   WEBHOOK_SECRET: z.string().min(32).regex(/^[A-Za-z0-9_-]+$/),
   PORT: z.coerce.number().int().positive().default(3000),
   FILE_WORKSPACE: z.string().min(1).default("./workspace"),
+  LIGHTRAG_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  LIGHTRAG_URL: z.string().url().default("http://127.0.0.1:9621"),
+  LIGHTRAG_API_TOKEN: z.string().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.string().default("info")
 });
