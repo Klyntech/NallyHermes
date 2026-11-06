@@ -9,6 +9,11 @@ export type ToolProgressReporter = (event: ToolProgressEvent) => Promise<void> |
 
 export type ProgressEvent =
   | { type: "thinking"; phase: "model" | "between_tools" }
+  | { type: "planning" }
+  | { type: "plan_created"; stepCount: number }
+  | { type: "plan_step_start"; index: number; total: number; task: string }
+  | { type: "plan_step_complete"; index: number; total: number }
+  | { type: "plan_step_failed"; index: number; total: number }
   | { type: "memory_start" }
   | { type: "memory_complete" }
   | { type: "memory_error" }
@@ -71,6 +76,16 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
   switch (event.type) {
     case "thinking":
       return { text: "Thinking…", animateThinking: true };
+    case "planning":
+      return { text: "Planning the task…" };
+    case "plan_created":
+      return { text: `Plan ready: ${event.stepCount} steps…` };
+    case "plan_step_start":
+      return { text: `Step ${event.index}/${event.total}: ${short(event.task, 65)}…` };
+    case "plan_step_complete":
+      return { text: `Completed step ${event.index}/${event.total}…` };
+    case "plan_step_failed":
+      return { text: `Step ${event.index}/${event.total} could not be completed…` };
     case "memory_start":
       return { text: "Recalling relevant memory…" };
     case "memory_complete":
