@@ -4,6 +4,7 @@ import { retrieveMemory } from "./lightRag.js";
 import { syncUserMemories } from "./tools/extended.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { SYSTEM_PROMPT } from "./definitions.js";
+import { buildClockContext } from "./clock.js";
 
 export interface RequestContext {
   messages: ChatCompletionMessageParam[];
@@ -20,8 +21,10 @@ export async function prepareRequest(
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<RequestContext> {
+  const clockContext = await buildClockContext(telegramId);
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: clockContext },
     ...history,
     { role: "user", content: userMessage }
   ];
