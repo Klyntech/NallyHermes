@@ -22,7 +22,7 @@ function short(value: unknown, max = 72): string {
 function toolStatus(tool: string, args: Record<string, unknown>): string {
   switch (tool) {
     case "web_search":
-      return short(args.query) ? `Searching ${short(args.query)}…` : "Searching the web…";
+      return "Searching the web…";
     case "fetch": {
       try {
         return `Reading ${new URL(String(args.url)).hostname}…`;
