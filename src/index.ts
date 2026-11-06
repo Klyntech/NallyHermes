@@ -117,6 +117,7 @@ bot.catch((error) => console.error("Telegram bot error:", error));
 
 console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
+await bot.init();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
   { command: "help", description: "See what NallyHermes can do" },
