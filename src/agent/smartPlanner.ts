@@ -17,7 +17,7 @@ const MAX_PLAN_STEPS = 6;
 const MAX_TASK_LENGTH = 500;
 
 function extractJson(value: string): unknown {
-  const cleaned = value.trim().replace(/^```(?:json)?\\s*/i, "").replace(/\\s*```$/, "");
+  const cleaned = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   return JSON.parse(cleaned) as unknown;
 }
 
