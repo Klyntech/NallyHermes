@@ -10,8 +10,8 @@ export function escapeHtml(value: string): string {
 
 function toPlainText(html: string): string {
   return html
-    .replace(/<br\\s*\\/?>/gi, "\\n")
-    .replace(/<\\/(?:p|div|blockquote|pre|h[1-6]|li)>/gi, "\\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:p|div|blockquote|pre|h[1-6]|li)>/gi, "\n")
     .replace(/<[^>]*>/g, "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -24,7 +24,7 @@ function splitText(value: string): string[] {
   const parts: string[] = [];
   let rest = value;
   while (rest.length > TELEGRAM_TEXT_LIMIT) {
-    let at = rest.lastIndexOf("\\n", TELEGRAM_TEXT_LIMIT);
+    let at = rest.lastIndexOf("\n", TELEGRAM_TEXT_LIMIT);
     if (at < TELEGRAM_TEXT_LIMIT / 2) at = rest.lastIndexOf(" ", TELEGRAM_TEXT_LIMIT);
     if (at < TELEGRAM_TEXT_LIMIT / 2) at = TELEGRAM_TEXT_LIMIT;
     parts.push(rest.slice(0, at).trim());
