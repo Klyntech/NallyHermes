@@ -1,36 +1,35 @@
 # NallyHermes
 
-A general-purpose AI agent for Telegram, powered by NVIDIA NIM and Neon PostgreSQL.
+A general-purpose Telegram AI agent built with TypeScript, NVIDIA NIM and Neon PostgreSQL.
 
 ## Stack
 
-- **TypeScript / Node.js** — application runtime
-- **grammY** — Telegram bot interface
-- **NVIDIA NIM** — LLM inference through its OpenAI-compatible API
-- **Neon** — serverless PostgreSQL
-- **Drizzle ORM** — database schema and queries
-- **Zod** — runtime validation for configuration and tools
+- TypeScript / Node.js 20+
+- Telegram via grammY
+- NVIDIA NIM through its OpenAI-compatible API
+- Neon PostgreSQL + Drizzle ORM
+- Zod for runtime validation
 
-## Core tools
+## Native tools
 
-The initial tool surface is intentionally limited to:
+- `web_search`: Brave Search API. Configure `BRAVE_SEARCH_API_KEY`.
+- `fetch`: retrieve readable text from public HTTP(S) pages; local/private network targets are blocked.
+- `file_io`: `read`, `write`, `edit`, `grep`, `delete`, `list`, `mkdir`. Each Telegram user has an isolated workspace under `FILE_WORKSPACE`.
+- `memory`: `recall`, `remember`, `forget`, `update`. Records are scoped to the Telegram user in Neon.
+- `schedule`: create, list, update and cancel one-time reminders. A polling worker sends due reminders to Telegram.
 
-- `web_search`
-- `fetch`
-- `file_io` — `read`, `write`, `edit`, `grep`, `delete`, `list`, `mkdir`
-- `memory` — `recall`, `remember`, `forget`, `update`
-- `schedule`
+The custom registry validates tool arguments with Zod. NVIDIA NIM tool calls are executed by a bounded orchestration loop (maximum six tool rounds per user request).
 
-Tools are registered through the custom tool registry. Tool execution must validate inputs and enforce permissions before performing side effects.
+## Setup
 
-## Getting started
+1. Use Node.js 20 or newer.
+2. Run `npm install`.
+3. Copy `.env.example` to `.env` and configure Telegram, NVIDIA NIM and Neon credentials. Add a Brave Search API key to enable `web_search`.
+4. Apply the SQL in `drizzle/0001_initial.sql` to your Neon database.
+5. Run `npm run dev`.
 
-1. Install Node.js 20 or newer.
-2. Install dependencies: `npm install`.
-3. Copy `.env.example` to `.env` and provide the Telegram token, NVIDIA NIM API key, and Neon connection string.
-4. Create the database tables using the schema in `src/db/schema.ts` (migration generation will be added next).
-5. Start the bot: `npm run dev`.
+## Safety notes
 
-## Current status
+File operations are restricted to a per-user workspace. Web fetch blocks common local/private address ranges and does not follow more than one redirect. Tool inputs are schema-validated and database memory/schedule operations are scoped to the authenticated Telegram user.
 
-The initial foundation connects Telegram messages to NVIDIA NIM. Database schema and the custom tool registry are scaffolded; persistence and the five native tool implementations are the next development milestone.
+For production, deploy behind a process supervisor and add durable conversation history, scheduler retry/recovery, DNS-level SSRF protection, and per-user rate limits.
