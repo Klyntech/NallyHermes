@@ -3,6 +3,10 @@ import { config } from "../config.js";
 import { db } from "../db/client.js";
 import { users } from "../db/schema.js";
 
+export function getDefaultTimezone(): string {
+  return isValidTimezone(config.DEFAULT_TIMEZONE) ? config.DEFAULT_TIMEZONE : "Africa/Lagos";
+}
+
 export function isValidTimezone(timezone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone });
@@ -15,7 +19,7 @@ export function isValidTimezone(timezone: string): boolean {
 export async function getUserTimezone(telegramId: string): Promise<string> {
   const [user] = await db.select({ timezone: users.timezone })
     .from(users).where(eq(users.telegramId, telegramId)).limit(1);
-  const timezone = user?.timezone || config.DEFAULT_TIMEZONE;
+  const timezone = user?.timezone || getDefaultTimezone();
   return isValidTimezone(timezone) ? timezone : "Africa/Lagos";
 }
 
