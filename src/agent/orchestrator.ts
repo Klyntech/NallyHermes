@@ -181,7 +181,7 @@ export async function respond(
   if (config.LIGHTRAG_ENABLED) {
     try {
       await onProgress?.({ type: "memory_start" });
-      await syncUserMemories(telegramId);
+      await syncUserMemories(telegramId, (event) => onProgress?.(event));
       const memoryContext = await retrieveMemory(telegramId, userMessage);
       await onProgress?.({ type: "memory_complete" });
       if (memoryContext.trim()) {
