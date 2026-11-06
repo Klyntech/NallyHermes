@@ -145,7 +145,7 @@ export const agentTools: ChatCompletionTool[] = [
           task: { type: "string", description: "Reminder text." },
           run_at: { type: "string", description: "First future ISO-8601 date/time including timezone offset." },
           recurrence: { type: "string", enum: ["daily", "weekly", "monthly"], description: "Optional recurrence pattern." },
-          timezone: { type: "string", description: "Required IANA timezone for recurring reminders, e.g. Africa/Lagos." },
+          timezone: { type: "string", description: "Optional IANA timezone override; defaults to the user's saved timezone, e.g. Africa/Lagos." },
           id: { type: "string", description: "Reminder ID for cancellation." }
         },
         required: ["operation"],
