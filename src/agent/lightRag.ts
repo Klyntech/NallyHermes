@@ -62,3 +62,17 @@ export async function deleteMemory(telegramId: string, memoryId: string): Promis
     memory_id: memoryId
   });
 }
+
+export async function diagnoseMemoryPipeline(telegramId: string): Promise<{
+  initialized: boolean;
+  written: boolean;
+  read: boolean;
+  deleted: boolean;
+  absent_after_delete: boolean;
+  success: boolean;
+}> {
+  return request("/v1/diagnostics/pipeline", {
+    user_id: telegramId,
+    query: "pipeline diagnostic"
+  });
+}
