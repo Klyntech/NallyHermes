@@ -1,106 +1,244 @@
 # NallyHermes
 
-A general-purpose AI agent for Telegram, powered by NVIDIA NIM, Neon PostgreSQL and Tavily.
+**A Telegram-first AI agent with its own orchestration engine.**
 
-## Stack
+Nally combines a natural conversational interface with model-led planning, controlled tool execution, long-term memory and proactive scheduling. It is built around a custom TypeScript agent orchestra rather than a third-party agent framework.
 
-- **TypeScript / Node.js** — application runtime
-- **grammY** — Telegram bot interface and webhook handling
-- **NVIDIA NIM** — LLM and embedding inference through OpenAI-compatible APIs
-- **Neon** — serverless PostgreSQL
-- **Drizzle ORM** — application database queries and schema
-- **LightRAG (Python / FastAPI)** — graph and vector retrieval for long-term memory
+<image-placeholder />
+
+> **Release status: v1 Beta** — the core product is implemented and under release validation. Interfaces and configuration may still change.
+
+## What Nally does
+
+- **Talks naturally.** Direct, context-aware conversation without a rigid assistant response template.
+- **Plans complex work.** Decides when a task needs a plan, decomposes it into validated steps and tracks dependencies.
+- **Uses tools deliberately.** Selects the smallest useful set of tools, runs independent read-only work concurrently and keeps mutations sequential.
+- **Recovers intelligently.** Handles transient failures, adapts failed read-only work and reports partial results honestly.
+- **Remembers relevant context.** Chooses when to recall user-scoped memories instead of loading memory on every message.
+- **Understands time.** Uses a trusted clock snapshot and each user's IANA timezone for relative dates and reminders.
+- **Keeps users informed.** Edits one Telegram progress message as work advances, then replaces it with the final response.
+- **Works per user.** Separates each Telegram user's memories, schedules and file workspace.
+
+## Capabilities
+
+| Area | Capability |
+| --- | --- |
+| Conversation | Natural language chat with bounded in-memory conversation history |
+| Research | Tavily web search and targeted public-page retrieval |
+| Workspace | Read, write, edit, search, list, create folders and delete files |
+| Memory | Structured Neon records with LightRAG semantic and graph retrieval |
+| Scheduling | One-time and recurring reminders delivered proactively in Telegram |
+| Orchestration | Smart planning, dependencies, parallel read-only execution and recovery |
+| Time awareness | IANA timezone support and relative-date interpretation |
+| Telegram UX | Live progress editing, Markdown-to-HTML presentation and long-message splitting |
+
+## Architecture
+
+Nally uses a model for interpretation and planning, with deterministic application code controlling permissions, validation, execution limits and tool dispatch.
+
+```mermaid
+flowchart TD
+    U[Telegram user] --> T[Telegram webhook]
+    T --> C[Orchestra controller]
+    C --> P[Planner]
+    P --> X[Execution engine]
+    X --> V[Evaluator and recovery]
+    V --> R[Response synthesis]
+    R --> T
+    X --> W[Five-tool registry]
+    W --> S[Search and fetch]
+    W --> F[User file workspace]
+    W --> M[Neon memory + LightRAG]
+    W --> J[Neon schedules]
+    C --> CTX[Context manager + trusted clock]
+    CTX --> C
+    T --> PG[Neon PostgreSQL]
+```
+
+### Runtime stack
+
+- **TypeScript / Node.js 20+** — main application and orchestration runtime
+- **grammY** — Telegram Bot API and webhook integration
+- **NVIDIA NIM** — agent LLM, embeddings and reranking
+- **Neon PostgreSQL** — users, memories, schedules and LightRAG storage
+- **Drizzle ORM** — application database access
+- **LightRAG / FastAPI** — semantic and graph-based long-term memory
 - **Tavily** — web search
-- **Zod** — runtime validation
+- **Zod** — runtime configuration and tool argument validation
 
-## Agent tools
+### Agent tools
 
-- `web_search` — Tavily-powered web search
-- `fetch` — retrieve text from public HTTP(S) URLs
-- `file_io` — read, write, edit, grep, delete, list and create directories in each user's isolated workspace
-- `memory` — recall, remember, update and forget user-scoped memories in Neon
-- `schedule` — create, list and cancel one-time reminders, delivered by the bot
+Nally intentionally exposes five agent tools:
 
-## Clock and timezone awareness
+| Tool | Operations |
+| --- | --- |
+| `web_search` | Discover current information and public sources |
+| `fetch` | Read a specific public HTTP(S) text resource |
+| `file_io` | `read`, `write`, `edit`, `grep`, `delete`, `list`, `mkdir` |
+| `memory` | `recall`, `remember`, `update`, `forget` |
+| `schedule` | `create`, `list`, `cancel` |
 
-Every agent request receives a trusted clock snapshot generated from the server clock and rendered in the Telegram user's saved IANA timezone. New users default to `Africa/Lagos` (configurable with `DEFAULT_TIMEZONE`). Users can view or change this with `/timezone` and `/timezone Europe/London`. Relative dates are interpreted against that local clock. Reminders store UTC instants and retain the selected timezone so recurring reminders preserve local wall-clock time across daylight-saving changes. One-time schedule timestamps must include an explicit `Z` or numeric UTC offset.
+The executor validates arguments against strict schemas. Only read-only calls may run concurrently. Mutations execute sequentially and are never automatically replayed after an ambiguous failure.
 
-Web search results include the retrieval timestamp and, when Tavily supplies it, the source publication date and an age indicator. Retrieval time is not publication time; undated or older sources must not be presented as verified current information.
+## Repository layout
 
-## LightRAG memory service
-
-The Python service is an internal HTTP service. It binds to `127.0.0.1:9621`, requires a bearer token, and assigns a separate LightRAG workspace to each Telegram user. It uses `PGTableGraphStorage` rather than Apache AGE, so the graph can run on Neon PostgreSQL without the AGE extension; vectors use Neon’s pgvector support.
-
-Install its dependencies with:
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r memory-service/requirements.txt
+```text
+.
+├── memory-service/       # Internal LightRAG FastAPI service
+├── src/
+│   ├── agent/            # Orchestra, planning, context, tools and memory
+│   ├── db/               # Neon schema and startup setup
+│   ├── telegram/         # Telegram message presentation
+│   ├── config.ts         # Validated environment configuration
+│   └── index.ts          # Bot, webhook and HTTP health endpoint
+├── tests/                # Automated regression tests
+├── docs/                 # Architecture and operations guides
+├── .github/              # CI and dependency automation
+├── Dockerfile
+└── start.sh
 ```
 
-Configure `DATABASE_URL`, `NVIDIA_NIM_API_KEY`, `NVIDIA_NIM_BASE_URL`, `LIGHTRAG_API_TOKEN`, `LIGHTRAG_LLM_MODEL`, `LIGHTRAG_EMBEDDING_MODEL`, and `LIGHTRAG_EMBEDDING_DIM`. The default embedding model is `nvidia/nemotron-3-embed-1b` with 2048 dimensions. The selected NIM embedding model must support the OpenAI-compatible embeddings endpoint and return vectors matching the configured dimension.
+## Requirements
 
-Start the service locally with:
+- Node.js 20 or newer
+- A Telegram bot token
+- NVIDIA NIM API access and a compatible chat model
+- Neon PostgreSQL
+- Tavily API key for web search
+- Python 3.11+ and the dependencies in `memory-service/requirements.txt` when running LightRAG locally
 
-```bash
-.venv/bin/uvicorn app:app --app-dir memory-service --host 127.0.0.1 --port 9621
-```
+## Run locally
 
-Set `LIGHTRAG_ENABLED=true` and `LIGHTRAG_URL=http://127.0.0.1:9621` in the Node.js process only after the Python service is running. Keep the LightRAG API token private. Do not expose port 9621 publicly.
+1. Clone the repository and install dependencies:
 
-Run `/memorycheck` in Telegram to execute an isolated diagnostic: it initializes the caller's LightRAG workspace, inserts a uniquely tagged temporary document, checks naive vector retrieval, deletes only that temporary document, and verifies it no longer appears. It does not modify saved memories. This also tests the no-HNSW retrieval path. The TypeScript client is in `src/agent/lightRag.ts`. Neon remains the source of truth for memory records. On a user's first request after startup, existing Neon memories are indexed into that user's isolated LightRAG workspace before semantic retrieval. New memories are indexed when saved; updates and forget operations are synchronized with the index.
+   ```bash
+   npm install
+   ```
 
-## Context and memory intelligence
+2. Copy the environment template:
 
-Memory retrieval is model-directed for each task. Request preparation does not automatically load stored memories: Nally decides whether prior personal or project context would materially improve the current task, then calls the memory tool with a focused query only when needed. The recall result separates structured Neon records from LightRAG semantic context and reports whether semantic retrieval was available. Nally should apply only relevant records, prefer current conversation instructions over conflicting older memories, refine a recall query only for a specific unresolved gap, and stop once sufficient context is available. Greetings, general knowledge, simple calculations, and unrelated tasks should not trigger memory retrieval.
+   ```bash
+   cp .env.example .env
+   ```
 
-Neon remains the source of truth for durable memory records; LightRAG provides semantic and relational retrieval. Recall is read-only. Memory writes remain explicit tool operations and follow consent and confirmation rules. If LightRAG is unavailable, structured Neon memories remain available and ordinary task execution continues.
+3. Configure the required Telegram, NVIDIA and Neon values. Set `WEBHOOK_URL` to a public HTTPS URL that can receive Telegram webhooks. For local development, use a secure tunnel to your local server.
 
-## Agent orchestration
+4. Start the Node application:
 
-The agent uses a model-led smart planner with deterministic execution controls. A planning pass decides whether a request benefits from decomposition; simple requests fall through to the normal tool loop. Complex requests are split into up to ten validated steps with explicit dependencies.
+   ```bash
+   npm run dev
+   ```
 
-The controller executes dependency-ready steps, tracks their states, and skips steps whose prerequisites failed. It preserves successful and partial tool observations and always attempts a final evidence-based report, even when execution stops early; the report distinguishes verified findings, partial work, and incomplete steps without inventing results. The agent continually evaluates information sufficiency: it reuses existing results, gathers only what is needed, and stops researching once the evidence answers the request. It avoids redundant searches, fetches, and verification. When a tool fails, the model is instructed to diagnose the error and adapt its approach; transient failures may be retried with bounded exponential backoff for read-only calls only. Mutations are never automatically replayed. For at most two failed read-only plan steps, the controller makes one bounded recovery pass that asks the model to revise its approach using prior evidence; dependent steps already skipped remain clearly marked incomplete. Independent steps may run concurrently only when the planner marks them read-only; the executor independently checks every tool call before allowing concurrency. Tool arguments are validated against strict Zod schemas before dispatch, and invalid calls return structured tool errors. Mutating operations run sequentially. Defaults allow up to 10 plan steps, 60 tool rounds per planned request, 15 tool rounds per step, five parallel read-only plan steps, five parallel read-only tool calls per batch, two retries for transient read-only failures, and an eight-minute planned-execution deadline. These limits are configurable through the `AGENT_*` environment variables and bounded by configuration validation. The normal direct tool loop defaults to 12 model rounds. Malformed plans safely fall back to direct execution.
+LightRAG is disabled by default. To enable it locally, configure the LightRAG variables, start the Python service on `127.0.0.1:9621`, and set `LIGHTRAG_ENABLED=true`.
 
-The five agent tools remain unchanged: `web_search`, `fetch`, `file_io`, `memory`, and `schedule`. Tool selection guidance distinguishes broad discovery from targeted fetching and read-only operations from mutations. Telegram progress edits reflect planning and actual tool/step execution states.
+### Development commands
 
-## Getting started
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Run the TypeScript application in watch mode |
+| `npm run typecheck` | Run TypeScript without emitting files |
+| `npm test` | Run automated regression tests |
+| `npm run build` | Compile TypeScript into `dist/` |
+| `npm start` | Run the compiled application |
 
-1. Install Node.js 20 or newer.
-2. Install dependencies: `npm install`.
-3. Copy `.env.example` to `.env`.
-4. Set `TELEGRAM_BOT_TOKEN`, `WEBHOOK_URL`, `WEBHOOK_SECRET`, `NVIDIA_NIM_API_KEY`, `DATABASE_URL`, and `TAVILY_API_KEY`.
-5. Start the server: `npm run dev`.
+## Configuration
 
-## Render deployment
+See [`.env.example`](.env.example) for the complete template.
 
-Deploy NallyHermes as a **Render Web Service** using the repository's `Dockerfile`. The container runs the Node.js Telegram agent and the Python LightRAG service together. Render supplies the public `PORT`; LightRAG remains private on `127.0.0.1:9621`.
+| Variable | Required | Description |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token |
+| `WEBHOOK_URL` | Yes | Public HTTPS base URL of the deployed service |
+| `WEBHOOK_SECRET` | Yes | Telegram webhook secret; at least 32 allowed characters |
+| `NVIDIA_NIM_API_KEY` | Yes | NVIDIA NIM API key |
+| `NVIDIA_NIM_BASE_URL` | No | Defaults to NVIDIA's integrate endpoint |
+| `NVIDIA_NIM_MODEL` | No | Agent chat model |
+| `DATABASE_URL` | Yes | Neon PostgreSQL connection URL |
+| `TAVILY_API_KEY` | For search | Enables the `web_search` tool |
+| `DEFAULT_TIMEZONE` | No | Default IANA timezone; defaults to `Africa/Lagos` |
+| `PORT` | No | HTTP port; defaults to `3000` |
+| `FILE_WORKSPACE` | No | Workspace root; defaults to `./workspace` |
+| `LIGHTRAG_ENABLED` | No | Enables the internal LightRAG sidecar; defaults to `false` |
+| `LIGHTRAG_API_TOKEN` | If enabled | Internal service bearer token; at least 32 characters |
+| `LIGHTRAG_LLM_MODEL` | If enabled | NVIDIA-compatible model used by LightRAG |
+| `LIGHTRAG_URL` | No | Defaults to `http://127.0.0.1:9621` |
+| `LIGHTRAG_EMBEDDING_MODEL` | If enabled | Defaults to `nvidia/nemotron-3-embed-1b` |
+| `LIGHTRAG_EMBEDDING_DIM` | If enabled | Defaults to `2048`; must match the model output |
+| `AGENT_*` | No | Bounded planning, tool, retry, parallelism and timeout budgets |
+| `NODE_ENV` | No | Runtime environment |
+| `LOG_LEVEL` | No | Logging configuration |
 
-Set these environment variables in Render:
+When LightRAG is enabled, its Python service requires the same `DATABASE_URL` and `NVIDIA_NIM_API_KEY` plus its own API token and LLM model. Keep its port private; do not expose it publicly.
 
-- `TELEGRAM_BOT_TOKEN`
-- `WEBHOOK_URL` — the public HTTPS URL of the Render service
-- `WEBHOOK_SECRET` — at least 32 characters
-- `NVIDIA_NIM_API_KEY`
-- `NVIDIA_NIM_BASE_URL`
-- `NVIDIA_NIM_MODEL`
-- `DATABASE_URL` — Neon PostgreSQL connection string
-- `TAVILY_API_KEY`
-- `LIGHTRAG_ENABLED=true`
-- `LIGHTRAG_API_TOKEN` — generate a separate random secret of at least 32 characters
-- `LIGHTRAG_LLM_MODEL`
-- `LIGHTRAG_EMBEDDING_MODEL=nvidia/nemotron-3-embed-1b`
-- `LIGHTRAG_EMBEDDING_DIM=2048`
+## Deploy on Render
 
-Keep `LIGHTRAG_URL` at its default `http://127.0.0.1:9621`. Do not expose port 9621 publicly. Confirm that the selected NVIDIA NIM embedding model is enabled for your API key and that its output dimension matches `LIGHTRAG_EMBEDDING_DIM`.
+Deploy as a **Render Web Service** using the repository's `Dockerfile`.
 
-The app registers its Telegram webhook on startup and validates Telegram's webhook secret-token header. The public health endpoint is `/health`; the internal LightRAG health endpoint is bound to localhost only.
+1. Connect the GitHub repository.
+2. Select Docker as the runtime.
+3. Add the required environment variables from the configuration table.
+4. Set `LIGHTRAG_ENABLED=true` only after the LightRAG model, token, embedding model and dimension are configured.
+5. Keep `LIGHTRAG_URL` at `http://127.0.0.1:9621`; the sidecar binds to localhost inside the container.
+6. Set `WEBHOOK_URL` to the public Render service URL.
+7. Confirm the deployment is healthy and test the bot in Telegram.
 
-## Database setup
+The container starts the LightRAG sidecar only when `LIGHTRAG_ENABLED=true`. The Node application listens on Render's `PORT`. The public health endpoint is `GET /health`; the LightRAG health endpoint is internal only.
 
-NallyHermes automatically creates its required Neon tables and indexes at startup using idempotent SQL. No manual migration command is required. Existing rows are preserved.
+### Persistent files
 
-## Web search
+The default workspace is inside the application directory. Container filesystems may be ephemeral across deploys or restarts. If users need durable files, attach a persistent disk and set `FILE_WORKSPACE` to a directory on that disk. Neon-backed memories and schedules are stored in PostgreSQL.
 
-Get an API key from [Tavily](https://tavily.com/) and set it as `TAVILY_API_KEY`.
+## Telegram commands
+
+| Command | Description |
+| --- | --- |
+| `/start` | Start Nally |
+| `/help` | Show available capabilities |
+| `/timezone` | View the saved timezone |
+| `/timezone Africa/Lagos` | Change the saved timezone |
+| `/memorycheck` | Run an isolated LightRAG write/read/delete diagnostic |
+| `/rerankbench` | Run the NVIDIA reranker diagnostic benchmark |
+
+The memory diagnostic uses a temporary tagged document and removes it after the check. It does not intentionally modify saved memories.
+
+## Memory design
+
+Neon is the source of truth for structured memory records. LightRAG adds semantic and relational retrieval over user-specific workspaces.
+
+Memory is not loaded automatically on every message. Nally decides whether recalling prior context would materially improve the current task, issues a focused recall query when useful, and stops once enough relevant information is available. If LightRAG is unavailable, structured Neon recall remains available.
+
+## Privacy and security
+
+- Every user's memories and schedules are scoped to their Telegram identity.
+- Conversation history is kept in a bounded in-memory cache, separated by Telegram chat and participant. It is lost when the process restarts.
+- File paths are restricted to the user's workspace; symbolic-link escapes are rejected.
+- The LightRAG API binds to localhost and requires bearer authentication.
+- Telegram webhook requests are checked using the configured secret-token header.
+- Retrieved web pages and files are treated as untrusted content, not instructions.
+- Never commit `.env`, bot tokens, API keys, database URLs or service secrets.
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
+
+## Operational notes
+
+- The database schema is initialized with idempotent SQL at application startup. Existing rows are preserved.
+- The schedule worker checks due jobs every 15 seconds and delivers reminders through Telegram.
+- Planned execution has configurable limits for step count, tool rounds, parallel work, read retries and elapsed time.
+- The application exposes `GET /health` for platform health checks. It is a process health endpoint, not a full dependency-readiness report.
+- Render logs are the primary source for deployment and runtime diagnostics.
+
+## Known beta limitations
+
+- Conversation history is currently process-local and resets on restart or redeploy.
+- File durability depends on mounting persistent storage and setting `FILE_WORKSPACE`.
+- The project does not yet include a committed npm lockfile; dependency installation is not fully reproducible.
+- Automated tests currently cover Telegram presentation behavior; broader orchestration, memory and scheduling integration tests remain to be added.
+- A production release should include a selected open-source license and a completed dependency security review.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and quality expectations. Changes to the five-tool interface, memory boundaries, scheduling behavior or orchestration limits should include tests and documentation.
+
+## License
+
+No license has been selected for this repository yet. Until a license is added, do not assume that public visibility grants permission to reuse or redistribute the code.
