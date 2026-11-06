@@ -47,6 +47,23 @@ bot.command("memorycheck", async (ctx) => {
   }
 });
 
+bot.command("rerankbench", async (ctx) => {
+  await ctx.reply("Benchmarking rerankers…");
+  try {
+    const result = await benchmarkRerankers();
+    const lines = ["NVIDIA reranker benchmark", "Passages: " + result.query_passages];
+    for (const [model, metrics] of Object.entries(result.results)) {
+      lines.push(model);
+      if (metrics.ok) lines.push("Median: " + metrics.median_ms + " ms", "P95: " + metrics.p95_ms + " ms");
+      else lines.push("FAILED: " + (metrics.error || "Request failed"));
+    }
+    await ctx.reply(lines.join("\n"));
+  } catch (error) {
+    console.error("Reranker benchmark failed:", error);
+    await ctx.reply("Benchmark failed. Check Render logs and NIM configuration.");
+  }
+});
+
 bot.on("message:text", async (ctx) => {
   if (!ctx.from) return;
   await ctx.replyWithChatAction("typing");
