@@ -8,6 +8,7 @@ import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
 import { benchmarkRerankers } from "./agent/lightRag.js";
 import { displayProgress } from "./agent/progress.js";
+import { getUserTimezone, setUserTimezone } from "./agent/clock.js";
 import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
@@ -15,7 +16,7 @@ const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<number, ChatCompletionMessageParam[]>();
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
-const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency";
+const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
 
 bot.command("start", async (ctx) => {
   await replyFormatted((text, options) => ctx.reply(text, options), "Hello! **NallyHermes** is ready. What can I help you with?");
@@ -23,6 +24,32 @@ bot.command("start", async (ctx) => {
 
 bot.command("help", async (ctx) => {
   await replyFormatted((text, options) => ctx.reply(text, options), helpText);
+});
+
+bot.command("timezone", async (ctx) => {
+  if (!ctx.from) return;
+  const telegramId = String(ctx.from.id);
+  await db.insert(users).values({
+    telegramId,
+    username: ctx.from.username ?? null,
+    firstName: ctx.from.first_name ?? null
+  }).onConflictDoUpdate({
+    target: users.telegramId,
+    set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
+  });
+
+  const requested = String(ctx.match ?? "").trim();
+  if (!requested) {
+    const timezone = await getUserTimezone(telegramId);
+    await ctx.reply("Your timezone is " + timezone + ". To change it, send /timezone Europe/London (use an IANA timezone).");
+    return;
+  }
+  try {
+    await setUserTimezone(telegramId, requested);
+    await ctx.reply("Timezone updated to " + requested + ". Relative dates and reminders will use this timezone.");
+  } catch (error) {
+    await ctx.reply(error instanceof Error ? error.message : "Could not update timezone.");
+  }
 });
 
 bot.command("memorycheck", async (ctx) => {
@@ -180,6 +207,7 @@ await bot.init();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
   { command: "help", description: "See what NallyHermes can do" },
+  { command: "timezone", description: "View or change your timezone" },
   { command: "memorycheck", description: "Test memory storage, retrieval and deletion" },
   { command: "rerankbench", description: "Benchmark NVIDIA reranker latency" }
 ]);
