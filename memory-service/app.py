@@ -1,7 +1,10 @@
 import os
 import re
 from contextlib import asynccontextmanager
-from functools import lru_cache
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +13,16 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embedding
 from lightrag.utils import EmbeddingFunc
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+
+
+def asyncpg_database_url() -> str:
+    parts = urlsplit(DATABASE_URL)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+             if key not in {"channel_binding"}]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+DATABASE_URL = asyncpg_database_url()
 API_TOKEN = os.environ["LIGHTRAG_API_TOKEN"]
 NIM_API_KEY = os.environ["NVIDIA_NIM_API_KEY"]
 NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
