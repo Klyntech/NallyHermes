@@ -55,8 +55,18 @@ bot.command("rerankbench", async (ctx) => {
     for (const [model, endpoint] of Object.entries(result.endpoints)) lines.push(model + " endpoint: " + endpoint);
     for (const [model, metrics] of Object.entries(result.results)) {
       lines.push(model);
-      if (metrics.ok) lines.push("Median: " + metrics.median_ms + " ms", "P95: " + metrics.p95_ms + " ms");
-      else lines.push("FAILED: " + (metrics.error || "No successful response; inspect Render logs"));
+      if (metrics.ok) {
+        lines.push(
+          "Median: " + metrics.median_ms + " ms",
+          "P95: " + metrics.p95_ms + " ms",
+          "Returned: " + (metrics.returned ?? "unknown") + " rankings"
+        );
+        if (metrics.response_keys?.length) lines.push("Response fields: " + metrics.response_keys.join(", "));
+        for (const item of (metrics.ranking_preview ?? []).slice(0, 6)) {
+          const score = typeof item.score === "number" ? " [" + item.score + "]" : "";
+          lines.push("#" + item.index + score + ": " + (item.passage ?? "Passage text unavailable"));
+        }
+      } else lines.push("FAILED: " + (metrics.error || "No successful response; inspect Render logs"));
     }
     await ctx.reply(lines.join("\n"));
   } catch (error) {
