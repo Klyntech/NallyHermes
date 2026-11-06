@@ -1,5 +1,4 @@
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
-import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { SYSTEM_PROMPT } from "./definitions.js";
 import { buildClockContext } from "./clock.js";
 
@@ -10,13 +9,12 @@ export interface RequestContext {
 /**
  * Phase 1 request preparation.
  * The model remains responsible for choosing tools; this stage supplies trusted
- * policy plus relevant, explicitly untrusted memory context.
+ * policy and trusted clock context; the model decides whether to call memory.
  */
 export async function prepareRequest(
   history: ChatCompletionMessageParam[],
   userMessage: string,
-  telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  telegramId: string
 ): Promise<RequestContext> {
   const clockContext = await buildClockContext(telegramId);
   const messages: ChatCompletionMessageParam[] = [
