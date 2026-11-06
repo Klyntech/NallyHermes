@@ -78,6 +78,21 @@ export async function diagnoseMemoryPipeline(telegramId: string): Promise<{
 }
 
 
-export async function benchmarkRerankers(): Promise<{ query_passages: number; warmup_runs: number; measured_runs: number; endpoints: Record<string, string>; results: Record<string, { ok: boolean; samples_ms?: number[]; median_ms?: number | null; p95_ms?: number | null; error?: string }> }> {
+export async function benchmarkRerankers(): Promise<{
+  query_passages: number;
+  warmup_runs: number;
+  measured_runs: number;
+  endpoints: Record<string, string>;
+  results: Record<string, {
+    ok: boolean;
+    samples_ms?: number[];
+    median_ms?: number | null;
+    p95_ms?: number | null;
+    returned?: number | null;
+    response_keys?: string[];
+    ranking_preview?: Array<{ index?: number; score?: number; passage?: string }>;
+    error?: string;
+  }>;
+}> {
   return request("/v1/diagnostics/rerank", {});
 }
