@@ -14,6 +14,10 @@ export type ProgressEvent =
   | { type: "plan_step_start"; index: number; total: number; task: string }
   | { type: "plan_step_complete"; index: number; total: number }
   | { type: "plan_step_failed"; index: number; total: number }
+  | { type: "recovery_retry"; tool: string; attempt: number; maxAttempts: number }
+  | { type: "recovery_adjusting" }
+  | { type: "verifying" }
+  | { type: "information_sufficient" }
   | { type: "memory_start" }
   | { type: "memory_complete" }
   | { type: "memory_error" }
@@ -86,6 +90,14 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
       return { text: `Completed step ${event.index}/${event.total}…` };
     case "plan_step_failed":
       return { text: `Step ${event.index}/${event.total} could not be completed…` };
+    case "recovery_retry":
+      return { text: `Retrying ${event.tool} (${event.attempt}/${event.maxAttempts})…` };
+    case "recovery_adjusting":
+      return { text: "Adjusting the approach…" };
+    case "verifying":
+      return { text: "Verifying the collected results…" };
+    case "information_sufficient":
+      return { text: "Enough information collected. Preparing the answer…" };
     case "memory_start":
       return { text: "Recalling relevant memory…" };
     case "memory_complete":
@@ -115,7 +127,7 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
           return { text: "Working…" };
       }
     case "tool_error":
-      return { text: "A tool encountered an issue. Continuing…" };
+      return { text: "A tool encountered an issue. Adjusting…"};
     case "response_ready":
       return null;
   }
