@@ -25,6 +25,25 @@ export async function setUserTimezone(telegramId: string, timezone: string): Pro
   if (!updated.length) throw new Error("Your Telegram profile is not ready. Send /start and try again.");
 }
 
+export function assertTimestampMatchesTimezone(timestamp: string, date: Date, timezone: string): void {
+  const suffix = /(Z|([+-])(\\d{2}):(\\d{2}))$/i.exec(timestamp);
+  if (!suffix) throw new Error("The timestamp must include an explicit UTC offset.");
+  const suppliedOffset = suffix[1]?.toUpperCase() === "Z"
+    ? 0
+    : (suffix[2] === "-" ? -1 : 1) * (Number(suffix[3]) * 60 + Number(suffix[4]));
+  const offsetLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    timeZoneName: "longOffset"
+  }).formatToParts(date).find((part) => part.type === "timeZoneName")?.value ?? "GMT";
+  const actualMatch = /^GMT(?:([+-])(\\d{2}):(\\d{2}))?$/.exec(offsetLabel);
+  const actualOffset = actualMatch?.[1]
+    ? (actualMatch[1] === "-" ? -1 : 1) * (Number(actualMatch[2]) * 60 + Number(actualMatch[3]))
+    : 0;
+  if (suppliedOffset !== actualOffset) {
+    throw new Error("The timestamp offset does not match " + timezone + " at that date. Recalculate the local time using the timezone's offset for the scheduled date.");
+  }
+}
+
 export function formatDateTimeInTimezone(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
