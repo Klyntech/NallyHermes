@@ -14,7 +14,7 @@ export interface ExecutionPlan {
   steps: ExecutionPlanStep[];
 }
 
-const MAX_PLAN_STEPS = 6;
+const MAX_PLAN_STEPS = 10;
 const MAX_TASK_LENGTH = 500;
 
 function extractJson(value: string): unknown {
@@ -38,7 +38,7 @@ export async function createExecutionPlan(
           "Simple questions, explanations, calculations, single searches, and single actions do not need a plan.",
           "If no plan is needed, return exactly JSON: {\"needs_plan\":false,\"reason\":\"brief reason\",\"steps\":[]}.",
           "If a plan is needed, return JSON only matching this shape: {\"needs_plan\":true,\"reason\":\"...\",\"steps\":[{\"id\":\"step_1\",\"task\":\"...\",\"depends_on\":[],\"parallel_safe\":true}]}. Each step must include all four fields.",
-          "Create 2 to 6 concise, actionable steps. Use unique step IDs. Dependencies must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
+          "Create 2 to 10 concise, actionable steps. Use unique step IDs. Dependencies must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
           "Do not include markdown, code fences, commentary, or extra keys."
         ].join("\n")
       },
