@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, lte } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, lte } from "drizzle-orm";
 import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isIP } from "node:net";
@@ -212,7 +212,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
     case "recall": {
       const rows = await db.select({ id: memories.id, content: memories.content, updatedAt: memories.updatedAt })
         .from(memories).where(input.query ? and(eq(memories.userId, userId), ilike(memories.content, `%${input.query.slice(0, 100)}%`)) : eq(memories.userId, userId))
-        .orderBy(asc(memories.updatedAt)).limit(20);
+        .orderBy(desc(memories.updatedAt)).limit(20);
       let semanticContext = "";
       if (input.query && config.LIGHTRAG_ENABLED) {
         try {
