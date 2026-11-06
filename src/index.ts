@@ -31,15 +31,6 @@ bot.on("message:text", async (ctx) => {
   let progressMessageId: number | undefined;
   try {
     const telegramId = String(ctx.from.id);
-    await db.insert(users).values({
-      telegramId,
-      username: ctx.from.username ?? null,
-      firstName: ctx.from.first_name ?? null
-    }).onConflictDoUpdate({
-      target: users.telegramId,
-      set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
-    });
-
     const progressMessage = await ctx.reply("Thinking…");
     progressMessageId = progressMessage.message_id;
     let lastStatus = "Thinking…";
@@ -52,6 +43,15 @@ bot.on("message:text", async (ctx) => {
         console.warn("Could not update agent progress message:", error);
       }
     };
+
+    await db.insert(users).values({
+      telegramId,
+      username: ctx.from.username ?? null,
+      firstName: ctx.from.first_name ?? null
+    }).onConflictDoUpdate({
+      target: users.telegramId,
+      set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
+    });
 
     const history = histories.get(ctx.chat.id) ?? [];
     const answer = await respond(history, ctx.message.text, telegramId, onProgress);
