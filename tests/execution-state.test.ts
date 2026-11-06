@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getReadyPlanSteps, orderPlanSteps } from "../src/agent/executionState.js";
+import { collectStepEvidence, getReadyPlanSteps, orderPlanSteps } from "../src/agent/executionState.js";
 import type { ExecutionPlanStep } from "../src/agent/smartPlanner.js";
 
 const step = (id: string, depends_on: string[] = [], parallel_safe = true): ExecutionPlanStep => ({
@@ -54,4 +54,38 @@ test("a recovered prerequisite makes its dependent ready on the next scheduling 
     getReadyPlanSteps(steps, new Set(["source"]), new Set(["dependent"])).map((item) => item.id),
     ["dependent"]
   );
+});
+
+test("collects evidence only from the supplied step-local messages", () => {
+  const priorConversation = [
+    { role: "tool", tool_call_id: "old-call", content: "old result" }
+  ];
+  const currentStep = [
+    { role: "system", content: "step instructions" },
+    { role: "assistant", content: "I need one source." },
+    { role: "tool", tool_call_id: "new-call", content: "{\\"source\\":\\"current\\"}" }
+  ];
+  const evidence = collectStepEvidence(currentStep);
+  assert.deepEqual(evidence.observations, [
+    { tool_call_id: "new-call", content: "{\\"source\\":\\"current\\"}" }
+  ]);
+  assert.deepEqual(evidence.assistantNotes, ["I need one source."]);
+  assert.equal(evidence.observations.some((item) => item.tool_call_id === "old-call"), false);
+  assert.equal(priorConversation.length, 1);
+});
+
+test("bounds collected observations and assistant notes", () => {
+  const messages = [
+    ...Array.from({ length: 10 }, (_, index) => ({
+      role: "tool", tool_call_id: String(index), content: "result " + index
+    })),
+    ...Array.from({ length: 6 }, (_, index) => ({
+      role: "assistant", content: "note " + index
+    }))
+  ];
+  const evidence = collectStepEvidence(messages);
+  assert.equal(evidence.observations.length, 8);
+  assert.equal(evidence.observations[0]?.tool_call_id, "2");
+  assert.equal(evidence.assistantNotes.length, 4);
+  assert.equal(evidence.assistantNotes[0], "note 2");
 });
