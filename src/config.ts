@@ -16,6 +16,7 @@ const envSchema = z.object({
   LIGHTRAG_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   LIGHTRAG_URL: z.string().url().default("http://127.0.0.1:9621"),
   LIGHTRAG_API_TOKEN: z.string().optional(),
+  LIGHTRAG_LLM_MODEL: z.string().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.string().default("info"),
   AGENT_MAX_MODEL_ROUNDS: z.coerce.number().int().min(1).max(100).default(12),
@@ -25,6 +26,22 @@ const envSchema = z.object({
   AGENT_MAX_PARALLEL_TOOL_CALLS: z.coerce.number().int().min(1).max(20).default(5),
   AGENT_PLAN_TIMEOUT_MS: z.coerce.number().int().min(30000).max(1800000).default(480000),
   AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2)
+}).superRefine((env, context) => {
+  if (!env.LIGHTRAG_ENABLED) return;
+  if (!env.LIGHTRAG_API_TOKEN || env.LIGHTRAG_API_TOKEN.length < 32) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["LIGHTRAG_API_TOKEN"],
+      message: "LIGHTRAG_API_TOKEN must contain at least 32 characters when LightRAG is enabled."
+    });
+  }
+  if (!env.LIGHTRAG_LLM_MODEL?.trim()) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["LIGHTRAG_LLM_MODEL"],
+      message: "LIGHTRAG_LLM_MODEL is required when LightRAG is enabled."
+    });
+  }
 });
 
 export const config = envSchema.parse(process.env);
