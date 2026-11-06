@@ -2,6 +2,7 @@
   "name": "nallyhermes",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "NallyHermes — a general-purpose AI agent for Telegram.",
   "scripts": {
     "dev": "tsx watch src/index.ts",
