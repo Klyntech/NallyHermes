@@ -4,9 +4,9 @@ import { config } from "../config.js";
 import type { ProgressEvent } from "./progress.js";
 import { agentTools } from "./definitions.js";
 import { prepareRequest } from "./planner.js";
-import { executeToolCall, executeToolCalls, type ToolCallInput } from "./executor.js";
+import { executeToolCalls, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
-import { createExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
+import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -25,6 +25,7 @@ async function runPlannedStep(
   messages: ChatCompletionMessageParam[],
   step: ExecutionPlanStep,
   telegramId: string,
+  maxToolRounds: number,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<{ answer: string; toolRounds: number } | null> {
   messages.push({
@@ -38,7 +39,7 @@ async function runPlannedStep(
   });
 
   let toolRounds = 0;
-  for (let round = 0; round < MAX_STEP_ROUNDS; round++) {
+  for (let round = 0; round < maxToolRounds + 1; round++) {
     await onProgress?.({ type: "thinking", phase: "model" });
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
@@ -51,7 +52,7 @@ async function runPlannedStep(
     if (!message) return null;
     messages.push(message);
 
-    const evaluation = evaluateTurn(message, round, MAX_STEP_ROUNDS);
+    const evaluation = evaluateTurn(message, round, maxToolRounds + 1);
     if (evaluation.kind === "complete") {
       return { answer: finalResponse(evaluation.answer), toolRounds };
     }
@@ -109,7 +110,7 @@ async function runPlannedRequest(
       total: steps.length,
       task: step.task
     });
-    const outcome = await runPlannedStep(messages, step, telegramId, onProgress);
+    const remainingToolRounds = MAX_PLAN_TOOL_ROUNDS - totalToolRounds;\n    const outcome = await runPlannedStep(messages, step, telegramId, Math.min(MAX_STEP_ROUNDS - 1, remainingToolRounds), onProgress);
     if (!outcome) {
       await onProgress?.({ type: "plan_step_failed", index: stepNumber, total: steps.length });
       continue;
@@ -154,7 +155,7 @@ export async function runAgent(
   const { messages } = await prepareRequest(history, userMessage, telegramId);
 
   await onProgress?.({ type: "planning" });
-  let plan = null;
+  let plan: ExecutionPlan | null = null;
   try {
     plan = await createExecutionPlan(llm, history, userMessage);
   } catch (error) {
