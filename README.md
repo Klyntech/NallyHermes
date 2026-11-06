@@ -4,8 +4,6 @@
 
 Nally combines a natural conversational interface with model-led planning, controlled tool execution, long-term memory and proactive scheduling. It is built around a custom TypeScript agent orchestra rather than a third-party agent framework.
 
-<image-placeholder />
-
 > **Release status: v1 Beta** — the core product is implemented and under release validation. Interfaces and configuration may still change.
 
 ## What Nally does
