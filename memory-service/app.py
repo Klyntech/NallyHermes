@@ -218,20 +218,27 @@ async def diagnose_rerank(authorization: str | None = Header(default=None)):
         results = {}
         for model in RERANK_MODELS:
             try:
-                await run_once(model)
+                warmup = await run_once(model)
                 samples = [await run_once(model) for _ in range(5)]
                 successful = [item["latency_ms"] for item in samples if item["ok"]]
+                failures = [item for item in samples if not item["ok"]]
                 ordered = sorted(successful)
+                first_failure = failures[0] if failures else (None if warmup["ok"] else warmup)
                 results[model] = {
                     "ok": len(successful) == len(samples),
                     "samples_ms": [item["latency_ms"] for item in samples],
                     "median_ms": ordered[len(ordered) // 2] if ordered else None,
                     "p95_ms": ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))] if ordered else None,
                     "returned": next((item.get("returned") for item in samples if item["ok"]), None),
-                    "errors": [item for item in samples if not item["ok"]],
+                    "error": (
+                        f'HTTP {first_failure["status"]}: {first_failure["error"]}'
+                        if first_failure and "status" in first_failure
+                        else (first_failure.get("error") if first_failure else None)
+                    ),
+                    "errors": failures,
                 }
             except Exception as exc:
-                results[model] = {"ok": False, "error": str(exc)[:600]}
+                results[model] = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:500]}"}
     return {"query_passages": len(passages), "warmup_runs": 1, "measured_runs": 5,
             "endpoint": RERANK_URL, "results": results}
 
