@@ -5,6 +5,7 @@ import { syncUserMemories } from "./tools/extended.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { SYSTEM_PROMPT } from "./definitions.js";
 import { buildClockContext } from "./clock.js";
+import { shouldRetrieveMemory } from "./memoryPolicy.js";
 
 export interface RequestContext {
   messages: ChatCompletionMessageParam[];
@@ -29,7 +30,8 @@ export async function prepareRequest(
     { role: "user", content: userMessage }
   ];
 
-  if (config.LIGHTRAG_ENABLED) {
+  // Automatic semantic retrieval is opt-in by intent; clock and conversation history remain available on every turn.
+  if (config.LIGHTRAG_ENABLED && shouldRetrieveMemory(userMessage)) {
     try {
       await onProgress?.({ type: "memory_start" });
       const reportToolProgress: ToolProgressReporter = (event) => onProgress?.(event);
