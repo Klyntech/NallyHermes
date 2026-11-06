@@ -21,6 +21,12 @@ A general-purpose AI agent for Telegram, powered by NVIDIA NIM, Neon PostgreSQL 
 - `memory` — recall, remember, update and forget user-scoped memories in Neon
 - `schedule` — create, list and cancel one-time reminders, delivered by the bot
 
+## Clock and timezone awareness
+
+Every agent request receives a trusted clock snapshot generated from the server clock and rendered in the Telegram user's saved IANA timezone. New users default to `Africa/Lagos` (configurable with `DEFAULT_TIMEZONE`). Users can view or change this with `/timezone` and `/timezone Europe/London`. Relative dates are interpreted against that local clock. Reminders store UTC instants and retain the selected timezone so recurring reminders preserve local wall-clock time across daylight-saving changes. One-time schedule timestamps must include an explicit `Z` or numeric UTC offset.
+
+Web search results include the retrieval timestamp and, when Tavily supplies it, the source publication date and an age indicator. Retrieval time is not publication time; undated or older sources must not be presented as verified current information.
+
 ## LightRAG memory service
 
 The Python service is an internal HTTP service. It binds to `127.0.0.1:9621`, requires a bearer token, and assigns a separate LightRAG workspace to each Telegram user. It uses `PGTableGraphStorage` rather than Apache AGE, so the graph can run on Neon PostgreSQL without the AGE extension; vectors use Neon’s pgvector support.
