@@ -88,15 +88,47 @@ async function safePath(telegramId: string, relativePath: string, allowMissing =
 }
 
 function isPrivateAddress(address: string): boolean {
-  if (isIP(address) === 4) {
-    const [first = -1, second = -1] = address.split(".").map(Number);
-    return first === 10 || first === 127 || first === 0 || first >= 224 ||
-      (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) ||
-      (first === 192 && second === 168);
+  const normalized = address.toLowerCase().replace(/^\\[|\\]$/g, "");
+  const family = isIP(normalized);
+
+  if (family === 4) {
+    const [first = -1, second = -1, third = -1] = normalized.split(".").map(Number);
+    return first === 0 || first === 10 || first === 127 || first >= 224 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168) ||
+      (first === 192 && second === 0 && third === 0) ||
+      (first === 198 && (second === 18 || second === 19)) ||
+      (first === 198 && second === 51 && third === 100) ||
+      (first === 203 && second === 0 && third === 113);
   }
-  const v = address.toLowerCase();
-  return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") ||
-    /^fe[89ab]/.test(v) || v.startsWith("::ffff:127.") || v.startsWith("::ffff:10.");
+
+  if (family !== 6) return true;
+
+  if (normalized.startsWith("::ffff:")) {
+    const mapped = normalized.slice(7);
+    if (isIP(mapped) === 4) return isPrivateAddress(mapped);
+    const groups = mapped.split(":").slice(-2);
+    if (groups.length === 2) {
+      const high = Number.parseInt(groups[0]!, 16);
+      const low = Number.parseInt(groups[1]!, 16);
+      if (Number.isFinite(high) && Number.isFinite(low)) {
+        return isPrivateAddress([
+          high >> 8, high & 255, low >> 8, low & 255
+        ].join("."));
+      }
+    }
+    return true;
+  }
+
+  // Only globally routable IPv6 unicast addresses in 2000::/3 are eligible.
+  // Explicitly reject documentation, transition and tunnelling ranges.
+  const firstGroup = Number.parseInt(normalized.split(":")[0] || "0", 16);
+  return firstGroup < 0x2000 || firstGroup > 0x3fff ||
+    normalized.startsWith("2001:db8:") ||
+    normalized.startsWith("2001:0000:") ||
+    normalized.startsWith("2002:");
 }
 
 async function validatePublicUrl(raw: string): Promise<URL> {
@@ -104,7 +136,10 @@ async function validatePublicUrl(raw: string): Promise<URL> {
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
     throw new Error("Only public HTTP(S) URLs are supported.");
   }
-  const host = url.hostname.toLowerCase();
+  const host = url.hostname.toLowerCase().replace(/^\\[|\\]$/g, "");
+  if (url.port && !["80", "443"].includes(url.port)) {
+    throw new Error("Only standard HTTP and HTTPS ports are allowed.");
+  }
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
     throw new Error("Private network addresses are not allowed.");
   }
