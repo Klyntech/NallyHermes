@@ -1,7 +1,8 @@
 import os
 import re
 from contextlib import asynccontextmanager
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from functools import partial
+from urllib.parse import unquote, urlsplit
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -9,20 +10,26 @@ load_dotenv()
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from lightrag import LightRAG, QueryParam
-from lightrag.llm.openai import openai_complete_if_cache, openai_embedding
+from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 
-def asyncpg_database_url() -> str:
+def configure_postgres_from_url() -> None:
     parts = urlsplit(DATABASE_URL)
-    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
-             if key not in {"channel_binding"}]
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    if not parts.hostname or not parts.username or not parts.password or not parts.path.strip("/"):
+        raise RuntimeError("DATABASE_URL must be a complete PostgreSQL connection URL.")
+    os.environ["POSTGRES_HOST"] = parts.hostname
+    os.environ["POSTGRES_PORT"] = str(parts.port or 5432)
+    os.environ["POSTGRES_USER"] = unquote(parts.username)
+    os.environ["POSTGRES_PASSWORD"] = unquote(parts.password)
+    os.environ["POSTGRES_DATABASE"] = unquote(parts.path.lstrip("/").split("/")[0])
+    os.environ.setdefault("POSTGRES_SSL_MODE", "require")
+    os.environ.setdefault("POSTGRES_MAX_CONNECTIONS", "5")
 
 
-DATABASE_URL = asyncpg_database_url()
+configure_postgres_from_url()
 API_TOKEN = os.environ["LIGHTRAG_API_TOKEN"]
 NIM_API_KEY = os.environ["NVIDIA_NIM_API_KEY"]
 NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
@@ -46,15 +53,18 @@ async def llm_model_func(prompt, system_prompt=None, history_messages=None, **kw
     )
 
 
-async def embedding_func(texts):
-    return await openai_embedding(
-        texts,
+embedding_function = EmbeddingFunc(
+    model_name=EMBEDDING_MODEL,
+    send_dimensions=False,
+    embedding_dim=EMBEDDING_DIM,
+    max_token_size=8192,
+    func=partial(
+        openai_embed.func,
         model=EMBEDDING_MODEL,
-        api_key=NIM_API_KEY,
         base_url=NIM_BASE_URL,
-        embedding_dim=EMBEDDING_DIM,
-    )
-
+        api_key=NIM_API_KEY,
+    ),
+)
 
 rag_instances = {}
 
@@ -72,16 +82,11 @@ async def get_rag(user_id: str) -> LightRAG:
             working_dir=os.getenv("LIGHTRAG_WORKING_DIR", "./lightrag_data"),
             workspace=workspace,
             llm_model_func=llm_model_func,
-            embedding_func=EmbeddingFunc(
-                embedding_dim=EMBEDDING_DIM,
-                max_token_size=8192,
-                func=embedding_func,
-            ),
+            embedding_func=embedding_function,
             kv_storage="PGKVStorage",
             vector_storage="PGVectorStorage",
-            graph_storage="PGGraphStorage",
+            graph_storage="PGTableGraphStorage",
             doc_status_storage="PGDocStatusStorage",
-            addon_params={"postgres_url": DATABASE_URL},
         )
         await rag.initialize_storages()
         rag_instances[workspace] = rag
