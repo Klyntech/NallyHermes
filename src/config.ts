@@ -5,7 +5,7 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   NVIDIA_NIM_API_KEY: z.string().min(1),
   NVIDIA_NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
-  NVIDIA_NIM_MODEL: z.string().default("meta/llama-3.3-70b-instruct"),
+  NVIDIA_NIM_MODEL: z.string().default("nvidia/nemotron-3.5-super-vl-120b-a12b"),
   DATABASE_URL: z.string().min(1),
   TAVILY_API_KEY: z.string().optional(),
   WEBHOOK_URL: z.string().url(),
