@@ -195,7 +195,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       if (!saved) throw new Error("Memory could not be saved.");
       let indexed = false;
       try {
-        await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
+        if (config.LIGHTRAG_ENABLED) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
         indexed = await indexMemory(telegramId, saved.id, saved.content);
       }
       catch (error) { console.error("LightRAG memory indexing failed:", error); }
@@ -208,7 +208,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       let semanticContext = "";
       if (input.query) {
         try {
-          await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
+          if (config.LIGHTRAG_ENABLED) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
           semanticContext = await retrieveMemory(telegramId, input.query);
         }
         catch (error) { console.error("LightRAG memory retrieval failed:", error); }
@@ -235,7 +235,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       if (!updated) return { updated: false };
       let indexed = false;
       try {
-        await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
+        if (config.LIGHTRAG_ENABLED) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
         indexed = await indexMemory(telegramId, updated.id, updated.content);
       }
       catch (error) { console.error("LightRAG memory re-indexing failed:", error); }
