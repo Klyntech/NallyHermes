@@ -29,13 +29,25 @@ bot.on("message:text", async (ctx) => {
   if (!ctx.from) return;
   await ctx.replyWithChatAction("typing");
   let progressMessageId: number | undefined;
+  let thinkingTimer: ReturnType<typeof setInterval> | undefined;
   try {
     const telegramId = String(ctx.from.id);
     const progressMessage = await ctx.reply("Thinking…");
     progressMessageId = progressMessage.message_id;
     let lastStatus = "Thinking…";
+    let thinkingFrame = 0;
+    const thinkingFrames = ["Thinking…", "Thinking.", "Thinking..", "Thinking..."];
+    thinkingTimer = setInterval(() => {
+      thinkingFrame = (thinkingFrame + 1) % thinkingFrames.length;
+      const next = thinkingFrames[thinkingFrame]!;
+      void ctx.api.editMessageText(ctx.chat.id, progressMessageId!, next).then(() => {
+        lastStatus = next;
+      }).catch((error) => console.warn("Could not animate thinking status:", error));
+    }, 3000);
     const onProgress = async (status: string): Promise<void> => {
       if (!status || status === lastStatus) return;
+      if (thinkingTimer) clearInterval(thinkingTimer);
+      thinkingTimer = undefined;
       try {
         await ctx.api.editMessageText(ctx.chat.id, progressMessageId!, status);
         lastStatus = status;
@@ -55,6 +67,8 @@ bot.on("message:text", async (ctx) => {
 
     const history = histories.get(ctx.chat.id) ?? [];
     const answer = await respond(history, ctx.message.text, telegramId, onProgress);
+    if (thinkingTimer) clearInterval(thinkingTimer);
+    thinkingTimer = undefined;
     history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
     histories.set(ctx.chat.id, history.slice(-20));
     await editFormatted(
@@ -63,6 +77,7 @@ bot.on("message:text", async (ctx) => {
       answer
     );
   } catch (error) {
+    if (thinkingTimer) clearInterval(thinkingTimer);
     console.error("Agent request failed:", error);
     const failure = "I ran into a problem processing that. Please try again shortly.";
     if (progressMessageId !== undefined) {
