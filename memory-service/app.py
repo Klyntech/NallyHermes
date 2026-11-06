@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import uuid
 from contextlib import asynccontextmanager
 from functools import partial
 from urllib.parse import unquote, urlsplit
@@ -134,6 +135,45 @@ def authorize(authorization: str | None):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+@app.post("/v1/diagnostics/pipeline")
+async def diagnose_pipeline(payload: QueryRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    rag = await get_rag(payload.user_id)
+    memory_id = f"nally-diagnostic-{uuid.uuid4()}"
+    marker = f"NALLY_PIPELINE_CHECK_{uuid.uuid4().hex}"
+    content = (
+        f"{marker}: A temporary legal-study diagnostic note. "
+        "The fictional case concerns contract formation, offer, and acceptance."
+    )
+    result = {
+        "initialized": True,
+        "written": False,
+        "read": False,
+        "deleted": False,
+        "absent_after_delete": False,
+    }
+    try:
+        await rag.ainsert(content, ids=[memory_id], file_paths=[f"diagnostic:{memory_id}"])
+        result["written"] = True
+        retrieved = await rag.aquery(
+            marker,
+            param=QueryParam(mode="naive", top_k=5, only_need_context=True),
+        )
+        result["read"] = bool(retrieved and marker in retrieved)
+    finally:
+        if result["written"]:
+            await rag.adelete_by_doc_id(memory_id)
+            result["deleted"] = True
+            after_delete = await rag.aquery(
+                marker,
+                param=QueryParam(mode="naive", top_k=5, only_need_context=True),
+            )
+            result["absent_after_delete"] = not after_delete or marker not in after_delete
+    result["success"] = all(result[key] for key in (
+        "initialized", "written", "read", "deleted", "absent_after_delete"
+    ))
+    return result
 
 
 @app.post("/v1/memory/insert")
