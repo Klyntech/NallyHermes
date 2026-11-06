@@ -182,49 +182,95 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
   }
 }
 
-type ScheduleInput = { operation: "create" | "list" | "cancel"; task?: string; run_at?: string; id?: string };
+type Recurrence = "daily" | "weekly" | "monthly";
+type ScheduleInput = { operation: "create" | "list" | "cancel"; task?: string; run_at?: string; recurrence?: Recurrence; timezone?: string; id?: string };
+
+function zonedParts(date: Date, timezone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  return { year: value("year"), month: value("month"), day: value("day"), hour: value("hour"), minute: value("minute"), second: value("second") };
+}
+
+function localTimeToUtc(parts: ReturnType<typeof zonedParts>, timezone: string): Date {
+  let guess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  for (let i = 0; i < 4; i++) {
+    const actual = zonedParts(new Date(guess), timezone);
+    const represented = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
+    const desired = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    guess += desired - represented;
+  }
+  return new Date(guess);
+}
+
+function nextOccurrence(previous: Date, recurrence: Recurrence, timezone: string): Date {
+  const parts = zonedParts(previous, timezone);
+  if (recurrence === "daily" || recurrence === "weekly") {
+    const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + (recurrence === "daily" ? 1 : 7)));
+    parts.year = next.getUTCFullYear(); parts.month = next.getUTCMonth() + 1; parts.day = next.getUTCDate();
+  } else {
+    const year = parts.month === 12 ? parts.year + 1 : parts.year;
+    const month = parts.month === 12 ? 1 : parts.month + 1;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    parts.year = year; parts.month = month; parts.day = Math.min(parts.day, lastDay);
+  }
+  const next = localTimeToUtc(parts, timezone);
+  if (next <= previous) throw new Error("Could not calculate the next recurring schedule.");
+  return next;
+}
+
 export async function scheduleTool(telegramId: string, input: ScheduleInput): Promise<unknown> {
   const userId = await getUserId(telegramId);
   if (input.operation === "create") {
-    if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) throw new Error("A task and ISO date/time are required.");
+    if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) throw new Error("A task and ISO-8601 date/time are required.");
     const runAt = new Date(input.run_at);
-    if (!Number.isFinite(runAt.getTime()) || runAt <= new Date() || runAt.getTime() > Date.now() + 365 * 86400_000) {
-      throw new Error("Schedule time must be in the future and within one year.");
+    if (!Number.isFinite(runAt.getTime()) || runAt <= new Date() || runAt.getTime() > Date.now() + 365 * 86400_000) throw new Error("The first run must be in the future and within one year.");
+    let timezone: string | null = null;
+    if (input.recurrence) {
+      if (!["daily", "weekly", "monthly"].includes(input.recurrence)) throw new Error("Recurrence must be daily, weekly, or monthly.");
+      if (!input.timezone) throw new Error("An IANA timezone is required for recurring schedules (for example, Africa/Lagos).");
+      try { new Intl.DateTimeFormat("en-US", { timeZone: input.timezone }); } catch { throw new Error("Invalid IANA timezone."); }
+      timezone = input.timezone;
     }
-    const [job] = await db.insert(scheduledJobs).values({ userId, task: input.task.trim(), runAt }).returning({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt });
+    const [job] = await db.insert(scheduledJobs).values({ userId, task: input.task.trim(), runAt, recurrence: input.recurrence ?? null, timezone })
+      .returning({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone });
     return job;
   }
   if (input.operation === "list") {
-    return db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, status: scheduledJobs.status })
+    return db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, status: scheduledJobs.status })
       .from(scheduledJobs).where(eq(scheduledJobs.userId, userId)).orderBy(asc(scheduledJobs.runAt)).limit(50);
   }
   if (!input.id) throw new Error("Provide the scheduled job ID to cancel.");
   const cancelled = await db.update(scheduledJobs).set({ status: "cancelled" })
-    .where(and(eq(scheduledJobs.id, input.id), eq(scheduledJobs.userId, userId), eq(scheduledJobs.status, "pending")))
-    .returning({ id: scheduledJobs.id });
+    .where(and(eq(scheduledJobs.id, input.id), eq(scheduledJobs.userId, userId), eq(scheduledJobs.status, "pending"))).returning({ id: scheduledJobs.id });
   return { cancelled: cancelled.length > 0 };
 }
 
 export function startScheduleWorker(sendMessage: (telegramId: string, text: string) => Promise<unknown>): void {
+  let running = false;
   const tick = async () => {
+    if (running) return;
+    running = true;
     try {
-      const due = await db.select({ id: scheduledJobs.id, task: scheduledJobs.task, telegramId: users.telegramId })
+      const due = await db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, telegramId: users.telegramId })
         .from(scheduledJobs).innerJoin(users, eq(scheduledJobs.userId, users.id))
-        .where(and(eq(scheduledJobs.status, "pending"), lte(scheduledJobs.runAt, new Date())))
-        .orderBy(asc(scheduledJobs.runAt)).limit(20);
+        .where(and(eq(scheduledJobs.status, "pending"), lte(scheduledJobs.runAt, new Date()))).orderBy(asc(scheduledJobs.runAt)).limit(20);
       for (const job of due) {
         const claimed = await db.update(scheduledJobs).set({ status: "sent" })
           .where(and(eq(scheduledJobs.id, job.id), eq(scheduledJobs.status, "pending"))).returning({ id: scheduledJobs.id });
         if (!claimed.length) continue;
-        try { await sendMessage(job.telegramId, `⏰ Reminder: ${job.task}`); }
-        catch (error) {
+        try {
+          await sendMessage(job.telegramId, "⏰ Reminder: " + job.task);
+          if (job.recurrence && job.timezone) {
+            const nextRun = nextOccurrence(job.runAt, job.recurrence as Recurrence, job.timezone);
+            await db.update(scheduledJobs).set({ runAt: nextRun, status: "pending" }).where(eq(scheduledJobs.id, job.id));
+          }
+        } catch (error) {
           await db.update(scheduledJobs).set({ status: "pending" }).where(eq(scheduledJobs.id, job.id));
-          console.error("Reminder delivery failed:", error);
+          console.error("Reminder delivery or recurrence update failed:", error);
         }
       }
-    } catch (error) {
-      console.error("Schedule worker failed:", error);
-    }
+    } catch (error) { console.error("Schedule worker failed:", error); }
+    finally { running = false; }
   };
   setInterval(() => { void tick(); }, 15_000);
   void tick();
