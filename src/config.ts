@@ -21,7 +21,6 @@ const envSchema = z.object({
   LIGHTRAG_EMBEDDING_DIM: z.coerce.number().int().min(1).max(8192).default(2048),
   LIGHTRAG_WORKING_DIR: z.string().min(1).default("./lightrag_data"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  LOG_LEVEL: z.string().default("info"),
   AGENT_MAX_MODEL_ROUNDS: z.coerce.number().int().min(1).max(100).default(12),
   AGENT_MAX_PLAN_TOOL_ROUNDS: z.coerce.number().int().min(1).max(500).default(60),
   AGENT_MAX_STEP_TOOL_ROUNDS: z.coerce.number().int().min(1).max(100).default(15),
