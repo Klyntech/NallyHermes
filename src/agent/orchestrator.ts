@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/index.js";
 import { config } from "../config.js";
 import { searchWeb } from "./tools/web.js";
-import { fetchUrl, fileIO, memoryTool, scheduleTool } from "./tools/extended.js";
+import { fetchUrl, fileIO, memoryTool, scheduleTool, syncUserMemories } from "./tools/extended.js";
 import { retrieveMemory } from "./lightRag.js";
 
 const llm = new OpenAI({
@@ -214,6 +214,7 @@ export async function respond(
   if (config.LIGHTRAG_ENABLED) {
     try {
       await onProgress?.("Recalling relevant memory…");
+      await syncUserMemories(telegramId);
       const memoryContext = await retrieveMemory(telegramId, userMessage);
       if (memoryContext.trim()) {
         messages.splice(messages.length - 1, 0, {
