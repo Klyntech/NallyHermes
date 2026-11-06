@@ -7,6 +7,7 @@ const envSchema = z.object({
   NVIDIA_NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NVIDIA_NIM_MODEL: z.string().default("nvidia/nemotron-3.5-super-vl-120b-a12b"),
   DATABASE_URL: z.string().min(1),
+  DEFAULT_TIMEZONE: z.string().default("Africa/Lagos"),
   TAVILY_API_KEY: z.string().optional(),
   WEBHOOK_URL: z.string().url(),
   WEBHOOK_SECRET: z.string().min(32).regex(/^[A-Za-z0-9_-]+$/),
