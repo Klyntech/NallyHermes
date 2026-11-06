@@ -411,6 +411,7 @@ async function runPlannedRequest(
         status: "completed",
         toolRounds: previous.toolRounds + recovered.toolRounds,
         answer: recovered.answer,
+        evidence: recovered.evidence,
         failureReason: undefined
       };
       await onProgress?.({
@@ -423,6 +424,10 @@ async function runPlannedRequest(
         ...previous,
         toolRounds: previous.toolRounds + recovered.toolRounds,
         answer: previous.answer + "\nRecovery attempt: " + recovered.answer,
+        evidence: {
+          observations: [...previous.evidence.observations, ...recovered.evidence.observations].slice(-8),
+          assistantNotes: [...previous.evidence.assistantNotes, ...recovered.evidence.assistantNotes].slice(-4)
+        },
         failureReason: recovered.failureReason ?? previous.failureReason
       };
       await onProgress?.({
