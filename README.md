@@ -12,9 +12,13 @@ A general-purpose AI agent for Telegram, powered by NVIDIA NIM, Neon PostgreSQL 
 - **Tavily** — web search
 - **Zod** — runtime validation
 
-## Current tool
+## Agent tools
 
 - `web_search` — Tavily-powered web search
+- `fetch` — retrieve text from public HTTP(S) URLs
+- `file_io` — read, write, edit, grep, delete, list and create directories in each user's isolated workspace
+- `memory` — recall, remember, update and forget user-scoped memories in Neon
+- `schedule` — create, list and cancel one-time reminders, delivered by the bot
 
 ## Getting started
 
