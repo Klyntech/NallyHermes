@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, ilike, lte } from "drizzle-orm";
-import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
@@ -19,23 +19,72 @@ function userWorkspace(telegramId: string): string {
 }
 
 async function safePath(telegramId: string, relativePath: string, allowMissing = false): Promise<string> {
-  if (!relativePath || path.isAbsolute(relativePath)) throw new Error("A relative workspace path is required.");
-  const root = userWorkspace(telegramId);
+  if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes("\\0")) {
+    throw new Error("A relative workspace path is required.");
+  }
+
+  const configuredRoot = userWorkspace(telegramId);
+  await mkdir(configuredRoot, { recursive: true });
+  const root = await realpath(configuredRoot);
   const target = path.resolve(root, relativePath);
-  if (target !== root && !target.startsWith(root + path.sep)) throw new Error("Path is outside your workspace.");
-  await mkdir(root, { recursive: true });
+
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error("Path is outside your workspace.");
+  }
+
+  // Inspect every existing path component before creating anything. In
+  // particular, never follow a workspace symlink to an external location.
+  const segments = path.relative(root, target).split(path.sep).filter(Boolean);
+  let cursor = root;
+  let missing = false;
+
+  for (const segment of segments) {
+    cursor = path.join(cursor, segment);
+    if (missing) continue;
+    try {
+      const info = await lstat(cursor);
+      if (info.isSymbolicLink()) {
+        throw new Error("Symbolic links are not allowed in the workspace.");
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if (!allowMissing) throw error;
+      missing = true;
+    }
+  }
+
+  if (!allowMissing) {
+    const resolved = await realpath(target);
+    if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+      throw new Error("Path is outside your workspace.");
+    }
+    return resolved;
+  }
+
   const parent = path.dirname(target);
   await mkdir(parent, { recursive: true });
-  try {
-    const resolved = await realpath(target);
-    if (resolved !== root && !resolved.startsWith(root + path.sep)) throw new Error("Path is outside your workspace.");
-    return resolved;
-  } catch (error) {
-    if (!allowMissing || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const resolvedParent = await realpath(parent);
-    if (resolvedParent !== root && !resolvedParent.startsWith(root + path.sep)) throw new Error("Path is outside your workspace.");
-    return target;
+  const resolvedParent = await realpath(parent);
+  if (resolvedParent !== root && !resolvedParent.startsWith(root + path.sep)) {
+    throw new Error("Path is outside your workspace.");
   }
+
+  // Recheck after directory creation to catch a path component that changed
+  // while the parent directories were being prepared.
+  cursor = root;
+  for (const segment of segments) {
+    cursor = path.join(cursor, segment);
+    try {
+      const info = await lstat(cursor);
+      if (info.isSymbolicLink()) {
+        throw new Error("Symbolic links are not allowed in the workspace.");
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") break;
+      throw error;
+    }
+  }
+
+  return target;
 }
 
 function isPrivateAddress(address: string): boolean {
