@@ -48,7 +48,6 @@ export function markdownToTelegramHtml(markdown: string): string {
   const output: string[] = [];
   let paragraph: string[] = [];
   let codeLines: string[] | undefined;
-  let orderedIndex = 0;
 
   const flushParagraph = () => {
     if (paragraph.length) {
@@ -77,7 +76,6 @@ export function markdownToTelegramHtml(markdown: string): string {
     }
     if (!line.trim()) {
       flushParagraph();
-      orderedIndex = 0;
       continue;
     }
 
@@ -101,11 +99,9 @@ export function markdownToTelegramHtml(markdown: string): string {
       flushParagraph();
       const marker = unordered ? "• " : `${ordered![1]}. `;
       output.push(marker + renderInline((unordered ?? ordered)![unordered ? 1 : 2]!));
-      orderedIndex++;
       continue;
     }
 
-    orderedIndex = 0;
     paragraph.push(line);
   }
 
@@ -140,24 +136,37 @@ function splitHtml(html: string): string[] {
     blockquote: "</blockquote>", a: "</a>"
   };
   const opening = (token: string): HtmlTag | undefined => {
-    const match = token.match(/^<(b|i|s|code|pre|blockquote|a)(?:\s+[^>]*)?>$/i);
+    const match = token.match(/^<(b|i|s|code|pre|blockquote|a)(?:\\s+[^>]*)?>$/i);
     if (!match) return undefined;
     const name = match[1]!.toLowerCase();
     return { name, open: token, close: closing[name]! };
   };
+  const closeCurrent = () => {
+    chunks.push(current + stack.slice().reverse().map((tag) => tag.close).join(""));
+    current = stack.map((tag) => tag.open).join("");
+  };
+  const appendText = (text: string) => {
+    for (const character of text) {
+      const closingLength = stack.reduce((sum, tag) => sum + tag.close.length, 0);
+      if (current.length + character.length + closingLength > TELEGRAM_TEXT_LIMIT && current !== stack.map((tag) => tag.open).join("")) {
+        closeCurrent();
+      }
+      current += character;
+    }
+  };
 
   for (const token of tokens) {
-    const closeMatch = token.match(/^<\/(b|i|s|code|pre|blockquote|a)>$/i);
+    if (!token.startsWith("<")) {
+      appendText(token);
+      continue;
+    }
+    const closeMatch = token.match(/^<\\/(b|i|s|code|pre|blockquote|a)>$/i);
     const closeName = closeMatch?.[1]?.toLowerCase();
     const opened = opening(token);
-    const projectedLength = current.length + token.length;
     const closingLength = stack.reduce((sum, tag) => sum + tag.close.length, 0);
-
-    if (current && projectedLength + closingLength > TELEGRAM_TEXT_LIMIT) {
-      chunks.push(current + stack.slice().reverse().map((tag) => tag.close).join(""));
-      current = stack.map((tag) => tag.open).join("");
+    if (current.length + token.length + closingLength > TELEGRAM_TEXT_LIMIT && current !== stack.map((tag) => tag.open).join("")) {
+      closeCurrent();
     }
-
     current += token;
     if (opened) stack.push(opened);
     else if (closeName) {
@@ -166,7 +175,9 @@ function splitHtml(html: string): string[] {
     }
   }
 
-  if (current) chunks.push(current + stack.slice().reverse().map((tag) => tag.close).join(""));
+  if (current && current !== stack.map((tag) => tag.open).join("")) {
+    chunks.push(current + stack.slice().reverse().map((tag) => tag.close).join(""));
+  }
   return chunks.filter(Boolean);
 }
 
