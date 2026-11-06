@@ -250,5 +250,6 @@ export async function respond(
     }
   }
 
+  await onProgress?.({ type: "response_ready" });
   return "I couldn't complete that request within the tool-call limit. Please try again.";
 }
