@@ -154,6 +154,32 @@ async function getUserId(telegramId: string): Promise<string> {
   return user.id;
 }
 
+const indexedMemoryUsers = new Set<string>();
+const memorySyncJobs = new Map<string, Promise<void>>();
+
+export async function syncUserMemories(telegramId: string): Promise<void> {
+  if (!config.LIGHTRAG_ENABLED || indexedMemoryUsers.has(telegramId)) return;
+  const existingJob = memorySyncJobs.get(telegramId);
+  if (existingJob) return existingJob;
+
+  const job = (async () => {
+    const userId = await getUserId(telegramId);
+    const rows = await db.select({ id: memories.id, content: memories.content })
+      .from(memories).where(eq(memories.userId, userId));
+    for (const memory of rows) {
+      await indexMemory(telegramId, memory.id, memory.content);
+    }
+    indexedMemoryUsers.add(telegramId);
+  })();
+
+  memorySyncJobs.set(telegramId, job);
+  try {
+    await job;
+  } finally {
+    memorySyncJobs.delete(telegramId);
+  }
+}
+
 type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string };
 export async function memoryTool(telegramId: string, input: MemoryInput): Promise<unknown> {
   const userId = await getUserId(telegramId);
