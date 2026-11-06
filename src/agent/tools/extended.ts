@@ -187,6 +187,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput): Promis
     case "remember": {
       if (!input.content?.trim() || input.content.length > 4000) throw new Error("Memory content must be 1–4000 characters.");
       const [saved] = await db.insert(memories).values({ userId, content: input.content.trim() }).returning({ id: memories.id, content: memories.content });
+      if (!saved) throw new Error("Memory could not be saved.");
       let indexed = false;
       try { indexed = await indexMemory(telegramId, saved.id, saved.content); }
       catch (error) { console.error("LightRAG memory indexing failed:", error); }
