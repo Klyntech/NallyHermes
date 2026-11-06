@@ -19,7 +19,7 @@ function userWorkspace(telegramId: string): string {
 }
 
 async function safePath(telegramId: string, relativePath: string, allowMissing = false): Promise<string> {
-  if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes("\\0")) {
+  if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes("\0")) {
     throw new Error("A relative workspace path is required.");
   }
 
@@ -88,7 +88,7 @@ async function safePath(telegramId: string, relativePath: string, allowMissing =
 }
 
 function isPrivateAddress(address: string): boolean {
-  const normalized = address.toLowerCase().replace(/^\\[|\\]$/g, "");
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
   const family = isIP(normalized);
 
   if (family === 4) {
@@ -136,7 +136,7 @@ async function validatePublicUrl(raw: string): Promise<URL> {
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
     throw new Error("Only public HTTP(S) URLs are supported.");
   }
-  const host = url.hostname.toLowerCase().replace(/^\\[|\\]$/g, "");
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (url.port && !["80", "443"].includes(url.port)) {
     throw new Error("Only standard HTTP and HTTPS ports are allowed.");
   }
