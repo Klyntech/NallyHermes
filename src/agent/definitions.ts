@@ -119,7 +119,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "memory",
-      description: "Recall, save, update or forget memories belonging only to the current Telegram user.",
+      description: "Retrieve relevant past context and retain only durable, useful information for the current Telegram user.",
       parameters: {
         type: "object",
         properties: {
