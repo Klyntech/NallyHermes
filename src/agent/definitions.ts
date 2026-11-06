@@ -71,7 +71,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Search the web for current information using Tavily.",
+      description: "Search the web for current information using Tavily. Results include retrieval time and source publication dates/age indicators when available.",
       parameters: {
         type: "object",
         properties: {
@@ -87,7 +87,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "fetch",
-      description: "Retrieve text content from a public HTTP or HTTPS URL. Does not access private networks or binary files.",
+      description: "Retrieve text content from a public HTTP or HTTPS URL. Returns retrieval time and Last-Modified metadata when available. Does not access private networks or binary files.",
       parameters: {
         type: "object",
         properties: { url: { type: "string", description: "Public HTTP(S) URL to retrieve." } },
