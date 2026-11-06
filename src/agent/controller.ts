@@ -341,6 +341,77 @@ async function runPlannedRequest(
     }
   }
 
+  // One bounded replanning pass for failed read-only steps. Mutating steps are
+  // deliberately excluded so recovery can never replay a write or deletion.
+  let recoveryAttempts = 0;
+  for (const step of steps) {
+    if (recoveryAttempts >= 2 || Date.now() >= deadline) break;
+    if (!step.parallel_safe) continue;
+    const outcomeIndex = outcomes.findIndex((item) => item.id === step.id);
+    const previous = outcomes[outcomeIndex];
+    if (!previous || previous.status === "completed") continue;
+    const remainingBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    if (remainingBudget <= 0) break;
+
+    recoveryAttempts++;
+    await onProgress?.({ type: "recovery_adjusting" });
+    await onProgress?.({
+      type: "plan_step_start",
+      index: steps.findIndex((item) => item.id === step.id) + 1,
+      total: steps.length,
+      task: "Revising approach: " + step.task
+    });
+    const recoveryStep: ExecutionPlanStep = {
+      id: `recovery_${step.id}`,
+      task: [
+        `Recover the unresolved read-only task: ${step.task}`,
+        `Previous attempt status: ${previous.status}.`,
+        `Previous limitation: ${previous.failureReason ?? "The task did not reach a verified result"}.`,
+        "Use the existing evidence in the conversation. Choose a materially different read-only approach only if a necessary information gap remains.",
+        "Do not repeat searches or fetches already completed unless there is a clear reason. If the evidence is already sufficient, summarize it without more tool calls."
+      ].join(" "),
+      depends_on: [],
+      parallel_safe: true
+    };
+    const recoveryBudget = Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingBudget));
+    const recovered = await runPlannedStep(
+      [...messages],
+      recoveryStep,
+      telegramId,
+      recoveryBudget,
+      true,
+      deadline,
+      onProgress
+    );
+    totalToolRounds += recovered.toolRounds;
+    if (recovered.status === "completed") {
+      outcomes[outcomeIndex] = {
+        ...previous,
+        status: "completed",
+        toolRounds: previous.toolRounds + recovered.toolRounds,
+        answer: recovered.answer,
+        failureReason: undefined
+      };
+      await onProgress?.({
+        type: "plan_step_complete",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length
+      });
+    } else {
+      outcomes[outcomeIndex] = {
+        ...previous,
+        toolRounds: previous.toolRounds + recovered.toolRounds,
+        answer: previous.answer + "\\nRecovery attempt: " + recovered.answer,
+        failureReason: recovered.failureReason ?? previous.failureReason
+      };
+      await onProgress?.({
+        type: "plan_step_failed",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length
+      });
+    }
+  }
+
   await onProgress?.({ type: "verifying" });
   return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
 }
