@@ -14,15 +14,19 @@ export function orderPlanSteps(steps: readonly ExecutionPlanStep[]): ExecutionPl
   }
 
   for (const step of steps) {
-    if (new Set(step.depends_on).size !== step.depends_on.length) return null;
-    if (step.depends_on.some((id) => id === step.id || !ids.has(id))) return null;
+    const contextFrom = step.context_from ?? [];
+    if (new Set(step.depends_on).size !== step.depends_on.length ||
+        new Set(contextFrom).size !== contextFrom.length) return null;
+    if ([...step.depends_on, ...contextFrom].some((id) => id === step.id || !ids.has(id))) return null;
+    if (step.depends_on.some((id) => contextFrom.includes(id))) return null;
   }
 
   const ordered: ExecutionPlanStep[] = [];
   const completed = new Set<string>();
   while (ordered.length < steps.length) {
     const ready = steps.filter((step) =>
-      !completed.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
+      !completed.has(step.id) &&
+      [...step.depends_on, ...(step.context_from ?? [])].every((dependency) => completed.has(dependency))
     );
     if (!ready.length) return null;
     for (const step of ready) {
@@ -63,10 +67,13 @@ export function getRecoverablePrerequisites(
 export function getReadyPlanSteps(
   steps: readonly ExecutionPlanStep[],
   completedIds: ReadonlySet<string>,
-  pendingIds: ReadonlySet<string>
+  pendingIds: ReadonlySet<string>,
+  settledIds: ReadonlySet<string> = completedIds
 ): ExecutionPlanStep[] {
   return steps.filter((step) =>
-    pendingIds.has(step.id) && step.depends_on.every((dependency) => completedIds.has(dependency))
+    pendingIds.has(step.id) &&
+    step.depends_on.every((dependency) => completedIds.has(dependency)) &&
+    (step.context_from ?? []).every((dependency) => settledIds.has(dependency))
   );
 }
 
