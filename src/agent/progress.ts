@@ -21,6 +21,7 @@ export type ProgressEvent =
   | { type: "recovery_adjusting" }
   | { type: "verifying" }
   | { type: "information_sufficient" }
+  | { type: "evidence_reused"; count: number }
   | { type: "memory_start" }
   | { type: "memory_complete" }
   | { type: "memory_error" }
@@ -120,6 +121,8 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
       return { text: "Verifying the collected results…" };
     case "information_sufficient":
       return { text: "Enough information collected. Preparing the answer…" };
+    case "evidence_reused":
+      return { text: "Reusing evidence already collected…" };
     case "memory_start":
       return { text: "Recalling relevant memory…" };
     case "memory_complete":
