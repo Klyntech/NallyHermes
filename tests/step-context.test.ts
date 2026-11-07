@@ -105,3 +105,17 @@ test("recovery context includes the failed step's previous evidence", () => {
   assert.match(serialized, /Source evidence for locate/);
   assert.match(serialized, /Finish the source lookup using prior evidence/);
 });
+
+test("context_from evidence is included in a consumer step context", () => {
+  const contextPlan: ExecutionPlanStep[] = [
+    { id: "sources", task: "Find official sources", depends_on: [], parallel_safe: true },
+    { id: "analysis", task: "Analyze the findings", depends_on: [], context_from: ["sources"], parallel_safe: true }
+  ];
+  const context = buildStepContext(
+    [{ role: "user", content: "Investigate the topic" }] as never,
+    contextPlan[1]!,
+    contextPlan,
+    [outcome("sources", "Find official sources")]
+  );
+  assert.match(JSON.stringify(context), /Verified answer for sources/);
+});
