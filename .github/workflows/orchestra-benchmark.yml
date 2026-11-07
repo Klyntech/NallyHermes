@@ -177,7 +177,7 @@ jobs:
             '## Results',
             '',
             '| Run | Duration (s) | Model time (s) | Synthesis (s) | Model calls | Tool calls | Tool errors | Hard deps | Context deps | Task outcome |',
-            '|---:|---:|---:|---:|---:|---:|---:|---|',
+            '|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
             ...runs.map((run, index) => `| ${index + 1} | ${(run.duration_ms / 1000).toFixed(2)} | ${(modelTime[index] / 1000).toFixed(2)} | ${(synthesisTime[index] / 1000).toFixed(2)} | ${run.metrics.model_call_count ?? 'n/a'} | ${run.metrics.tool_call_starts} | ${run.metrics.tool_errors} | ${run.metrics.hard_dependency_edges ?? 'n/a'} | ${run.metrics.context_dependency_edges ?? 'n/a'} | ${run.task_status} |`),
             '',
             '## Latency distribution',
