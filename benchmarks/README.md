@@ -1,6 +1,6 @@
-# Orchestra benchmark
+# V2 Orchestra reliability benchmark
 
-This benchmark compares the pinned V1 source revision with the V2 source revision by running the same LightRAG research task directly against each checked-out source tree in GitHub Actions.
+This benchmark runs the current V2 source tree four times sequentially against the same research scenario. It is designed to show run-to-run variability and task reliability on one fixed commit; it no longer compares V1 against V2.
 
 ## Required repository secrets
 
@@ -10,32 +10,31 @@ Add these under **Settings → Secrets and variables → Actions → Repository 
 |---|---|
 | `NVIDIA_NIM_API_KEY` | NVIDIA NIM API key |
 | `TAVILY_API_KEY` | Tavily API key |
-| `BENCHMARK_DATABASE_URL` | Neon connection string for a dedicated, isolated benchmark database |
+| `BENCHMARK_DATABASE_URL` | Connection string for a dedicated, isolated benchmark database |
 
-Do not use the production Neon database. The runner creates/updates the application schema and inserts two synthetic benchmark users. It does not need a Telegram bot token; the workflow supplies inert placeholder values because the application's shared configuration schema requires them.
-
-LightRAG is disabled for this scenario. The task uses web search and fetch only. Both revisions use the same model, provider endpoint, API keys, database server, prompt, and execution limits. Each revision gets a separate synthetic user ID.
+Do not use the production database. Each of the four runs uses a distinct synthetic benchmark user ID. The workflow supplies inert Telegram placeholders because the shared application configuration requires those fields. LightRAG is disabled because this scenario is web research.
 
 ## Run
 
-1. Open **Actions → V1 vs V2 Orchestra Benchmark**.
-2. Choose **Run workflow** on the default `main` branch (the workflow is exposed there and checks out the current `v2` source internally).
-3. Keep the same model selection for repeated comparisons.
-4. Start the run and inspect the individual V1 and V2 steps.
+1. Open **Actions → V2 Orchestra Reliability Benchmark** on the default `main` branch.
+2. Choose **Run workflow**.
+3. Keep the model and repository secrets unchanged across repeated benchmark batches.
+4. The workflow checks out the current `v2` branch once, records its exact commit, installs dependencies once, and runs four trials sequentially.
+
+The prompt, model, provider endpoint, tool limits, database, and source commit are identical across all four trials. Sequential execution avoids intentionally increasing provider concurrency. Provider-side load, web-search variation, and network conditions can still differ.
 
 ## Outputs
 
 On success, the workflow commits these files to `v2`:
 
-- `benchmarks/results/benchmark.md` — readable side-by-side report.
-- `benchmarks/results/benchmark.json` — combined machine-readable report.
-- `benchmarks/results/v1-run.json` — V1 raw progress trace and answer.
-- `benchmarks/results/v2-run.json` — V2 raw progress, structured Orchestra trace, and per-model-call telemetry.
+- `benchmarks/results/benchmark.md` — four-run summary, latency distribution, and task outcomes.
+- `benchmarks/results/benchmark.json` — machine-readable aggregate and all four run records.
+- `benchmarks/results/v2-run-1.json` through `v2-run-4.json` — raw per-run traces and answers.
 
-The raw traces are also uploaded as a GitHub Actions artifact, retained for 90 days. The V2 model-call trace records phase, reason, call number, step ID and turn index, requested tool-call count, elapsed time, provider token usage when returned, estimated prompt size, and context mode (bounded history, isolated step context, rolling step evidence, or full accumulated context). The comparison reports model-call count and median input/output/total tokens per call. V1 is marked as not instrumented rather than treating missing measurements as zero. The Markdown report leaves the seven 0–5 quality scores pending for human review; raw counts are not treated as quality scores. Use `benchmarks/quality-rubric.md` for the shared 35-point rubric. The current provisional V2 review is recorded in `benchmarks/results/quality-assessment-2026-11-07.md` (27/35; below the 32/35 gate).
+The raw traces are also uploaded as a GitHub Actions artifact retained for 90 days. Each trace includes the exact V2 SHA, model, duration, task outcome, progress events, Orchestra events, model-call telemetry, tool errors, retries, and answer.
 
 ## Interpretation
 
-This is a controlled single-run comparison, not a statistically conclusive performance claim. Model/provider nondeterminism, web search variability, rate limits, and network latency can affect results. Compare answer correctness and source quality alongside execution metrics. V2's structured event count is not directly comparable to V1's legacy progress-event count.
+Four runs are a small diagnostic sample, not a statistically conclusive performance claim. The report includes minimum, median, maximum, mean, standard deviation, and range for duration. Interpret these alongside task outcomes, tool errors, and the raw traces. A successful GitHub Actions workflow means the runner completed; it does not mean the research task was complete or factually correct.
 
-The V1 baseline is pinned to `4ba2b87084a4b003331e0f9c687bbf0822558edd`. The workflow records the exact V2 checkout SHA for each run.
+Use `benchmarks/quality-rubric.md` for the separate seven-dimension, 35-point human quality review. Do not infer quality from latency or execution counts alone.
