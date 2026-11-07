@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildStepContext } from "../src/agent/stepContext.js";
+import { buildStepContext, compactStepConversation } from "../src/agent/stepContext.js";
 import type { StepExecutionOutcome } from "../src/agent/stepContext.js";
 import type { ExecutionPlanStep } from "../src/agent/smartPlanner.js";
+import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 
 const plan: ExecutionPlanStep[] = [
   { id: "locate", task: "Find official docs", depends_on: [], parallel_safe: true },
@@ -48,4 +49,32 @@ test("prerequisite evidence package is bounded", () => {
   const shared = context.find((message) => message.role === "system" && String(message.content).includes("Relevant prerequisite results"));
   assert.ok(shared);
   assert.ok(JSON.stringify(shared).length < 25_000);
+});
+
+
+test("rolling compaction bounds the next-turn prompt and preserves prior evidence", () => {
+  const stepStart = 2;
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: "Stable instructions" },
+    { role: "user", content: "Original request" },
+    { role: "system", content: "Current step instruction" },
+    { role: "assistant", content: "I found the official source." },
+    { role: "tool", tool_call_id: "tool-1", content: "A".repeat(12_000) }
+  ];
+  const first = compactStepConversation(messages, stepStart, { observations: [], assistantNotes: [] });
+  assert.equal(first.observations.length, 1);
+  assert.equal(first.observations[0]?.tool_call_id, "tool-1");
+  assert.equal(first.assistantNotes[0], "I found the official source.");
+  assert.equal(messages.length, 4);
+  assert.ok(JSON.stringify(messages).length < 5_000);
+  assert.match(JSON.stringify(messages), /Original request/);
+
+  messages.push(
+    { role: "assistant", content: "The second source confirms the detail." },
+    { role: "tool", tool_call_id: "tool-2", content: "Second source result" }
+  );
+  const second = compactStepConversation(messages, stepStart, first);
+  assert.deepEqual(second.observations.map((item) => item.tool_call_id), ["tool-1", "tool-2"]);
+  assert.ok(second.assistantNotes.includes("I found the official source."));
+  assert.ok(second.assistantNotes.includes("The second source confirms the detail."));
 });
