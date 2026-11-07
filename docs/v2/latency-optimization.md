@@ -36,16 +36,19 @@ The telemetry callback is optional and appended to the existing runAgent argumen
 
 The benchmark runner stores detailed V2 records in model_calls and adds model-call count and median token metrics to its JSON output. V1 does not expose the new callback and is explicitly reported as not instrumented, not as zero model calls.
 
-## Initial code-inspection finding
+## Initial code-inspection finding (pre-optimization baseline)
 
-At this instrumentation baseline:
-- Each planned step is invoked with a copy of the currently accumulated message list, then appends its own step instruction. Its telemetry mode is therefore step_context_full, not a delta.
-- Final synthesis receives the accumulated messages plus a serialized summary of step outcomes. This is recorded as full_accumulated.
-- The planner receives a bounded slice of recent user/assistant history and the current request, recorded as bounded_history.
+Before context isolation, each planned step received a copy of the growing shared conversation. Every model turn within a step also replayed the full local tool-call transcript. Final synthesis received the accumulated conversation plus step outcomes. This produced the measured high-token pattern in the instrumented benchmark.
 
-These are observations about current context construction, not yet proof that context duplication is the dominant latency cause. Use measured token counts and per-call durations to establish that before changing the context strategy.
+## Step context isolation
 
-## Step context isolation\n\nEach step starts from the immutable request context, not the transcript accumulated by earlier steps. It receives only bounded summaries and evidence from its transitive prerequisites. Independent steps do not see unrelated step results. The prerequisite package is capped at 24,000 characters. Within a step, completed tool-call turns are compacted into a rolling evidence package before the next model call; the next turn retains at most four observations (1,800 characters each) and two assistant notes (1,000 characters each), while the structured outcome retains the broader bounded evidence set. Raw tool-call transcripts are not replayed.\n\nCompleted step transcripts are not appended to shared request context. Final synthesis receives the original request plus structured step outcomes, not the raw tool transcript; telemetry labels this as `evidence_package`.\n\n## Acceptance criteria
+Each step starts from the immutable request context, not the transcript accumulated by earlier steps. It receives only bounded summaries and evidence from its transitive prerequisites. Independent steps do not see unrelated step results. The prerequisite package is capped at 24,000 characters.
+
+Within a step, completed tool-call turns are compacted into a rolling evidence package before the next model call. The next turn retains at most four observations (1,800 characters each) and two assistant notes (1,000 characters each), while the structured outcome retains the broader bounded evidence set. Raw tool-call transcripts are not replayed.
+
+Completed step transcripts are not appended to shared request context. Final synthesis receives the original request plus structured step outcomes, not the raw tool transcript; telemetry labels this as `evidence_package`.
+
+## Acceptance criteria
 
 - End-to-end median runtime: target at or below 130 seconds, and faster than V1.
 - Research/report quality: at least 32/35 on the same seven human-scored criteria.
