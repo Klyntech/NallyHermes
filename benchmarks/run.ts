@@ -69,9 +69,13 @@ const stepStarts = progress.filter((event) => event.type === "plan_step_start");
 const stepCompletes = progress.filter((event) => event.type === "plan_step_complete");
 const stepFailures = progress.filter((event) => event.type === "plan_step_failed");
 const sortedInputTokens = modelCalls.map((call) => call.input_tokens ?? call.estimated_input_tokens).sort((a, b) => a - b);
-const medianInputTokens = sortedInputTokens.length
-  ? sortedInputTokens[Math.floor((sortedInputTokens.length - 1) / 2)]
-  : null;
+const median = (values) => {
+  const sorted = values.filter((value) => typeof value === "number").sort((a, b) => a - b);
+  return sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : null;
+};
+const medianInputTokens = median(modelCalls.map((call) => call.input_tokens ?? call.estimated_input_tokens));
+const medianOutputTokens = median(modelCalls.map((call) => call.output_tokens));
+const medianTotalTokens = median(modelCalls.map((call) => call.total_tokens));
 
 const result = {
   schema_version: 1,
@@ -89,6 +93,8 @@ const result = {
     structured_event_count: structured.length,
     model_call_count: modelCalls.length,
     median_input_tokens_per_call: medianInputTokens,
+    median_output_tokens_per_call: medianOutputTokens,
+    median_total_tokens_per_call: medianTotalTokens,
     model_call_errors: modelCalls.filter((call) => call.status === "error").length,
     tool_call_starts: toolStarts.length,
     tool_errors: toolErrors.length,
