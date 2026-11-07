@@ -124,6 +124,7 @@ jobs:
             ['Progress events', v1.metrics.progress_event_count, v2.metrics.progress_event_count],
             ['Tool calls started', v1.metrics.tool_call_starts, v2.metrics.tool_call_starts],
             ['Tool errors', v1.metrics.tool_errors, v2.metrics.tool_errors],
+            ['Cached read-only tool results', v1.metrics.cached_tool_results ?? 'not reported', v2.metrics.cached_tool_results ?? 'not reported'],
             ['Retry events', v1.metrics.retry_events, v2.metrics.retry_events],
             ['Plan steps started', v1.metrics.planned_step_starts, v2.metrics.planned_step_starts],
             ['Plan steps completed', v1.metrics.completed_step_events, v2.metrics.completed_step_events],
