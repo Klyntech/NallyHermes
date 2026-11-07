@@ -4,6 +4,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool } from "./tools/extended.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
+import type { ExecutionBudget } from "./executionBudget.js";
 
 export interface ToolCallInput {
   id: string;
@@ -114,10 +115,14 @@ function isTransientToolFailure(result: Extract<ChatCompletionMessageParam, { ro
 export async function executeToolCall(
   call: ToolCallInput,
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  budget?: ExecutionBudget
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
   const retryable = isReadOnlyCall(call);
   const maxAttempts = retryable ? config.AGENT_MAX_READ_RETRIES + 1 : 1;
+  if (budget && !budget.reserveToolCall()) {
+    return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: "The request tool-call budget was exhausted; no further tool execution was started." }) };
+  }
   let result = await executeToolCallOnce(call, telegramId, onProgress);
   for (let attempt = 2; attempt <= maxAttempts && isTransientToolFailure(result); attempt++) {
     await onProgress?.({
@@ -128,6 +133,7 @@ export async function executeToolCall(
     });
     const delayMs = Math.min(1_000 * 2 ** (attempt - 2), 4_000);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (budget && !budget.reserveToolCall()) break;
     result = await executeToolCallOnce(call, telegramId, onProgress);
   }
   return result;
@@ -160,7 +166,8 @@ const MAX_PARALLEL_TOOL_CALLS = config.AGENT_MAX_PARALLEL_TOOL_CALLS;
 export async function executeToolCalls(
   calls: ToolCallInput[],
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  budget?: ExecutionBudget
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
   let progressQueue: Promise<void> = Promise.resolve();
   const reportProgress = onProgress
@@ -176,7 +183,7 @@ export async function executeToolCalls(
   let index = 0;
   while (index < calls.length) {
     if (!isReadOnlyCall(calls[index]!)) {
-      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress));
+      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress, budget));
       index++;
       continue;
     }
@@ -186,7 +193,7 @@ export async function executeToolCalls(
       batch.push(calls[index]!);
       index++;
     }
-    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress))));
+    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress, budget))));
   }
   return results;
 }
