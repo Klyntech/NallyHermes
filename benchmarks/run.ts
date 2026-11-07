@@ -71,6 +71,7 @@ const stepFailures = progress.filter((event) => event.type === "plan_step_failed
 const stepPartials = progress.filter((event) => event.type === "plan_step_partial");
 const stepBlocked = progress.filter((event) => event.type === "plan_step_blocked");
 const taskStatusEvent = [...progress].reverse().find((event) => event.type === "task_status");
+const cachedToolResults = progress.filter((event) => event.type === "evidence_reused").reduce((sum, event) => sum + event.count, 0);
 const modelTelemetrySupported = runAgent.length >= 7;
 const median = (values) => {
   const sorted = values.filter((value) => typeof value === "number").sort((a, b) => a - b);
@@ -109,6 +110,7 @@ const result = {
     model_tool_calls_requested: modelTelemetrySupported ? modelCalls.reduce((sum, call) => sum + (call.tool_calls_requested ?? 0), 0) : null,
     tool_call_starts: toolStarts.length,
     tool_errors: toolErrors.length,
+    cached_tool_results: cachedToolResults,
     retry_events: retries.length,
     planned_step_starts: stepStarts.length,
     completed_step_events: stepCompletes.length,
