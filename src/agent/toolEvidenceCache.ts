@@ -98,7 +98,7 @@ function reusedResult(call: ToolCallInput, source: ToolMessage): ToolMessage {
 }
 
 /**
- * Request-scoped read cache. Only successful read-only calls are retained.
+ * Logical-step-scoped read cache. Only successful read-only calls are retained.
  * Similar web/memory queries use conservative token containment; writes and
  * mutations are never cached or deduplicated.
  */
