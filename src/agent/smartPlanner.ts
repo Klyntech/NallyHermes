@@ -144,7 +144,8 @@ export async function createExecutionPlan(
 
     // The shared deterministic graph validator rejects unknown dependencies,
     // self-links, duplicate edges, and cycles before execution can begin.
-    const normalizedSteps = normalizeResearchDependencies(steps);\n    const ordered = orderPlanSteps(normalizedSteps);
+    const normalizedSteps = normalizeResearchDependencies(steps);
+    const ordered = orderPlanSteps(normalizedSteps);
     if (!ordered) return null;
 
     return {
