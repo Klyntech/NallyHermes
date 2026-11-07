@@ -10,7 +10,7 @@ export type ToolProgressReporter = (event: ToolProgressEvent) => Promise<void> |
 export type ProgressEvent =
   | { type: "thinking"; phase: "model" | "between_tools" }
   | { type: "planning" }
-  | { type: "plan_created"; stepCount: number }
+  | { type: "plan_created"; stepCount: number; steps: Array<{ id: string; task: string; depends_on: string[]; context_from: string[]; parallel_safe: boolean }> }
   | { type: "plan_step_start"; index: number; total: number; task: string }
   | { type: "plan_step_complete"; index: number; total: number }
   | { type: "plan_step_failed"; index: number; total: number }
