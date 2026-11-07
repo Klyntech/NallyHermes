@@ -13,7 +13,7 @@ Phase 1.2 reduces repeated research and makes execution outcomes measurable with
 
 ## Evidence reuse
 
-`ToolEvidenceCache` is request-scoped. It stores only successful read-only results:
+`ToolEvidenceCache` is scoped to one logical plan step and reused by that step's recovery attempts. Parallel independent steps keep separate caches. It stores only successful read-only results:
 - Web search: conservative token-containment matching, with the result-count setting held constant.
 - Fetch: normalized exact URL matching.
 - Memory recall: conservative query matching.
