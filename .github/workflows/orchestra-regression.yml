@@ -89,7 +89,7 @@ jobs:
               executor = Path(root) / "src/agent/executor.ts"
               source = executor.read_text()
               old = 'await onProgress?.({ type: "tool_error", tool: call.function.name, toolCallId: call.id });'
-              new = 'await onProgress?.({ type: "tool_error", tool: call.function.name, toolCallId: call.id, error: reason });'
+              new = 'await onProgress?.({ type: "tool_error", tool: call.function.name, toolCallId: call.id, error: reason.replace(/https?:\\/\\/\\S+/g, "[url]") });'
               if old in source:
                   source = source.replace(old, new, 1)
               executor.write_text(source)
