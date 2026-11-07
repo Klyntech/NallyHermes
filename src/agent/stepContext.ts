@@ -5,7 +5,7 @@ import { collectStepEvidence, type StepEvidence } from "./executionState.js";
 export interface StepExecutionOutcome {
   id: string;
   task: string;
-  status: "completed" | "partial" | "failed";
+  status: "completed" | "partial" | "failed" | "blocked";
   toolRounds: number;
   answer: string;
   evidence: StepEvidence;
@@ -86,8 +86,10 @@ export function buildStepContext(
     role: "system",
     content: [
       `Execute this plan step now: ${step.task}`,
+      "Completion criteria (each must be satisfied or explicitly marked unresolved):",
+      ...(step.completion_criteria ?? [step.task]).map((criterion, index) => `${index + 1}. ${criterion}`),
       "Use the available tools when needed. Do not attempt later steps.",
-      "When this step is complete, give a concise factual result for this step only.",
+      "When this step is complete, give a concise factual result for this step only and explicitly state whether each completion criterion was met.",
       "Assess whether the evidence already collected is sufficient for this step. Stop as soon as it is; do not keep researching for completeness.",
       "Reuse prerequisite results supplied in the shared state. Seek more information only to resolve a specific necessary gap.",
       "If a tool fails, inspect the error and adapt the method instead of repeating the same call blindly. Never repeat a mutation as a retry.",
