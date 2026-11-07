@@ -54,7 +54,7 @@ test("assigns unique sequential call numbers when calls overlap", async () => {
     phase: "step_execution",
     reason: "step_" + index,
     model: "test-model",
-    contextMode: "step_context_full",
+    contextMode: "step_context_delta",
     messages: [{ role: "user", content: String(index) }]
   }, async () => ({ usage: null }))));
 
