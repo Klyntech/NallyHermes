@@ -538,7 +538,7 @@ export async function runAgent(
   let eventQueue: Promise<void> = Promise.resolve();
   const emitProgress = (event: ProgressEvent): Promise<void> => {
     eventQueue = eventQueue.then(async () => {
-      await emitProgress(event);
+      await onProgress?.(event);
       const envelope: OrchestraEvent = {
         requestId,
         sequence: ++sequence,
