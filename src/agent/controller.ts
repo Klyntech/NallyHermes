@@ -13,6 +13,7 @@ import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from 
 import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
 import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
 import { buildStepContext, compactStepConversation, mergeStepEvidence, type StepExecutionOutcome } from "./stepContext.js";
+import { ToolEvidenceCache } from "./toolEvidenceCache.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -40,13 +41,15 @@ async function runPlannedStep(
   budget: ExecutionBudget,
   signal?: AbortSignal,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  telemetry?: ModelCallTelemetry
+  telemetry?: ModelCallTelemetry,
+  evidenceCache: ToolEvidenceCache = new ToolEvidenceCache()
 ): Promise<StepOutcome> {
   const stepMessageStart = messages.length;
   // The caller supplies an isolated context: original request plus bounded
   // prerequisite results. Tool-call/response pairs stay local to this step.
 
   let toolRounds = 0;
+  let duplicateOnlyRounds = 0;
   let accumulatedEvidence: StepEvidence = { observations: [], assistantNotes: [] };
   let failureReason = "The step stopped before the model produced a final result.";
   try {
@@ -123,13 +126,24 @@ async function runPlannedStep(
       }
 
       toolRounds++;
-      const results = await executeToolCalls(
+      const execution = await evidenceCache.execute(
         functionCalls as ToolCallInput[],
-        telegramId,
-        onProgress,
-        budget,
-        signal
+        (uniqueCalls) => executeToolCalls(uniqueCalls, telegramId, onProgress, budget, signal)
       );
+      const results = execution.results;
+      if (execution.reusedCount > 0 && execution.executedCount === 0) {
+        duplicateOnlyRounds++;
+        await onProgress?.({ type: "recovery_adjusting" });
+        messages.push({
+          role: "system",
+          content: "These read-only results were reused from earlier successful calls because the requested research substantially duplicates completed work. Use the returned evidence. Do not issue the same or a near-identical search again. If a genuinely different required fact is missing, state that exact gap before making a different call."
+        });
+        if (duplicateOnlyRounds >= 2) {
+          failureReason = "Stopped after repeated duplicate read-only requests without new evidence.";
+        }
+      } else {
+        duplicateOnlyRounds = 0;
+      }
       const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
       let hadToolErrors = false;
       for (const call of evaluation.calls) {
@@ -147,6 +161,7 @@ async function runPlannedStep(
           });
         }
       }
+      if (duplicateOnlyRounds >= 2) break;
       if (hadToolErrors) {
         await onProgress?.({ type: "recovery_adjusting" });
         messages.push({
@@ -264,6 +279,7 @@ async function runPlannedRequest(
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   telemetry?: ModelCallTelemetry
 ): Promise<string> {
+  const evidenceCache = new ToolEvidenceCache();
   const completed = new Set<string>();
   const outcomes: StepOutcome[] = [];
   const pending = new Set(steps.map((step) => step.id));
@@ -317,8 +333,9 @@ async function runPlannedRequest(
           "Use existing evidence first. Choose a materially different read-only approach only if a necessary gap remains.",
           "Do not repeat completed searches or fetches without a clear reason. Never perform mutations."
         ].join(" "),
-        depends_on: [],
-        parallel_safe: true
+        depends_on: [recoverable.id],
+        parallel_safe: true,
+        completion_criteria: recoverable.completion_criteria
       };
       const remainingRecoveryBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
       if (remainingRecoveryBudget <= 0) {
@@ -335,7 +352,8 @@ async function runPlannedRequest(
         budget,
         signal,
         onProgress,
-        telemetry
+        telemetry,
+        evidenceCache
       );
       totalToolRounds += recovered.toolRounds;
       if (recovered.status === "completed") {
@@ -408,7 +426,8 @@ async function runPlannedRequest(
         budget,
         signal,
         onProgress,
-        telemetry
+        telemetry,
+        evidenceCache
       )
     ));
 
@@ -423,6 +442,8 @@ async function runPlannedRequest(
       if (outcome.status === "completed") {
         completed.add(step.id);
         await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
+      } else if (outcome.status === "partial") {
+        await onProgress?.({ type: "plan_step_partial", index, total: steps.length });
       } else {
         await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
       }
@@ -435,7 +456,7 @@ async function runPlannedRequest(
       outcomes.push({
         id: step.id,
         task: step.task,
-        status: "failed",
+        status: blocked ? "blocked" : "failed",
         toolRounds: 0,
         answer: "This step was not executed.",
         evidence: { observations: [], assistantNotes: [] },
@@ -444,7 +465,7 @@ async function runPlannedRequest(
           : stopReason
       });
       await onProgress?.({
-        type: "plan_step_failed",
+        type: blocked ? "plan_step_blocked" : "plan_step_failed",
         index: steps.findIndex((item) => item.id === step.id) + 1,
         total: steps.length
       });
@@ -480,8 +501,9 @@ async function runPlannedRequest(
         "Use the existing evidence in the conversation. Choose a materially different read-only approach only if a necessary information gap remains.",
         "Do not repeat searches or fetches already completed unless there is a clear reason. If the evidence is already sufficient, summarize it without more tool calls."
       ].join(" "),
-      depends_on: [],
-      parallel_safe: true
+      depends_on: [step.id],
+      parallel_safe: true,
+      completion_criteria: step.completion_criteria
     };
     const recoveryBudget = Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingBudget));
     const recovered = await runPlannedStep(
@@ -494,7 +516,8 @@ async function runPlannedRequest(
       budget,
       signal,
       onProgress,
-      telemetry
+      telemetry,
+      evidenceCache
     );
     totalToolRounds += recovered.toolRounds;
     if (recovered.status === "completed") {
@@ -530,6 +553,22 @@ async function runPlannedRequest(
     }
   }
 
+  const completedSteps = outcomes.filter((item) => item.status === "completed").length;
+  const partialSteps = outcomes.filter((item) => item.status === "partial").length;
+  const failedSteps = outcomes.filter((item) => item.status === "failed").length;
+  const blockedSteps = outcomes.filter((item) => item.status === "blocked").length;
+  const taskStatus = completedSteps === steps.length
+    ? "complete"
+    : completedSteps + partialSteps > 0 ? "partial" : "failed";
+  await onProgress?.({
+    type: "task_status",
+    status: taskStatus,
+    completedSteps,
+    partialSteps,
+    failedSteps,
+    blockedSteps,
+    totalSteps: steps.length
+  });
   await onProgress?.({ type: "verifying" });
   return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget, signal, telemetry);
 }
