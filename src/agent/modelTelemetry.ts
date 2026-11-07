@@ -20,6 +20,8 @@ export interface ModelCallMetadata {
   model: string;
   contextMode: ModelContextMode;
   messages: readonly unknown[];
+  stepId?: string;
+  turnIndex?: number;
 }
 
 export interface ModelCallTrace {
@@ -27,6 +29,9 @@ export interface ModelCallTrace {
   phase: ModelCallPhase;
   reason: string;
   model: string;
+  step_id?: string;
+  turn_index?: number;
+  tool_calls_requested?: number;
   context_mode: ModelContextMode;
   started_at: string;
   duration_ms: number;
@@ -40,14 +45,17 @@ export interface ModelCallTrace {
   error?: string;
 }
 
-interface UsageLike {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
+interface ModelResponseLike {
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  choices?: Array<{ message?: { tool_calls?: unknown[] | null } }>;
 }
 
 export interface ModelCallTelemetry {
-  run<T extends { usage?: UsageLike | null }>(
+  run<T extends ModelResponseLike>(
     metadata: ModelCallMetadata,
     operation: () => Promise<T>
   ): Promise<T>;
@@ -85,6 +93,8 @@ export function createModelCallTelemetry(
         phase: metadata.phase,
         reason: metadata.reason,
         model: metadata.model,
+        ...(metadata.stepId ? { step_id: metadata.stepId } : {}),
+        ...(typeof metadata.turnIndex === "number" ? { turn_index: metadata.turnIndex } : {}),
         context_mode: metadata.contextMode,
         started_at: startedAt,
         message_count: metadata.messages.length,
@@ -99,6 +109,7 @@ export function createModelCallTelemetry(
           ...base,
           duration_ms: durationMs,
           status: "success",
+          ...(response.choices?.[0]?.message?.tool_calls ? { tool_calls_requested: response.choices[0].message.tool_calls.length } : {}),
           ...(typeof response.usage?.prompt_tokens === "number" ? { input_tokens: response.usage.prompt_tokens } : {}),
           ...(typeof response.usage?.completion_tokens === "number" ? { output_tokens: response.usage.completion_tokens } : {}),
           ...(typeof response.usage?.total_tokens === "number" ? { total_tokens: response.usage.total_tokens } : {})
