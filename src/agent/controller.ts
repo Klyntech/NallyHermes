@@ -231,7 +231,7 @@ async function synthesizeReport(
     return fallbackReport(outcomes, totalSteps, reason + " (final synthesis model-turn budget exhausted)");
   }
   try {
-    const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS };
+    const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS, signal };
     const final = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages: reportMessages,
@@ -470,7 +470,7 @@ async function runPlannedRequest(
   // One bounded replanning pass for remaining failed read-only steps.
   // Prerequisites recovered above have already reopened dependency scheduling.
   for (const step of steps) {
-    if (recoveryAttempts >= 2 || Date.now() >= deadline) break;
+    if (signal?.aborted || recoveryAttempts >= 2 || Date.now() >= deadline) break;
     if (!step.parallel_safe || recoveryAttempted.has(step.id)) continue;
     const outcomeIndex = outcomes.findIndex((item) => item.id === step.id);
     const previous = outcomes[outcomeIndex];
