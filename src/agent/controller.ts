@@ -92,7 +92,7 @@ async function runPlannedStep(
             phase: step.id.startsWith("recovery_") ? "recovery" : "step_execution",
             reason: (step.id.startsWith("recovery_") ? "recover_step:" : "execute_step:") + step.id,
             model: config.NVIDIA_NIM_MODEL,
-            contextMode: "step_context",
+            contextMode: "step_context_full",
             messages
           }, request)
         : await request();
