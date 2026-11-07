@@ -480,7 +480,7 @@ async function runPlannedRequest(
     if (!step.parallel_safe || recoveryAttempted.has(step.id)) continue;
     const outcomeIndex = outcomes.findIndex((item) => item.id === step.id);
     const previous = outcomes[outcomeIndex];
-    if (!previous || previous.status === "completed") continue;
+    if (!previous || previous.status === "completed" || previous.status === "blocked") continue;
     const remainingBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
     if (remainingBudget <= 0) break;
 
