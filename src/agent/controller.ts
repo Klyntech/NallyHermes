@@ -11,6 +11,7 @@ import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
+import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -44,7 +45,8 @@ async function runPlannedStep(
   deadline: number,
   budget: ExecutionBudget,
   signal?: AbortSignal,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  telemetry?: ModelCallTelemetry
 ): Promise<StepOutcome> {
   const stepMessageStart = messages.length;
   messages.push({
@@ -78,13 +80,22 @@ async function runPlannedStep(
         break;
       }
       await onProgress?.({ type: "thinking", phase: "model" });
-      const response = await llm.chat.completions.create({
+      const request = () => llm.chat.completions.create({
         model: config.NVIDIA_NIM_MODEL,
         messages,
         tools: agentTools,
         tool_choice: "auto",
         temperature: 0.4
       }, { timeout: remainingTime(deadline), signal });
+      const response = telemetry
+        ? await telemetry.run({
+            phase: step.id.startsWith("recovery_") ? "recovery" : "step_execution",
+            reason: (step.id.startsWith("recovery_") ? "recover_step:" : "execute_step:") + step.id,
+            model: config.NVIDIA_NIM_MODEL,
+            contextMode: "step_context",
+            messages
+          }, request)
+        : await request();
       const message = response.choices[0]?.message;
       if (!message) {
         failureReason = "The model returned an empty response.";
@@ -197,7 +208,8 @@ async function synthesizeReport(
   reason: string,
   deadline?: number,
   budget?: ExecutionBudget,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  telemetry?: ModelCallTelemetry
 ): Promise<string> {
   const reportData = {
     execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
@@ -232,11 +244,20 @@ async function synthesizeReport(
   }
   try {
     const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS, signal };
-    const final = await llm.chat.completions.create({
+    const request = () => llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages: reportMessages,
       temperature: 0.4
     }, options);
+    const final = telemetry
+      ? await telemetry.run({
+          phase: "synthesis",
+          reason: "synthesize_step_outcomes_and_verify_report_requirements",
+          model: config.NVIDIA_NIM_MODEL,
+          contextMode: "full_accumulated",
+          messages: reportMessages
+        }, request)
+      : await request();
     const answer = final.choices[0]?.message?.content;
     if (answer?.trim()) return finalResponse(answer);
   } catch (error) {
@@ -251,7 +272,8 @@ async function runPlannedRequest(
   telegramId: string,
   budget: ExecutionBudget,
   signal?: AbortSignal,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  telemetry?: ModelCallTelemetry
 ): Promise<string> {
   const completed = new Set<string>();
   const outcomes: StepOutcome[] = [];
@@ -323,7 +345,8 @@ async function runPlannedRequest(
         deadline,
         budget,
         signal,
-        onProgress
+        onProgress,
+        telemetry
       );
       totalToolRounds += recovered.toolRounds;
       if (recovered.status === "completed") {
@@ -405,7 +428,8 @@ async function runPlannedRequest(
         deadline,
         budget,
         signal,
-        onProgress
+        onProgress,
+        telemetry
       )
     ));
 
@@ -509,7 +533,8 @@ async function runPlannedRequest(
       deadline,
       budget,
       signal,
-      onProgress
+      onProgress,
+      telemetry
     );
     totalToolRounds += recovered.toolRounds;
     if (recovered.status === "completed") {
@@ -546,7 +571,7 @@ async function runPlannedRequest(
   }
 
   await onProgress?.({ type: "verifying" });
-  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget, signal);
+  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget, signal, telemetry);
 }
 
 /**
@@ -559,8 +584,10 @@ export async function runAgent(
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   onEvent?: (event: OrchestraEvent) => Promise<void> | void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onTelemetry?: (trace: ModelCallTrace) => Promise<void> | void
 ): Promise<string> {
+  const telemetry = createModelCallTelemetry(onTelemetry);
   const emitProgress = createEventPublisher({
     requestId: randomUUID(),
     onProgress,
@@ -581,14 +608,14 @@ export async function runAgent(
   try {
     if (signal?.aborted) throw new Error("The request was cancelled before planning.");
     if (!budget.reserveModelTurn()) throw new Error("The request model-turn budget was exhausted before planning.");
-    plan = await createExecutionPlan(llm, history, userMessage);
+    plan = await createExecutionPlan(llm, history, userMessage, telemetry);
   } catch (error) {
     console.warn("Smart planning unavailable; using direct execution:", error);
   }
 
   if (plan) {
     await emitProgress({ type: "plan_created", stepCount: plan.steps.length });
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, budget, signal, emitProgress);
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, budget, signal, emitProgress, telemetry);
     await emitProgress({ type: signal?.aborted ? "request_cancelled" : "response_ready" });
     return answer;
   }
@@ -606,13 +633,20 @@ export async function runAgent(
     await emitProgress({ type: "thinking", phase: "model" });
     let response;
     try {
-      response = await llm.chat.completions.create({
+      const request = () => llm.chat.completions.create({
         model: config.NVIDIA_NIM_MODEL,
         messages,
         tools: agentTools,
         tool_choice: "auto",
         temperature: 0.4
       }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
+      response = await telemetry.run({
+        phase: "direct_execution",
+        reason: "direct_agent_turn:" + round,
+        model: config.NVIDIA_NIM_MODEL,
+        contextMode: "full_accumulated",
+        messages
+      }, request);
     } catch (error) {
       if (signal?.aborted) {
         stopReason = "The request was cancelled while waiting for the model.";
@@ -680,7 +714,7 @@ export async function runAgent(
   }
 
   await emitProgress({ type: "verifying" });
-  const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, budget, signal);
+  const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, budget, signal, telemetry);
   await emitProgress({ type: signal?.aborted ? "request_cancelled" : "response_ready" });
   return answer;
 }
