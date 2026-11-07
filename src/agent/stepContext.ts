@@ -32,7 +32,7 @@ export function buildStepContext(
       for (const parent of dependency.context_from ?? []) visit(parent);
     }
   };
-  for (const dependency of step.depends_on) visit(dependency);
+  for (const dependency of [...step.depends_on, ...(step.context_from ?? [])]) visit(dependency);
 
   const relevant = plan
     .filter((item) => ancestors.has(item.id))
