@@ -36,3 +36,10 @@ The synthesis input is now a compact JSON evidence contract, not the entire mode
 ## Validation
 
 Unit tests cover claim mapping, provenance/URL retention, transcript exclusion, bounded package behavior, and deterministic partial disclosure. CI is the authoritative typecheck/test/build gate.
+
+
+## Phase 1.4 — resilient mission execution
+
+Plan edges now distinguish hard prerequisites (`depends_on`) from contextual evidence links (`context_from`). A hard prerequisite must complete successfully before its dependent step can run. A context source only needs to settle; its completed, partial, failed, or blocked outcome is then supplied as bounded context, and the consumer can continue without treating that source as successful. The planner is instructed to avoid artificial dependency chains and to keep independent research branches executable. Both edge types are validated for missing IDs, duplicates, self-links, and cycles. This preserves safety for genuinely required prerequisites while preventing a partial research result from suppressing unrelated work.
+
+Recovery remains bounded and read-only for planner-marked parallel-safe steps. A partial outcome is not silently promoted to completed; final task status remains partial until the required completion criteria are satisfied.
