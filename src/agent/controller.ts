@@ -664,6 +664,15 @@ export async function runAgent(
 
     const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
+      await emitProgress({
+        type: "task_status",
+        status: "complete",
+        completedSteps: 1,
+        partialSteps: 0,
+        failedSteps: 0,
+        blockedSteps: 0,
+        totalSteps: 1
+      });
       await emitProgress({ type: "response_ready" });
       return finalResponse(evaluation.answer);
     }
@@ -714,6 +723,16 @@ export async function runAgent(
     }
   }
 
+  const hasToolEvidence = messages.some((item) => item.role === "tool");
+  await emitProgress({
+    type: "task_status",
+    status: hasToolEvidence ? "partial" : "failed",
+    completedSteps: 0,
+    partialSteps: hasToolEvidence ? 1 : 0,
+    failedSteps: hasToolEvidence ? 0 : 1,
+    blockedSteps: 0,
+    totalSteps: 1
+  });
   await emitProgress({ type: "verifying" });
   const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, budget, signal, telemetry);
   await emitProgress({ type: signal?.aborted ? "request_cancelled" : "response_ready" });
