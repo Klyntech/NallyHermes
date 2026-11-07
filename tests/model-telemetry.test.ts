@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createModelCallTelemetry } from "../src/agent/modelTelemetry.js";
+import { createModelCallTelemetry, type ModelCallTrace } from "../src/agent/modelTelemetry.js";
 
 test("records model call phase, reason, context mode, duration, and token usage", async () => {
-  const traces: Array<Record<string, unknown>> = [];
+  const traces: ModelCallTrace[] = [];
   const telemetry = createModelCallTelemetry((trace) => { traces.push(trace); });
   const response = await telemetry.run({
     phase: "planning",
