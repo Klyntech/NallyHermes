@@ -33,6 +33,32 @@ export function orderPlanSteps(steps: readonly ExecutionPlanStep[]): ExecutionPl
   return ordered;
 }
 
+/**
+ * Select failed prerequisites that are ancestors of currently pending work.
+ * This prevents recovery attempts being spent on unrelated failed branches.
+ */
+export function getRecoverablePrerequisites(
+  steps: readonly ExecutionPlanStep[],
+  pendingIds: ReadonlySet<string>,
+  failedIds: ReadonlySet<string>
+): ExecutionPlanStep[] {
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const required = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): void => {
+    if (visited.has(id)) return;
+    visited.add(id);
+    const step = byId.get(id);
+    if (!step) return;
+    for (const dependency of step.depends_on) {
+      required.add(dependency);
+      visit(dependency);
+    }
+  };
+  for (const id of pendingIds) visit(id);
+  return steps.filter((step) => required.has(step.id) && failedIds.has(step.id));
+}
+
 /** Return pending steps whose prerequisites have all completed. */
 export function getReadyPlanSteps(
   steps: readonly ExecutionPlanStep[],
