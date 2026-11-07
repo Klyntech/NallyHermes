@@ -27,7 +27,10 @@ export function buildStepContext(
     if (ancestors.has(id)) return;
     ancestors.add(id);
     const dependency = byId.get(id);
-    if (dependency) for (const parent of dependency.depends_on) visit(parent);
+    if (dependency) {
+      for (const parent of dependency.depends_on) visit(parent);
+      for (const parent of dependency.context_from ?? []) visit(parent);
+    }
   };
   for (const dependency of step.depends_on) visit(dependency);
 
@@ -77,7 +80,7 @@ export function buildStepContext(
       content: [
         "Relevant prerequisite results for the current plan step are provided below.",
         "Treat these as existing evidence and reuse them. Do not repeat completed research unless a specific necessary gap remains.",
-        "Do not assume unrelated steps have run. Do not claim a prerequisite succeeded if its status is partial or failed.",
+        "Do not assume unrelated steps have run. Distinguish hard prerequisites from contextual evidence: a partial/failed context source may still contain useful observations, but never claim it succeeded.",
         JSON.stringify(sharedState)
       ].join("\n\n")
     });
