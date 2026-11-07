@@ -12,7 +12,7 @@ import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js"
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
 import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
-import { buildStepContext, type StepExecutionOutcome } from "./stepContext.js";
+import { buildStepContext, compactStepConversation, mergeStepEvidence, type StepExecutionOutcome } from "./stepContext.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -29,45 +29,6 @@ function remainingTime(deadline: number): number {
   return Math.max(1_000, deadline - Date.now());
 }
 
-
-function mergeStepEvidence(previous: StepEvidence, next: StepEvidence): StepEvidence {
-  const observations = new Map<string, StepEvidence["observations"][number]>();
-  for (const item of [...previous.observations, ...next.observations]) {
-    observations.set(item.tool_call_id, item);
-  }
-  return {
-    observations: [...observations.values()].slice(-8),
-    assistantNotes: [...previous.assistantNotes, ...next.assistantNotes].slice(-4)
-  };
-}
-
-/**
- * Collapse completed tool-call turns into a bounded evidence summary.
- * The next model call no longer needs the raw assistant tool-call transcript.
- */
-function compactStepConversation(
-  messages: ChatCompletionMessageParam[],
-  stepMessageStart: number,
-  previousEvidence: StepEvidence
-): StepEvidence {
-  const currentEvidence = collectStepEvidence(messages.slice(stepMessageStart));
-  const accumulated = mergeStepEvidence(previousEvidence, currentEvidence);
-  messages.splice(stepMessageStart);
-  messages.push({
-    role: "system",
-    content: [
-      "Bounded evidence collected so far in this step. Reuse it and do not repeat completed tool calls unless a specific necessary gap remains.",
-      JSON.stringify({
-        observations: accumulated.observations.slice(-4).map((item) => ({
-          tool_call_id: item.tool_call_id,
-          content: item.content.slice(0, 1_800)
-        })),
-        assistantNotes: accumulated.assistantNotes.slice(-2).map((note) => note.slice(0, 1_000))
-      })
-    ].join("\\n\\n")
-  });
-  return accumulated;
-}
 
 async function runPlannedStep(
   messages: ChatCompletionMessageParam[],
