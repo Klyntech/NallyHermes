@@ -116,8 +116,12 @@ export async function executeToolCall(
   call: ToolCallInput,
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  budget?: ExecutionBudget
+  budget?: ExecutionBudget,
+  signal?: AbortSignal
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
+  if (signal?.aborted) {
+    return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: "Request cancelled before tool execution." }) };
+  }
   const retryable = isReadOnlyCall(call);
   const maxAttempts = retryable ? config.AGENT_MAX_READ_RETRIES + 1 : 1;
   if (budget && !budget.reserveToolCall()) {
@@ -125,6 +129,9 @@ export async function executeToolCall(
   }
   let result = await executeToolCallOnce(call, telegramId, onProgress);
   for (let attempt = 2; attempt <= maxAttempts && isTransientToolFailure(result); attempt++) {
+    if (signal?.aborted) {
+      return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: "Request cancelled; transient retry skipped." }) };
+    }
     await onProgress?.({
       type: "recovery_retry",
       tool: call.function.name,
@@ -174,7 +181,8 @@ export async function executeToolCalls(
   calls: ToolCallInput[],
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  budget?: ExecutionBudget
+  budget?: ExecutionBudget,
+  signal?: AbortSignal
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
   let progressQueue: Promise<void> = Promise.resolve();
   const reportProgress = onProgress
@@ -190,7 +198,7 @@ export async function executeToolCalls(
   let index = 0;
   while (index < calls.length) {
     if (!isReadOnlyCall(calls[index]!)) {
-      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress, budget));
+      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress, budget, signal));
       index++;
       continue;
     }
@@ -200,7 +208,7 @@ export async function executeToolCalls(
       batch.push(calls[index]!);
       index++;
     }
-    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress, budget))));
+    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress, budget, signal))));
   }
   return results;
 }
