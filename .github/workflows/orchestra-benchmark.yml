@@ -114,11 +114,11 @@ jobs:
           const pct = (a, b) => a > 0 ? ((b - a) / a * 100).toFixed(1) + '%' : 'n/a';
           const metrics = [
             ['Duration (ms)', v1.duration_ms, v2.duration_ms],
-            ['Model calls', v1.metrics.model_call_count, v2.metrics.model_call_count],
+            ['Model calls', v1.metrics.model_telemetry_supported ? v1.metrics.model_call_count : 'not instrumented', v2.metrics.model_telemetry_supported ? v2.metrics.model_call_count : 'not instrumented'],
             ['Median input tokens / call', v1.metrics.median_input_tokens_per_call ?? 'n/a', v2.metrics.median_input_tokens_per_call ?? 'n/a'],
             ['Median output tokens / call', v1.metrics.median_output_tokens_per_call ?? 'n/a', v2.metrics.median_output_tokens_per_call ?? 'n/a'],
             ['Median total tokens / call', v1.metrics.median_total_tokens_per_call ?? 'n/a', v2.metrics.median_total_tokens_per_call ?? 'n/a'],
-            ['Model-call errors', v1.metrics.model_call_errors ?? 'not instrumented', v2.metrics.model_call_errors ?? 'not instrumented'],
+            ['Model-call errors', v1.metrics.model_telemetry_supported ? v1.metrics.model_call_errors : 'not instrumented', v2.metrics.model_telemetry_supported ? v2.metrics.model_call_errors : 'not instrumented'],
             ['Progress events', v1.metrics.progress_event_count, v2.metrics.progress_event_count],
             ['Tool calls started', v1.metrics.tool_call_starts, v2.metrics.tool_call_starts],
             ['Tool errors', v1.metrics.tool_errors, v2.metrics.tool_errors],
