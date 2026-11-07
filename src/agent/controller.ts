@@ -12,21 +12,14 @@ import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js"
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
 import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
+import { buildStepContext, type StepExecutionOutcome } from "./stepContext.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
   baseURL: config.NVIDIA_NIM_BASE_URL
 });
 
-type StepOutcome = {
-  id: string;
-  task: string;
-  status: "completed" | "partial" | "failed";
-  toolRounds: number;
-  answer: string;
-  evidence: StepEvidence;
-  failureReason?: string;
-};
+type StepOutcome = StepExecutionOutcome;
 
 function isFunctionCall(call: ModelToolCall): call is Extract<ModelToolCall, { type: "function" }> {
   return call.type === "function";
@@ -49,19 +42,8 @@ async function runPlannedStep(
   telemetry?: ModelCallTelemetry
 ): Promise<StepOutcome> {
   const stepMessageStart = messages.length;
-  messages.push({
-    role: "system",
-    content: [
-      `Execute this plan step now: ${step.task}`,
-      "Use the available tools when needed. Do not attempt later steps.",
-      "When this step is complete, give a concise factual result for this step only.",
-      "Assess whether the evidence already collected is sufficient for this step. Stop as soon as it is; do not keep researching for completeness.",
-      "Reuse earlier tool results. Seek more information only to resolve a specific necessary gap.",
-      "If a tool fails, inspect the error and adapt the method instead of repeating the same call blindly. Never repeat a mutation as a retry.",
-      "Verify important findings using the available evidence, but do not perform redundant checks.",
-      "If blocked, explain what is missing instead of claiming success."
-    ].join("\n")
-  });
+  // The caller supplies an isolated context: original request plus bounded
+  // prerequisite results. Tool-call/response pairs stay local to this step.
 
   let toolRounds = 0;
   let failureReason = "The step stopped before the model produced a final result.";
@@ -92,7 +74,7 @@ async function runPlannedStep(
             phase: step.id.startsWith("recovery_") ? "recovery" : "step_execution",
             reason: (step.id.startsWith("recovery_") ? "recover_step:" : "execute_step:") + step.id,
             model: config.NVIDIA_NIM_MODEL,
-            contextMode: "step_context_full",
+            contextMode: "step_context_delta",
             messages
           }, request)
         : await request();
@@ -254,7 +236,7 @@ async function synthesizeReport(
           phase: "synthesis",
           reason: "synthesize_step_outcomes_and_verify_report_requirements",
           model: config.NVIDIA_NIM_MODEL,
-          contextMode: "full_accumulated",
+          contextMode: "evidence_package",
           messages: reportMessages
         }, request)
       : await request();
@@ -337,7 +319,7 @@ async function runPlannedRequest(
         break;
       }
       const recovered = await runPlannedStep(
-        [...messages],
+        buildStepContext(messages, recoveryStep, steps, outcomes),
         recoveryStep,
         telegramId,
         Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingRecoveryBudget)),
@@ -360,16 +342,6 @@ async function runPlannedRequest(
           failureReason: undefined
         };
         completed.add(recoverable.id);
-        messages.push({
-          role: "assistant",
-          content: JSON.stringify({
-            plan_step: recoverable.id,
-            status: "completed",
-            answer: recovered.answer,
-            evidence: recovered.evidence,
-            recovered: true
-          })
-        });
         await onProgress?.({
           type: "plan_step_complete",
           index: steps.findIndex((item) => item.id === recoverable.id) + 1,
@@ -420,7 +392,7 @@ async function runPlannedRequest(
 
     const batchOutcomes = await Promise.all(batch.map((step) =>
       runPlannedStep(
-        [...messages],
+        buildStepContext(messages, step, steps, outcomes),
         step,
         telegramId,
         perStepBudget,
@@ -443,27 +415,8 @@ async function runPlannedRequest(
 
       if (outcome.status === "completed") {
         completed.add(step.id);
-        messages.push({
-          role: "assistant",
-          content: JSON.stringify({
-            plan_step: step.id,
-            status: outcome.status,
-            answer: outcome.answer,
-            evidence: outcome.evidence
-          })
-        });
         await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
       } else {
-        messages.push({
-          role: "assistant",
-          content: JSON.stringify({
-            plan_step: step.id,
-            status: outcome.status,
-            answer: outcome.answer,
-            evidence: outcome.evidence,
-            limitation: outcome.failureReason ?? "Not completed"
-          })
-        });
         await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
       }
     }
@@ -525,7 +478,7 @@ async function runPlannedRequest(
     };
     const recoveryBudget = Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingBudget));
     const recovered = await runPlannedStep(
-      [...messages],
+      buildStepContext(messages, recoveryStep, steps, outcomes),
       recoveryStep,
       telegramId,
       recoveryBudget,
