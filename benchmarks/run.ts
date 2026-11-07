@@ -99,6 +99,8 @@ const result = {
     median_output_tokens_per_call: medianOutputTokens,
     median_total_tokens_per_call: medianTotalTokens,
     model_call_errors: modelTelemetrySupported ? modelCalls.filter((call) => call.status === "error").length : null,
+    model_turns_with_tool_calls: modelTelemetrySupported ? modelCalls.filter((call) => (call.tool_calls_requested ?? 0) > 0).length : null,
+    model_tool_calls_requested: modelTelemetrySupported ? modelCalls.reduce((sum, call) => sum + (call.tool_calls_requested ?? 0), 0) : null,
     tool_call_starts: toolStarts.length,
     tool_errors: toolErrors.length,
     retry_events: retries.length,
