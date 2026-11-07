@@ -79,6 +79,8 @@ async function runPlannedStep(
             phase: step.id.startsWith("recovery_") ? "recovery" : "step_execution",
             reason: (step.id.startsWith("recovery_") ? "recover_step:" : "execute_step:") + step.id,
             model: config.NVIDIA_NIM_MODEL,
+            stepId: step.id,
+            turnIndex: round,
             contextMode: "step_context_delta",
             messages
           }, request)
@@ -602,6 +604,7 @@ export async function runAgent(
         phase: "direct_execution",
         reason: "direct_agent_turn:" + round,
         model: config.NVIDIA_NIM_MODEL,
+        turnIndex: round,
         contextMode: "full_accumulated",
         messages
       }, request);
