@@ -131,6 +131,7 @@ async function runPlannedStep(
         (uniqueCalls) => executeToolCalls(uniqueCalls, telegramId, onProgress, budget, signal)
       );
       const results = execution.results;
+      if (execution.reusedCount > 0) await onProgress?.({ type: "evidence_reused", count: execution.reusedCount });
       if (execution.reusedCount > 0 && execution.executedCount === 0) {
         duplicateOnlyRounds++;
         await onProgress?.({ type: "recovery_adjusting" });
