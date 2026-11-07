@@ -10,7 +10,7 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
-import { collectStepEvidence, type StepEvidence } from "./executionState.js";
+import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -260,11 +260,13 @@ async function runPlannedRequest(
     if (!ready.length) {
       // A failed read-only prerequisite may be recoverable. Recover it before
       // declaring its dependents blocked, then recompute readiness on the next pass.
-      const recoverable = steps.find((step) => {
-        if (!step.parallel_safe || recoveryAttempts >= 2) return false;
-        const outcome = outcomes.find((item) => item.id === step.id);
-        return Boolean(outcome && outcome.status !== "completed" && !recoveryAttempted.has(step.id));
-      });
+      const failedIds = new Set(outcomes
+        .filter((item) => item.status !== "completed" && !recoveryAttempted.has(item.id))
+        .map((item) => item.id));
+      const recoverable = recoveryAttempts < 2
+        ? getRecoverablePrerequisites(steps, pending, failedIds)
+            .find((step) => step.parallel_safe)
+        : undefined;
       if (!recoverable || Date.now() >= deadline) {
         stopReason = "Some steps could not run because one or more prerequisite steps did not complete.";
         break;
