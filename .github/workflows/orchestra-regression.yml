@@ -1,0 +1,218 @@
+name: Orchestra Regression Comparison
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Keep the same model across regression comparisons"
+        required: true
+        default: "nvidia/nemotron-3.5-super-vl-120b-a12b"
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: orchestra-regression-comparison
+  cancel-in-progress: false
+jobs:
+  compare:
+    name: Baseline vs normalized planner (8 alternating runs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NVIDIA_NIM_API_KEY: \${{ secrets.NVIDIA_NIM_API_KEY }}
+      TAVILY_API_KEY: \${{ secrets.TAVILY_API_KEY }}
+      DATABASE_URL: \${{ secrets.BENCHMARK_DATABASE_URL }}
+      NVIDIA_NIM_MODEL: \${{ inputs.model }}
+      NVIDIA_NIM_BASE_URL: https://integrate.api.nvidia.com/v1
+      TELEGRAM_BOT_TOKEN: "benchmark-placeholder-not-used"
+      WEBHOOK_URL: https://example.invalid/telegram-webhook
+      WEBHOOK_SECRET: "github-actions-benchmark-placeholder-secret-0001"
+      DEFAULT_TIMEZONE: Africa/Lagos
+      LIGHTRAG_ENABLED: "false"
+      NODE_ENV: test
+      AGENT_MAX_MODEL_ROUNDS: "12"
+      AGENT_MAX_PLAN_MODEL_TURNS: "100"
+      AGENT_MAX_TOOL_CALLS: "120"
+      AGENT_MAX_PLAN_TOOL_ROUNDS: "60"
+      AGENT_MAX_STEP_TOOL_ROUNDS: "15"
+      AGENT_MAX_PARALLEL_PLAN_STEPS: "5"
+      AGENT_MAX_PARALLEL_TOOL_CALLS: "5"
+      AGENT_PLAN_TIMEOUT_MS: "480000"
+      AGENT_MODEL_TIMEOUT_MS: "120000"
+      AGENT_MAX_READ_RETRIES: "2"
+    steps:
+      - name: Check out baseline source
+        uses: actions/checkout@v4
+        with:
+          ref: afbb93f83c7b41a4c0f5000d3e50de6819a22f21
+          path: baseline
+      - name: Check out current source
+        uses: actions/checkout@v4
+        with:
+          ref: eda01a45ddbf8214c3757ca73afac31df633adec
+          path: current
+      - name: Record pinned source revisions
+        run: |
+          echo "BASELINE_SHA=$(git -C baseline rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CURRENT_SHA=$(git -C current rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Validate required secrets
+        run: |
+          test -n "$NVIDIA_NIM_API_KEY" || { echo "::error::Missing NVIDIA_NIM_API_KEY."; exit 1; }
+          test -n "$TAVILY_API_KEY" || { echo "::error::Missing TAVILY_API_KEY."; exit 1; }
+          test -n "$DATABASE_URL" || { echo "::error::Missing BENCHMARK_DATABASE_URL (use an isolated database)."; exit 1; }
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install baseline dependencies
+        working-directory: baseline
+        run: npm install --no-audit --no-fund
+      - name: Install current dependencies
+        working-directory: current
+        run: npm install --no-audit --no-fund
+      - name: Copy identical benchmark runner to baseline
+        run: |
+          mkdir -p baseline/benchmarks/results current/benchmarks/results
+          cp current/benchmarks/run.ts baseline/benchmarks/run.ts
+      - name: Run 1 — baseline
+        working-directory: baseline
+        env:
+          BENCHMARK_VERSION: baseline-1
+          BENCHMARK_SHA: \${{ env.BASELINE_SHA }}
+          BENCHMARK_USER_ID: "900000000000000201"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json ../current/benchmarks/results/baseline-1.json
+      - name: Run 2 — current
+        working-directory: current
+        env:
+          BENCHMARK_VERSION: current-1
+          BENCHMARK_SHA: \${{ env.CURRENT_SHA }}
+          BENCHMARK_USER_ID: "900000000000000202"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/current-1.json
+      - name: Run 3 — current
+        working-directory: current
+        env:
+          BENCHMARK_VERSION: current-2
+          BENCHMARK_SHA: \${{ env.CURRENT_SHA }}
+          BENCHMARK_USER_ID: "900000000000000203"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/current-2.json
+      - name: Run 4 — baseline
+        working-directory: baseline
+        env:
+          BENCHMARK_VERSION: baseline-2
+          BENCHMARK_SHA: \${{ env.BASELINE_SHA }}
+          BENCHMARK_USER_ID: "900000000000000204"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json ../current/benchmarks/results/baseline-2.json
+      - name: Run 5 — current
+        working-directory: current
+        env:
+          BENCHMARK_VERSION: current-3
+          BENCHMARK_SHA: \${{ env.CURRENT_SHA }}
+          BENCHMARK_USER_ID: "900000000000000205"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/current-3.json
+      - name: Run 6 — baseline
+        working-directory: baseline
+        env:
+          BENCHMARK_VERSION: baseline-3
+          BENCHMARK_SHA: \${{ env.BASELINE_SHA }}
+          BENCHMARK_USER_ID: "900000000000000206"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json ../current/benchmarks/results/baseline-3.json
+      - name: Run 7 — baseline
+        working-directory: baseline
+        env:
+          BENCHMARK_VERSION: baseline-4
+          BENCHMARK_SHA: \${{ env.BASELINE_SHA }}
+          BENCHMARK_USER_ID: "900000000000000207"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json ../current/benchmarks/results/baseline-4.json
+      - name: Run 8 — current
+        working-directory: current
+        env:
+          BENCHMARK_VERSION: current-4
+          BENCHMARK_SHA: \${{ env.CURRENT_SHA }}
+          BENCHMARK_USER_ID: "900000000000000208"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/current-4.json
+      - name: Aggregate paired results
+        working-directory: current
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const dir = 'benchmarks/results';
+          const names = ['baseline-1','current-1','current-2','baseline-2','current-3','baseline-3','baseline-4','current-4'];
+          const runs = names.map(name => JSON.parse(fs.readFileSync(dir + '/' + name + '.json', 'utf8')));
+          const summarize = values => {
+            const a = [...values].sort((x,y) => x-y);
+            const mid = Math.floor(a.length/2);
+            const mean = a.reduce((s,x)=>s+x,0)/a.length;
+            return {min:a[0],median:a.length%2?a[mid]:(a[mid-1]+a[mid])/2,max:a[a.length-1],mean:Number(mean.toFixed(2)),range:a[a.length-1]-a[0]};
+          };
+          const groups = {baseline:runs.filter(r=>r.version.startsWith('baseline')),current:runs.filter(r=>r.version.startsWith('current'))};
+          const aggregate = {};
+          for (const [name,items] of Object.entries(groups)) {
+            aggregate[name] = {
+              count:items.length,duration_ms:summarize(items.map(r=>r.duration_ms)),
+              model_calls:summarize(items.map(r=>r.metrics.model_call_count ?? 0)),
+              tool_calls:summarize(items.map(r=>r.metrics.tool_call_starts)),
+              tool_errors:items.reduce((s,r)=>s+r.metrics.tool_errors,0),
+              retries:items.reduce((s,r)=>s+r.metrics.retry_events,0),
+              outcomes:items.map(r=>r.task_status),
+              complete:items.filter(r=>r.task_status==='complete').length,
+              partial:items.filter(r=>r.task_status==='partial').length,
+              failed:items.filter(r=>r.task_status==='failed').length
+            };
+          }
+          const report = [
+            '# Orchestra Regression Comparison','',
+            '- Baseline: afbb93f83c7b41a4c0f5000d3e50de6819a22f21 (pre-normalization)',
+            '- Current: eda01a45ddbf8214c3757ca73afac31df633adec (with normalization)',
+            '- Same runner, scenario, model, endpoint, budgets and isolated database.',
+            '- Four runs per revision; alternating order reduces time/provider bias.',
+            '',
+            '## Aggregate comparison','',
+            '| Metric | Baseline | Current |','|---|---:|---:|',
+            '| Median duration (s) | '+(aggregate.baseline.duration_ms.median/1000).toFixed(2)+' | '+(aggregate.current.duration_ms.median/1000).toFixed(2)+' |',
+            '| Median model calls | '+aggregate.baseline.model_calls.median+' | '+aggregate.current.model_calls.median+' |',
+            '| Median tool calls | '+aggregate.baseline.tool_calls.median+' | '+aggregate.current.tool_calls.median+' |',
+            '| Tool errors | '+aggregate.baseline.tool_errors+' | '+aggregate.current.tool_errors+' |',
+            '| Retry events | '+aggregate.baseline.retries+' | '+aggregate.current.retries+' |',
+            '| Complete runs | '+aggregate.baseline.complete+'/4 | '+aggregate.current.complete+'/4 |',
+            '| Partial runs | '+aggregate.baseline.partial+'/4 | '+aggregate.current.partial+'/4 |',
+            '| Failed runs | '+aggregate.baseline.failed+'/4 | '+aggregate.current.failed+'/4 |',
+            '',
+            '## Per-run results','',
+            '| Order | Revision | Duration (s) | Model calls | Tool calls | Errors | Retries | Steps started | Completed | Partial | Blocked | Outcome |',
+            '|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+            ...runs.map((r,i)=>'| '+(i+1)+' | '+r.version+' | '+(r.duration_ms/1000).toFixed(2)+' | '+r.metrics.model_call_count+' | '+r.metrics.tool_call_starts+' | '+r.metrics.tool_errors+' | '+r.metrics.retry_events+' | '+r.metrics.planned_step_starts+' | '+r.metrics.completed_step_events+' | '+r.metrics.partial_step_events+' | '+r.metrics.blocked_step_events+' | '+r.task_status+' |'),
+            '',
+            '## Plan graphs','',
+            ...runs.flatMap(r=>['### '+r.version,'',JSON.stringify(r.plan_graph,null,2),'']),
+            '## Diagnostic limitations','',
+            '- Tool-error events expose tool name and call ID, not HTTP status or the underlying error message.',
+            '- The known retry classifier includes a broad "fetch failed" matcher; this experiment measures operational effects, not HTTP status distribution.',
+            '- Compare outcomes and plan graphs before speed. Four runs per revision are diagnostic, not statistically conclusive.',
+            '',
+            '## Raw traces','',
+            ...runs.map(r=>'- '+r.version+'.json')
+          ];
+          fs.writeFileSync(dir+'/regression-report.md',report.join('\n')+'\n');
+          fs.writeFileSync(dir+'/regression-report.json',JSON.stringify({schema_version:1,created_at:new Date().toISOString(),baseline_sha:groups.baseline[0].git_sha,current_sha:groups.current[0].git_sha,model:runs[0].model,aggregate,raw_runs:runs},null,2)+'\n');
+          NODE
+      - name: Upload regression traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestra-regression-traces-\${{ github.run_id }}
+          path: |
+            current/benchmarks/results/baseline-*.json
+            current/benchmarks/results/current-*.json
+            current/benchmarks/results/regression-report.*
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Commit regression report to v2
+        if: success()
+        working-directory: current
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/results/regression-report.md benchmarks/results/regression-report.json benchmarks/results/baseline-*.json benchmarks/results/current-*.json
+          git commit -m "bench: record baseline versus current Orchestra regression"
+          git push origin HEAD:v2
