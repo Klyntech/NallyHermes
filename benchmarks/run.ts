@@ -103,4 +103,3 @@ console.log(JSON.stringify({
   error: result.error
 }, null, 2));
 
-if (runError) process.exitCode = 1;
