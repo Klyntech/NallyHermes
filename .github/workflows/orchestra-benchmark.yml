@@ -1,10 +1,10 @@
-name: V1 vs V2 Orchestra Benchmark
+name: V2 Orchestra Reliability Benchmark
 
 on:
   workflow_dispatch:
     inputs:
       model:
-        description: "NVIDIA NIM model (must be available to the supplied API key)"
+        description: "NVIDIA NIM model (keep fixed across benchmark rounds)"
         required: true
         default: "nvidia/nemotron-3.5-super-vl-120b-a12b"
         type: string
@@ -13,14 +13,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: orchestra-benchmark
+  group: orchestra-v2-reliability-benchmark
   cancel-in-progress: false
 
 jobs:
-  compare:
-    name: Run identical research task on V1 and V2
+  benchmark:
+    name: Run four sequential V2 missions
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     env:
       NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
@@ -45,17 +45,11 @@ jobs:
       AGENT_MAX_READ_RETRIES: "2"
 
     steps:
-      - name: Check out benchmark definition (V2 branch)
+      - name: Check out V2 source
         uses: actions/checkout@v4
         with:
           ref: v2
           path: v2
-
-      - name: Check out pinned V1 baseline
-        uses: actions/checkout@v4
-        with:
-          ref: 4ba2b87084a4b003331e0f9c687bbf0822558edd
-          path: v1
 
       - name: Record exact V2 source revision
         shell: bash
@@ -73,156 +67,157 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install V1 dependencies
-        working-directory: v1
-        run: npm install --no-audit --no-fund
-
       - name: Install V2 dependencies
         working-directory: v2
         run: npm install --no-audit --no-fund
 
-      - name: Install identical benchmark runner into both source trees
-        shell: bash
-        run: |
-          mkdir -p v1/benchmarks v2/benchmarks
-          cp v2/benchmarks/run.ts v1/benchmarks/run.ts
-
-      - name: Run V1 source
-        working-directory: v1
-        env:
-          BENCHMARK_VERSION: v1
-          BENCHMARK_SHA: 4ba2b87084a4b003331e0f9c687bbf0822558edd
-          BENCHMARK_USER_ID: "900000000000000001"
-        run: npx tsx benchmarks/run.ts
-
-      - name: Run V2 source
+      - name: Run 1 of 4
         working-directory: v2
         env:
-          BENCHMARK_VERSION: v2
+          BENCHMARK_VERSION: v2-run-1
           BENCHMARK_SHA: ${{ env.BENCHMARK_V2_SHA }}
-          BENCHMARK_USER_ID: "900000000000000002"
-        run: npx tsx benchmarks/run.ts
+          BENCHMARK_USER_ID: "900000000000000101"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/v2-run-1.json
 
-      - name: Build comparison report
+      - name: Run 2 of 4
+        working-directory: v2
+        env:
+          BENCHMARK_VERSION: v2-run-2
+          BENCHMARK_SHA: ${{ env.BENCHMARK_V2_SHA }}
+          BENCHMARK_USER_ID: "900000000000000102"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/v2-run-2.json
+
+      - name: Run 3 of 4
+        working-directory: v2
+        env:
+          BENCHMARK_VERSION: v2-run-3
+          BENCHMARK_SHA: ${{ env.BENCHMARK_V2_SHA }}
+          BENCHMARK_USER_ID: "900000000000000103"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/v2-run-3.json
+
+      - name: Run 4 of 4
+        working-directory: v2
+        env:
+          BENCHMARK_VERSION: v2-run-4
+          BENCHMARK_SHA: ${{ env.BENCHMARK_V2_SHA }}
+          BENCHMARK_USER_ID: "900000000000000104"
+        run: npx tsx benchmarks/run.ts && cp benchmarks/results/run.json benchmarks/results/v2-run-4.json
+
+      - name: Aggregate four-run results
         working-directory: v2
         shell: bash
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          const v1 = JSON.parse(fs.readFileSync('../v1/benchmarks/results/run.json', 'utf8'));
-          const v2 = JSON.parse(fs.readFileSync('benchmarks/results/run.json', 'utf8'));
-          const pct = (a, b) => a > 0 ? ((b - a) / a * 100).toFixed(1) + '%' : 'n/a';
-          const metrics = [
-            ['Duration (ms)', v1.duration_ms, v2.duration_ms],
-            ['Model calls', v1.metrics.model_telemetry_supported ? v1.metrics.model_call_count : 'not instrumented', v2.metrics.model_telemetry_supported ? v2.metrics.model_call_count : 'not instrumented'],
-            ['Median input tokens / call', v1.metrics.median_input_tokens_per_call ?? 'n/a', v2.metrics.median_input_tokens_per_call ?? 'n/a'],
-            ['Median output tokens / call', v1.metrics.median_output_tokens_per_call ?? 'n/a', v2.metrics.median_output_tokens_per_call ?? 'n/a'],
-            ['Median total tokens / call', v1.metrics.median_total_tokens_per_call ?? 'n/a', v2.metrics.median_total_tokens_per_call ?? 'n/a'],
-            ['Model-call errors', v1.metrics.model_telemetry_supported ? v1.metrics.model_call_errors : 'not instrumented', v2.metrics.model_telemetry_supported ? v2.metrics.model_call_errors : 'not instrumented'],
-            ['Model turns with tool calls', v1.metrics.model_telemetry_supported ? v1.metrics.model_turns_with_tool_calls : 'not instrumented', v2.metrics.model_telemetry_supported ? v2.metrics.model_turns_with_tool_calls : 'not instrumented'],
-            ['Tool calls requested by model', v1.metrics.model_telemetry_supported ? v1.metrics.model_tool_calls_requested : 'not instrumented', v2.metrics.model_telemetry_supported ? v2.metrics.model_tool_calls_requested : 'not instrumented'],
-            ['Progress events', v1.metrics.progress_event_count, v2.metrics.progress_event_count],
-            ['Tool calls started', v1.metrics.tool_call_starts, v2.metrics.tool_call_starts],
-            ['Tool errors', v1.metrics.tool_errors, v2.metrics.tool_errors],
-            ['Cached read-only tool results', v1.metrics.cached_tool_results ?? 'not reported', v2.metrics.cached_tool_results ?? 'not reported'],
-            ['Retry events', v1.metrics.retry_events, v2.metrics.retry_events],
-            ['Plan steps started', v1.metrics.planned_step_starts, v2.metrics.planned_step_starts],
-            ['Plan steps completed', v1.metrics.completed_step_events, v2.metrics.completed_step_events],
-            ['Plan steps partially completed', v1.metrics.partial_step_events ?? 'not reported', v2.metrics.partial_step_events ?? 'not reported'],
-            ['Plan steps failed', v1.metrics.failed_step_events, v2.metrics.failed_step_events],
-            ['Plan steps blocked', v1.metrics.blocked_step_events ?? 'not reported', v2.metrics.blocked_step_events ?? 'not reported'],
-            ['Task outcome', v1.task_status ?? 'not reported', v2.task_status ?? 'not reported']
-          ];
-          const lines = [
-            '# NallyHermes V1 vs V2 Orchestra Benchmark',
+          const dir = 'benchmarks/results';
+          const runs = [1, 2, 3, 4].map((n) => JSON.parse(fs.readFileSync(`${dir}/v2-run-${n}.json`, 'utf8')));
+          const values = (key) => runs.map((run) => Number(run[key])).filter(Number.isFinite).sort((a, b) => a - b);
+          const median = (items) => {
+            if (!items.length) return null;
+            const mid = Math.floor(items.length / 2);
+            return items.length % 2 ? items[mid] : (items[mid - 1] + items[mid]) / 2;
+          };
+          const summary = (key) => {
+            const data = values(key);
+            if (!data.length) return null;
+            const mean = data.reduce((sum, value) => sum + value, 0) / data.length;
+            const variance = data.reduce((sum, value) => sum + (value - mean) ** 2, 0) / data.length;
+            return {
+              min: data[0],
+              median: median(data),
+              max: data[data.length - 1],
+              mean: Number(mean.toFixed(2)),
+              standard_deviation: Number(Math.sqrt(variance).toFixed(2)),
+              range: data[data.length - 1] - data[0]
+            };
+          };
+          const duration = summary('duration_ms');
+          const metrics = {
+            duration_ms: duration,
+            model_calls: summary('model_calls_count'),
+            tool_errors: {
+              values: runs.map((run) => run.metrics.tool_errors),
+              total: runs.reduce((sum, run) => sum + run.metrics.tool_errors, 0)
+            },
+            task_outcomes: runs.map((run) => run.task_status),
+            complete_runs: runs.filter((run) => run.task_status === 'complete').length,
+            partial_runs: runs.filter((run) => run.task_status === 'partial').length,
+            failed_runs: runs.filter((run) => run.task_status === 'failed').length,
+            median_model_call_count: median(runs.map((run) => run.metrics.model_call_count).filter(Number.isFinite)),
+            median_cached_tool_results: median(runs.map((run) => run.metrics.cached_tool_results).filter(Number.isFinite))
+          };
+          const report = [
+            '# V2 Orchestra — Four-Run Reliability Benchmark',
             '',
-            '## Run metadata',
+            '## Benchmark controls',
             '',
-            '| Field | V1 | V2 |',
-            '|---|---|---|',
-            '| Commit | ' + v1.git_sha + ' | ' + v2.git_sha + ' |',
-            '| Model | ' + v1.model + ' | ' + v2.model + ' |',
-            '| Status | ' + v1.status + ' | ' + v2.status + ' |',
+            `- V2 commit: ${runs[0].git_sha}`,
+            `- Model: ${runs[0].model}`,
+            '- Scenario, prompt, tool limits, provider endpoint, and benchmark database configuration are held constant.',
+            '- Four runs execute sequentially to avoid deliberately adding concurrency pressure to the model provider.',
+            '- Each run uses a distinct synthetic user ID. LightRAG is disabled for this web-research scenario.',
             '',
-            '## Execution metrics',
+            '## Results',
             '',
-            '| Metric | V1 | V2 | V2 vs V1 |',
-            '|---|---:|---:|---:|',
-            ...metrics.map(([name, a, b]) => '| ' + name + ' | ' + a + ' | ' + b + ' | ' + pct(Number(a), Number(b)) + ' |'),
+            '| Run | Duration (s) | Model calls | Tool calls | Tool errors | Task outcome |',
+            '|---:|---:|---:|---:|---:|---|',
+            ...runs.map((run, index) => `| ${index + 1} | ${(run.duration_ms / 1000).toFixed(2)} | ${run.metrics.model_call_count ?? 'n/a'} | ${run.metrics.tool_call_starts} | ${run.metrics.tool_errors} | ${run.task_status} |`),
             '',
-            '> Lower is not always better: fewer tool calls or events can mean efficiency, but can also mean incomplete work. Interpret metrics alongside the reports and event traces.',
+            '## Latency distribution',
             '',
-            '## V1 final response',
+            '| Statistic | Duration (seconds) |',
+            '|---|---:|',
+            ...Object.entries(duration ?? {}).map(([key, value]) => `| ${key.replaceAll('_', ' ')} | ${(value / 1000).toFixed(2)} |`),
             '',
-            v1.answer || '_No final response returned._',
+            '## Reliability',
             '',
-            '## V2 final response',
+            `- Complete runs: ${metrics.complete_runs}/4`,
+            `- Partial runs: ${metrics.partial_runs}/4`,
+            `- Failed runs: ${metrics.failed_runs}/4`,
+            `- Total tool errors: ${metrics.tool_errors.total}`,
             '',
-            v2.answer || '_No final response returned._',
+            '## Interpretation',
             '',
-            '## Human evaluation (0–5 each)',
-            '',
-            '| Dimension | V1 | V2 |',
-            '|---|---:|---:|',
-            '| Source credibility | pending | pending |',
-            '| Factual accuracy | pending | pending |',
-            '| Coverage | pending | pending |',
-            '| Recommendation evidence | pending | pending |',
-            '| Structure/readability | pending | pending |',
-            '| Uncertainty/honesty | pending | pending |',
-            '| Actionability | pending | pending |',
-            '',
-            '## Limitations',
-            '',
-            '- This is one scenario/run per version; it is an observed comparison, not a statistically conclusive benchmark.',
-            '- Both runs use the same configured model and API credentials, but provider-side nondeterminism and rate limits can affect results.',
-            '- V1 emits legacy progress events; V2 additionally emits structured Orchestra events. Their event counts are not directly equivalent.',
-            '- A completed workflow means the process returned; inspect each version task_status before interpreting the research as complete. A completed workflow does not prove every factual claim is correct; inspect the source links in each answer.',
-            '- The benchmark database is isolated from production. LightRAG is disabled for this research-only scenario.',
+            '- Four observations are a small diagnostic sample, not a statistically conclusive performance claim.',
+            '- Compare task outcomes, error counts, and per-run traces before interpreting latency differences.',
+            '- A workflow success means the runner completed; it does not mean the research task was complete or factually correct.',
+            '- Quality scores remain a separate human review using `benchmarks/quality-rubric.md`.',
             '',
             '## Raw traces',
             '',
-            '- V1: `v1/benchmarks/results/run.json` (also retained as an Actions artifact)',
-            '- V2: `benchmarks/results/run.json`'
+            ...runs.map((_, index) => `- Run ${index + 1}: ` + `\`v2-run-${index + 1}.json\``)
           ];
-          fs.mkdirSync('benchmarks/results', { recursive: true });
-          fs.writeFileSync('benchmarks/results/benchmark.md', lines.join('\n') + '\n');
-          const combined = {
+          fs.writeFileSync(`${dir}/benchmark.md`, report.join('\n') + '\n');
+          fs.writeFileSync(`${dir}/benchmark.json`, JSON.stringify({
             schema_version: 1,
             scenario: 'LightRAG official documentation and storage research',
             created_at: new Date().toISOString(),
-            v1,
-            v2,
-            comparison: {
-              metrics: Object.fromEntries(metrics.map(([name, a, b]) => [String(name), { v1: a, v2: b }]))
-            },
-            human_scores: null
-          };
-          fs.writeFileSync('benchmarks/results/benchmark.json', JSON.stringify(combined, null, 2) + '\n');
+            git_sha: runs[0].git_sha,
+            model: runs[0].model,
+            runs,
+            summary: metrics
+          }, null, 2) + '\n');
           NODE
 
       - name: Upload raw traces
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orchestra-benchmark-traces-${{ github.run_id }}
+          name: orchestra-v2-four-run-traces-${{ github.run_id }}
           path: |
-            v1/benchmarks/results/run.json
-            v2/benchmarks/results/run.json
+            v2/benchmarks/results/v2-run-1.json
+            v2/benchmarks/results/v2-run-2.json
+            v2/benchmarks/results/v2-run-3.json
+            v2/benchmarks/results/v2-run-4.json
           if-no-files-found: warn
           retention-days: 90
 
       - name: Commit benchmark reports
         if: success()
         working-directory: v2
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p benchmarks/results
-          cp benchmarks/results/run.json benchmarks/results/v2-run.json
-          cp ../v1/benchmarks/results/run.json benchmarks/results/v1-run.json
-          git add benchmarks/results/benchmark.md benchmarks/results/benchmark.json benchmarks/results/v1-run.json benchmarks/results/v2-run.json
-          git commit -m "bench: record V1 vs V2 Orchestra benchmark run"
+          git add benchmarks/results/benchmark.md benchmarks/results/benchmark.json benchmarks/results/v2-run-1.json benchmarks/results/v2-run-2.json benchmarks/results/v2-run-3.json benchmarks/results/v2-run-4.json
+          git commit -m "bench: record four-run V2 Orchestra reliability results"
           git push origin HEAD:v2
