@@ -38,8 +38,8 @@ test("hard dependencies still require successful completion", () => {
 });
 
 test("orders contextual evidence links and rejects contextual cycles", () => {
-  const ordered = orderPlanSteps([step("consumer"), { ...step("source"), context_from: [] }]);
-  assert.deepEqual(ordered?.map((item) => item.id), ["consumer", "source"]);
+  const ordered = orderPlanSteps([{ ...step("consumer"), context_from: ["source"] }, step("source")]);
+  assert.deepEqual(ordered?.map((item) => item.id), ["source", "consumer"]);
   assert.equal(orderPlanSteps([{ ...step("a"), context_from: ["b"] }, step("b", ["a"])]), null);
 });
 
