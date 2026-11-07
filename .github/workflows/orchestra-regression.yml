@@ -227,10 +227,22 @@ jobs:
             current/benchmarks/results/regression-report.*
           if-no-files-found: warn
           retention-days: 90
+      - name: Check out v2 results branch
+        if: success()
+        uses: actions/checkout@v4
+        with:
+          ref: v2
+          path: results-repo
+
       - name: Commit regression report to v2
         if: success()
-        working-directory: current
+        working-directory: results-repo
         run: |
+          mkdir -p benchmarks/results
+          cp ../current/benchmarks/results/regression-report.md benchmarks/results/
+          cp ../current/benchmarks/results/regression-report.json benchmarks/results/
+          cp ../current/benchmarks/results/baseline-*.json benchmarks/results/
+          cp ../current/benchmarks/results/current-*.json benchmarks/results/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add benchmarks/results/regression-report.md benchmarks/results/regression-report.json benchmarks/results/baseline-*.json benchmarks/results/current-*.json
