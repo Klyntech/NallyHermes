@@ -10,10 +10,12 @@ test("records model call phase, reason, context mode, duration, and token usage"
     reason: "classify_request",
     model: "test-model",
     contextMode: "bounded_history",
-    messages: [{ role: "user", content: "Find official docs." }]
+    messages: [{ role: "user", content: "Find official docs." }],
+    stepId: "step_1",
+    turnIndex: 2
   }, async () => ({
     usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
-    choices: []
+    choices: [{ message: { tool_calls: [{ id: "call_1" }, { id: "call_2" }] } }]
   }));
 
   assert.equal(response.usage.total_tokens, 150);
@@ -24,6 +26,9 @@ test("records model call phase, reason, context mode, duration, and token usage"
   assert.equal(traces[0]?.context_mode, "bounded_history");
   assert.equal(traces[0]?.status, "success");
   assert.equal(traces[0]?.input_tokens, 120);
+  assert.equal(traces[0]?.step_id, "step_1");
+  assert.equal(traces[0]?.turn_index, 2);
+  assert.equal(traces[0]?.tool_calls_requested, 2);
   assert.equal(traces[0]?.output_tokens, 30);
   assert.equal(typeof traces[0]?.duration_ms, "number");
   assert.equal(telemetry.getCalls().length, 1);
