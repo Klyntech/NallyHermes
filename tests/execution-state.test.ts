@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { collectStepEvidence, getReadyPlanSteps, getRecoverablePrerequisites, orderPlanSteps } from "../src/agent/executionState.js";
-import type { ExecutionPlanStep } from "../src/agent/smartPlanner.js";
+import { normalizeResearchDependencies, type ExecutionPlanStep } from "../src/agent/smartPlanner.js";
 
 const step = (id: string, depends_on: string[] = [], parallel_safe = true): ExecutionPlanStep => ({
   id, task: id, depends_on, parallel_safe
@@ -131,4 +131,42 @@ test("recovery candidate traversal includes transitive prerequisites", () => {
     new Set(["root", "branch"])
   );
   assert.deepEqual(candidates.map((item) => item.id), ["root", "branch"]);
+});
+
+test("normalizes unnecessary hard links between independent read-only research steps", () => {
+  const plan = normalizeResearchDependencies([
+    step("official_docs"),
+    { ...step("storage_backends", ["official_docs"]), task: "Enumerate supported storage backends from official sources." },
+    { ...step("neon", ["official_docs"]), task: "Investigate PostgreSQL and Neon compatibility independently." }
+  ]);
+  assert.deepEqual(plan[1]?.depends_on, []);
+  assert.deepEqual(plan[1]?.context_from, []);
+  assert.deepEqual(plan[2]?.depends_on, []);
+  assert.deepEqual(plan[2]?.context_from, []);
+});
+
+test("downgrades contextual research links to soft dependencies", () => {
+  const plan = normalizeResearchDependencies([
+    step("sources"),
+    { ...step("cross_check", ["sources"]), task: "Cross-check the findings against the official repository." }
+  ]);
+  assert.deepEqual(plan[1]?.depends_on, []);
+  assert.deepEqual(plan[1]?.context_from, ["sources"]);
+});
+
+test("preserves hard links when a read-only step consumes a discovered artifact", () => {
+  const plan = normalizeResearchDependencies([
+    step("discover"),
+    { ...step("fetch_doc", ["discover"]), task: "Fetch the documentation page identified by the discovery step." }
+  ]);
+  assert.deepEqual(plan[1]?.depends_on, ["discover"]);
+  assert.deepEqual(plan[1]?.context_from, []);
+});
+
+test("does not weaken dependencies involving non-read-only steps", () => {
+  const plan = normalizeResearchDependencies([
+    { ...step("write", [], false) },
+    { ...step("verify", ["write"]), task: "Verify the result.", parallel_safe: true }
+  ]);
+  assert.deepEqual(plan[1]?.depends_on, ["write"]);
 });
