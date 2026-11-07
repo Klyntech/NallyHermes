@@ -28,6 +28,8 @@ Each V2 model call records:
 - reason for the call
 - model and start timestamp
 - elapsed milliseconds and success/error status
+- plan step ID and zero-based model-turn index
+- number of tool calls requested by each model response
 - provider input/output/total token counts when available
 - serialized context characters and approximate input-token estimate
 - context mode: bounded_history, step_context_delta, evidence_package, or full_accumulated
