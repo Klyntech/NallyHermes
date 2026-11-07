@@ -221,7 +221,8 @@ async function synthesizeReport(
       : "partial_or_incomplete",
     completed_steps: outcomes.filter((item) => item.status === "completed").length,
     partial_steps: outcomes.filter((item) => item.status === "partial").length,
-    failed_steps: totalSteps - outcomes.filter((item) => item.status !== "failed").length,
+    failed_steps: outcomes.filter((item) => item.status === "failed").length,
+    blocked_steps: outcomes.filter((item) => item.status === "blocked").length,
     total_steps: totalSteps,
     stop_reason: reason,
     step_results: outcomes
