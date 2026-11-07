@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectStepEvidence, getReadyPlanSteps, orderPlanSteps } from "../src/agent/executionState.js";
+import { collectStepEvidence, getReadyPlanSteps, getRecoverablePrerequisites, orderPlanSteps } from "../src/agent/executionState.js";
 import type { ExecutionPlanStep } from "../src/agent/smartPlanner.js";
 
 const step = (id: string, depends_on: string[] = [], parallel_safe = true): ExecutionPlanStep => ({
@@ -88,4 +88,29 @@ test("bounds collected observations and assistant notes", () => {
   assert.equal(evidence.observations[0]?.tool_call_id, "2");
   assert.equal(evidence.assistantNotes.length, 4);
   assert.equal(evidence.assistantNotes[0], "note 2");
+});
+
+test("recovery candidates are limited to failed ancestors of pending work", () => {
+  const steps = [
+    step("source"),
+    step("middle", ["source"]),
+    step("dependent", ["middle"]),
+    step("unrelated")
+  ];
+  const candidates = getRecoverablePrerequisites(
+    steps,
+    new Set(["dependent"]),
+    new Set(["source", "unrelated"])
+  );
+  assert.deepEqual(candidates.map((item) => item.id), ["source"]);
+});
+
+test("recovery candidate traversal includes transitive prerequisites", () => {
+  const steps = [step("root"), step("branch", ["root"]), step("leaf", ["branch"])];
+  const candidates = getRecoverablePrerequisites(
+    steps,
+    new Set(["leaf"]),
+    new Set(["root", "branch"])
+  );
+  assert.deepEqual(candidates.map((item) => item.id), ["root", "branch"]);
 });
