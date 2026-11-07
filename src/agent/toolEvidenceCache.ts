@@ -6,22 +6,38 @@ interface CacheEntry { call: ToolCallInput; result: ToolMessage }
 
 const STOP_WORDS = new Set(["a","an","and","are","as","at","by","for","from","find","get","in","is","it","of","on","or","the","to","via","with","about","official","site","web","search"]);
 
+function hasOnlyKeys(args: Record<string, unknown>, allowed: string[]): boolean {
+  return Object.keys(args).every((key) => allowed.includes(key));
+}
+
 function isCacheableRead(call: ToolCallInput): boolean {
   const args = argsOf(call);
   if (!args) return false;
   switch (call.function.name) {
     case "web_search":
-      return typeof args.query === "string" && args.query.trim().length > 0 &&
+      return hasOnlyKeys(args, ["query", "max_results"]) &&
+        typeof args.query === "string" && args.query.trim().length > 0 && args.query.length <= 400 &&
         (args.max_results === undefined || (Number.isInteger(args.max_results) && Number(args.max_results) >= 1 && Number(args.max_results) <= 10));
     case "fetch":
-      return typeof args.url === "string" && Boolean(canonicalUrl(args.url));
+      return hasOnlyKeys(args, ["url"]) && typeof args.url === "string" &&
+        args.url.length <= 2048 && Boolean(canonicalUrl(args.url));
     case "file_io":
-      return ["read", "list", "grep"].includes(String(args.operation)) &&
-        typeof args.path === "string" && args.path.trim().length > 0;
+      return hasOnlyKeys(args, ["operation", "path", "content", "search", "replace"]) &&
+        ["read", "list", "grep"].includes(String(args.operation)) &&
+        typeof args.path === "string" && args.path.trim().length > 0 && args.path.length <= 500 &&
+        ["content", "search", "replace"].every((key) => args[key] === undefined ||
+          (typeof args[key] === "string" && (args[key] as string).length <= 1_000_000));
     case "memory":
-      return args.operation === "recall";
+      return hasOnlyKeys(args, ["operation", "content", "id", "query"]) &&
+        args.operation === "recall" &&
+        ["content", "id", "query"].every((key) => args[key] === undefined ||
+          (typeof args[key] === "string" && (args[key] as string).length <= (key === "content" ? 4_000 : key === "id" ? 100 : 1_000)));
     case "schedule":
-      return args.operation === "list";
+      return hasOnlyKeys(args, ["operation", "task", "run_at", "recurrence", "timezone", "id"]) &&
+        args.operation === "list" &&
+        ["task", "run_at", "timezone", "id"].every((key) => args[key] === undefined ||
+          (typeof args[key] === "string" && (args[key] as string).length <= (key === "task" ? 1_000 : key === "run_at" ? 64 : key === "timezone" ? 100 : 100))) &&
+        (args.recurrence === undefined || ["daily", "weekly", "monthly"].includes(String(args.recurrence)));
     default:
       return false;
   }
@@ -43,9 +59,9 @@ function similarQuery(left: string, right: string): boolean {
   const a = tokens(left), b = tokens(right);
   if (a.size < 3 || b.size < 3) return false;
   const overlap = [...a].filter((token) => b.has(token)).length;
-  const containment = overlap / Math.min(a.size, b.size);
+  const similarity = overlap / new Set([...a, ...b]).size;
   const sizeRatio = Math.min(a.size, b.size) / Math.max(a.size, b.size);
-  return containment >= 0.8 && sizeRatio >= 0.55;
+  return similarity >= 0.75 && sizeRatio >= 0.65;
 }
 
 function canonicalUrl(value: string): string | null {
