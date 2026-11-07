@@ -16,7 +16,7 @@ The first optimization target is unnecessary model work, not the tool adapters.
 
 1. Instrument every model call before changing execution behavior.
 2. Reduce planner-call overhead while preserving useful plan granularity.
-3. Reuse completed step state and evidence; avoid asking the model to decide what the controller already knows.
+3. Isolate each step context: retain the original request and agent instructions, then add only bounded results from that step's prerequisite chain. Do not replay unrelated step transcripts.
 4. Synthesize from a bounded evidence package rather than replaying unnecessary conversation history.
 5. Verify explicit unresolved claims; stop when each is supported or clearly labeled as inference/unknown.
 6. Benchmark five alternating-order runs and compare medians.
@@ -30,7 +30,7 @@ Each V2 model call records:
 - elapsed milliseconds and success/error status
 - provider input/output/total token counts when available
 - serialized context characters and approximate input-token estimate
-- context mode: bounded_history, step_context_full, step_context_delta, or full_accumulated
+- context mode: bounded_history, step_context_delta, evidence_package, or full_accumulated
 
 The telemetry callback is optional and appended to the existing runAgent arguments, preserving existing callers. Telemetry delivery errors are isolated and cannot fail the agent request. Raw model prompts and user evidence are not copied into telemetry records; only size/count metadata is recorded.
 
@@ -45,7 +45,7 @@ At this instrumentation baseline:
 
 These are observations about current context construction, not yet proof that context duplication is the dominant latency cause. Use measured token counts and per-call durations to establish that before changing the context strategy.
 
-## Acceptance criteria
+## Step context isolation\n\nEach step starts from the immutable request context, not the transcript accumulated by earlier steps. It receives only bounded summaries and evidence from its transitive prerequisites. Independent steps do not see unrelated step results. The prerequisite package is capped at 24,000 characters. Tool-call/response pairs remain local to the step.\n\nCompleted step transcripts are not appended to shared request context. Final synthesis receives the original request plus structured step outcomes, not the raw tool transcript; telemetry labels this as `evidence_package`.\n\n## Acceptance criteria
 
 - End-to-end median runtime: target at or below 130 seconds, and faster than V1.
 - Research/report quality: at least 32/35 on the same seven human-scored criteria.
@@ -58,4 +58,4 @@ Do not trade away verification or silently truncate required evidence to meet a 
 
 ## Current status
 
-Phase 1.1 instrumentation is the first implementation slice. No planner, execution-state, synthesis, or verification behavior has been optimized yet. A new benchmark run is required to establish the instrumented baseline before those changes begin.
+Step context isolation is implemented as the first behavior optimization. The next benchmark must verify reduced step input tokens, preserved research quality, and no increase in unnecessary tool calls. Planning and claim-driven verification have not yet been optimized.
