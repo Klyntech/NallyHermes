@@ -79,7 +79,7 @@ export function createModelCallTelemetry(
   };
 
   return {
-    async run<T extends { usage?: UsageLike | null }>(
+    async run<T extends ModelResponseLike>(
       metadata: ModelCallMetadata,
       operation: () => Promise<T>
     ): Promise<T> {
