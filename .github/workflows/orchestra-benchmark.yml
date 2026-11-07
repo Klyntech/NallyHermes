@@ -148,6 +148,8 @@ jobs:
           const synthesisTimeSummary = summaryOf(synthesisTime);
           const metrics = {
             duration_ms: duration,
+            model_call_time_ms: modelTimeSummary,
+            synthesis_time_ms: synthesisTimeSummary,
             tool_errors: {
               values: runs.map((run) => run.metrics.tool_errors),
               total: runs.reduce((sum, run) => sum + run.metrics.tool_errors, 0)
