@@ -14,7 +14,7 @@ export type ProgressEvent =
   | { type: "plan_step_start"; index: number; total: number; task: string }
   | { type: "plan_step_complete"; index: number; total: number }
   | { type: "plan_step_failed"; index: number; total: number }
-  | { type: "recovery_retry"; tool: string; attempt: number; maxAttempts: number }
+  | { type: "recovery_retry"; tool: string; toolCallId?: string; attempt: number; maxAttempts: number }
   | { type: "recovery_adjusting" }
   | { type: "verifying" }
   | { type: "information_sufficient" }
