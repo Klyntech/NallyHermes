@@ -206,7 +206,7 @@ function fallbackReport(outcomes: StepOutcome[], totalSteps: number, reason: str
     if (item.failureReason) lines.push(`  Limitation: ${item.failureReason}`);
   }
   if (!outcomes.length) lines.push("No verified findings were produced before execution stopped.");
-  return lines.join("\\n");
+  return lines.join("\n");
 }
 
 async function synthesizeReport(
