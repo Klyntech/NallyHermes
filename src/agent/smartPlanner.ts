@@ -8,6 +8,8 @@ export interface ExecutionPlanStep {
   id: string;
   task: string;
   depends_on: string[];
+  /** Soft evidence links: wait for these steps to settle, but continue if they are partial/failed. */
+  context_from?: string[];
   parallel_safe: boolean;
   completion_criteria?: string[];
 }
@@ -41,7 +43,7 @@ export async function createExecutionPlan(
         "Simple questions, explanations, calculations, single searches, and single actions do not need a plan.",
         "If no plan is needed, return exactly JSON: {\"needs_plan\":false,\"reason\":\"brief reason\",\"steps\":[]}.",
         "If a plan is needed, return JSON only matching this shape: {\"needs_plan\":true,\"reason\":\"...\",\"steps\":[{\"id\":\"step_1\",\"task\":\"...\",\"depends_on\":[],\"parallel_safe\":true,\"completion_criteria\":[\"...\"]}]}. Each step must include all five fields, including 1–5 concrete, observable completion_criteria that describe what evidence or result makes that step finished.",
-        "Create the minimum number of steps needed, between 2 and 10. Do not split work into redundant research steps. Plan only information or actions required by the request; stop the plan once sufficient evidence will be available. Reuse results from earlier steps instead of repeating work. Use unique step IDs. Dependencies must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
+        "Create the minimum number of steps needed, between 2 and 10. Do not split work into redundant research steps. Plan only information or actions required by the request; stop the plan once sufficient evidence will be available. Reuse results from earlier steps instead of repeating work. Use unique step IDs. Use depends_on only for hard prerequisites: the step cannot be meaningfully executed without successful completion of that prerequisite. Use context_from for related research whose evidence is useful but not essential; these steps wait for the referenced step to settle, then still execute if it is partial or failed. Do not create artificial chains or make every research step depend on locating the documentation first; independent research tasks should have empty depends_on and context_from. Both arrays must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
         "Do not include markdown, code fences, commentary, or extra keys."
       ].join("\n")
     },
@@ -83,6 +85,8 @@ export async function createExecutionPlan(
       if (typeof step.id !== "string" || !/^[a-zA-Z0-9_-]{1,40}$/.test(step.id) || ids.has(step.id)) return null;
       if (typeof step.task !== "string" || !step.task.trim() || step.task.length > MAX_TASK_LENGTH) return null;
       if (!Array.isArray(step.depends_on) || !step.depends_on.every((id) => typeof id === "string")) return null;
+      const contextFrom = step.context_from === undefined ? [] : step.context_from;
+      if (!Array.isArray(contextFrom) || !contextFrom.every((id) => typeof id === "string")) return null;
       if (typeof step.parallel_safe !== "boolean") return null;
       const criteria = Array.isArray(step.completion_criteria)
         ? step.completion_criteria
@@ -94,6 +98,7 @@ export async function createExecutionPlan(
         id: step.id,
         task: step.task.trim(),
         depends_on: step.depends_on as string[],
+        context_from: contextFrom as string[],
         parallel_safe: step.parallel_safe,
         completion_criteria: (criteria as string[]).map((item) => item.trim())
       });
