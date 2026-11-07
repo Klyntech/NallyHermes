@@ -10,7 +10,7 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
-import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
+import { collectStepEvidence, getRecoverablePrerequisites } from "./executionState.js";
 import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
 import { buildStepContext, type StepExecutionOutcome } from "./stepContext.js";
 
