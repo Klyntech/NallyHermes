@@ -10,7 +10,7 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
-import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
+import { collectStepEvidence, getReadyPlanSteps, getRecoverablePrerequisites, type StepEvidence } from "./executionState.js";
 import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
 import { buildStepContext, compactStepConversation, mergeStepEvidence, type StepExecutionOutcome } from "./stepContext.js";
 import { ToolEvidenceCache } from "./toolEvidenceCache.js";
@@ -290,9 +290,10 @@ async function runPlannedRequest(
       stopReason = "The overall planned-execution time limit was reached.";
       break;
     }
-    const ready = steps.filter((step) =>
-      pending.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
-    );
+    // Hard dependencies require success. Context links only wait for a source step
+    // to settle; partial/failed context still flows downstream as bounded evidence.
+    const settled = new Set(outcomes.map((item) => item.id));
+    const ready = getReadyPlanSteps(steps, completed, pending, settled);
     if (!ready.length) {
       // A failed read-only prerequisite may be recoverable. Recover it before
       // declaring its dependents blocked, then recompute readiness on the next pass.
@@ -465,7 +466,7 @@ async function runPlannedRequest(
   }
 
   // One bounded replanning pass for remaining failed read-only steps.
-  // Prerequisites recovered above have already reopened dependency scheduling.
+  // Soft context links never block execution; hard dependencies remain success-gated.
   for (const step of steps) {
     if (signal?.aborted || recoveryAttempts >= 2 || Date.now() >= deadline) break;
     if (!step.parallel_safe || recoveryAttempted.has(step.id)) continue;
