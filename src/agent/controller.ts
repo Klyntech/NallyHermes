@@ -43,6 +43,7 @@ async function runPlannedStep(
   readOnlyOnly: boolean,
   deadline: number,
   budget: ExecutionBudget,
+  signal?: AbortSignal,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<StepOutcome> {
   const stepMessageStart = messages.length;
@@ -64,6 +65,10 @@ async function runPlannedStep(
   let failureReason = "The step stopped before the model produced a final result.";
   try {
     for (let round = 0; round <= maxToolRounds; round++) {
+      if (signal?.aborted) {
+        failureReason = "The request was cancelled.";
+        break;
+      }
       if (Date.now() >= deadline) {
         failureReason = "The overall planned-execution time budget was reached.";
         break;
@@ -79,7 +84,7 @@ async function runPlannedStep(
         tools: agentTools,
         tool_choice: "auto",
         temperature: 0.4
-      }, { timeout: remainingTime(deadline) });
+      }, { timeout: remainingTime(deadline), signal });
       const message = response.choices[0]?.message;
       if (!message) {
         failureReason = "The model returned an empty response.";
@@ -108,6 +113,10 @@ async function runPlannedStep(
       }
 
       const functionCalls = evaluation.calls.filter(isFunctionCall);
+      if (signal?.aborted) {
+        failureReason = "The request was cancelled before tool execution.";
+        break;
+      }
       if (readOnlyOnly && !functionCalls.every((call) => isReadOnlyCall(call as ToolCallInput))) {
         failureReason = "The step requested a non-read-only tool operation, so it was not executed.";
         break;
@@ -118,7 +127,8 @@ async function runPlannedStep(
         functionCalls as ToolCallInput[],
         telegramId,
         onProgress,
-        budget
+        budget,
+        signal
       );
       const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
       let hadToolErrors = false;
@@ -186,7 +196,8 @@ async function synthesizeReport(
   totalSteps: number,
   reason: string,
   deadline?: number,
-  budget?: ExecutionBudget
+  budget?: ExecutionBudget,
+  signal?: AbortSignal
 ): Promise<string> {
   const reportData = {
     execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
@@ -215,6 +226,7 @@ async function synthesizeReport(
       ].join("\n\n")
     }
   ];
+  if (signal?.aborted) return fallbackReport(outcomes, totalSteps, reason + " (request cancelled)");
   if (budget && !budget.reserveModelTurn()) {
     return fallbackReport(outcomes, totalSteps, reason + " (final synthesis model-turn budget exhausted)");
   }
@@ -238,6 +250,7 @@ async function runPlannedRequest(
   steps: ExecutionPlanStep[],
   telegramId: string,
   budget: ExecutionBudget,
+  signal?: AbortSignal,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<string> {
   const completed = new Set<string>();
@@ -250,6 +263,10 @@ async function runPlannedRequest(
   const recoveryAttempted = new Set<string>();
 
   while (pending.size) {
+    if (signal?.aborted) {
+      stopReason = "The request was cancelled.";
+      break;
+    }
     if (Date.now() >= deadline) {
       stopReason = "The overall planned-execution time limit was reached.";
       break;
@@ -305,6 +322,7 @@ async function runPlannedRequest(
         true,
         deadline,
         budget,
+        signal,
         onProgress
       );
       totalToolRounds += recovered.toolRounds;
@@ -386,6 +404,7 @@ async function runPlannedRequest(
         step.parallel_safe,
         deadline,
         budget,
+        signal,
         onProgress
       )
     ));
@@ -489,6 +508,7 @@ async function runPlannedRequest(
       true,
       deadline,
       budget,
+      signal,
       onProgress
     );
     totalToolRounds += recovered.toolRounds;
@@ -526,7 +546,7 @@ async function runPlannedRequest(
   }
 
   await onProgress?.({ type: "verifying" });
-  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget);
+  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget, signal);
 }
 
 /**
@@ -538,7 +558,8 @@ export async function runAgent(
   userMessage: string,
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  onEvent?: (event: OrchestraEvent) => Promise<void> | void
+  onEvent?: (event: OrchestraEvent) => Promise<void> | void,
+  signal?: AbortSignal
 ): Promise<string> {
   const emitProgress = createEventPublisher({
     requestId: randomUUID(),
@@ -550,10 +571,15 @@ export async function runAgent(
     maxModelTurns: config.AGENT_MAX_PLAN_MODEL_TURNS
   });
   const { messages } = await prepareRequest(history, userMessage, telegramId);
+  if (signal?.aborted) {
+    await emitProgress({ type: "request_cancelled" });
+    return "Request cancelled before execution started.";
+  }
 
   await emitProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
   try {
+    if (signal?.aborted) throw new Error("The request was cancelled before planning.");
     if (!budget.reserveModelTurn()) throw new Error("The request model-turn budget was exhausted before planning.");
     plan = await createExecutionPlan(llm, history, userMessage);
   } catch (error) {
@@ -562,13 +588,17 @@ export async function runAgent(
 
   if (plan) {
     await emitProgress({ type: "plan_created", stepCount: plan.steps.length });
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, budget, emitProgress);
-    await emitProgress({ type: "response_ready" });
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, budget, signal, emitProgress);
+    await emitProgress({ type: signal?.aborted ? "request_cancelled" : "response_ready" });
     return answer;
   }
 
   let stopReason = "The direct tool-round budget was reached.";
   for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
+    if (signal?.aborted) {
+      stopReason = "The request was cancelled.";
+      break;
+    }
     if (!budget.reserveModelTurn()) {
       stopReason = "The request model-turn budget was exhausted.";
       break;
@@ -580,7 +610,7 @@ export async function runAgent(
       tools: agentTools,
       tool_choice: "auto",
       temperature: 0.4
-    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
+    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
     const message = response.choices[0]?.message;
     if (!message) {
       stopReason = "The model returned an empty response.";
@@ -603,11 +633,16 @@ export async function runAgent(
     }
 
     const functionCalls = evaluation.calls.filter(isFunctionCall);
+    if (signal?.aborted) {
+      stopReason = "The request was cancelled before tool execution.";
+      break;
+    }
     const results = await executeToolCalls(
       functionCalls as ToolCallInput[],
       telegramId,
       emitProgress,
-      budget
+      budget,
+      signal
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
     let hadToolErrors = false;
@@ -636,7 +671,7 @@ export async function runAgent(
   }
 
   await emitProgress({ type: "verifying" });
-  const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, budget);
-  await emitProgress({ type: "response_ready" });
+  const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, budget, signal);
+  await emitProgress({ type: signal?.aborted ? "request_cancelled" : "response_ready" });
   return answer;
 }
