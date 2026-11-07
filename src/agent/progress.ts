@@ -25,7 +25,8 @@ export type ProgressEvent =
   | ToolProgressEvent
   | { type: "tool_complete"; tool: string; toolCallId?: string }
   | { type: "tool_error"; tool: string; toolCallId?: string }
-  | { type: "response_ready" };
+  | { type: "response_ready" }
+  | { type: "request_cancelled" };
 
 export interface OrchestraEvent {
   requestId: string;
@@ -141,6 +142,7 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
     case "tool_error":
       return { text: "A tool encountered an issue. Adjusting…"};
     case "response_ready":
+    case "request_cancelled":
       return null;
   }
 }
