@@ -1,0 +1,2299 @@
+{
+  "schema_version": 1,
+  "version": "v2-run-2",
+  "git_sha": "afbb93f83c7b41a4c0f5000d3e50de6819a22f21",
+  "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+  "started_at": "2026-11-07T16:37:40.167Z",
+  "completed_at": "2026-11-07T16:41:08.426Z",
+  "duration_ms": 208258,
+  "status": "completed",
+  "run_status": "completed",
+  "task_status": "partial",
+  "task_outcome": {
+    "at": "2026-11-07T16:39:56.762Z",
+    "type": "task_status",
+    "status": "partial",
+    "completedSteps": 1,
+    "partialSteps": 1,
+    "failedSteps": 0,
+    "blockedSteps": 3,
+    "totalSteps": 5
+  },
+  "error": null,
+  "prompt": "Find the official LightRAG documentation and investigate its storage options.\n\nI need a technical report covering:\n\n1. Identify the official documentation and repository.\n2. Find the supported storage backends for key-value storage, vector storage, graph storage and document status.\n3. Explain the differences between the available storage options.\n4. Investigate whether PostgreSQL/Neon is a suitable storage setup.\n5. Identify any compatibility limitations or important configuration considerations.\n6. Recommend a practical storage architecture for a production AI agent.\n\nUse official sources wherever possible. Cross-check important claims.\n\nIf one research step fails, do not abandon the entire task. Recover where possible, use the evidence already collected, continue independent steps, and clearly disclose anything you could not verify.\n\nDo not invent facts or claim that research was completed when it wasn't.\n\nProduce a structured technical report with source links and a final recommendation.",
+  "metrics": {
+    "progress_event_count": 99,
+    "structured_event_count": 99,
+    "model_telemetry_supported": true,
+    "model_call_count": 20,
+    "median_input_tokens_per_call": 6963.5,
+    "median_output_tokens_per_call": 522.5,
+    "median_total_tokens_per_call": 7434.5,
+    "model_call_errors": 0,
+    "model_turns_with_tool_calls": 17,
+    "model_tool_calls_requested": 35,
+    "tool_call_starts": 16,
+    "tool_errors": 3,
+    "cached_tool_results": 18,
+    "retry_events": 2,
+    "planned_step_starts": 4,
+    "completed_step_events": 1,
+    "failed_step_events": 0,
+    "partial_step_events": 2,
+    "blocked_step_events": 3,
+    "task_status_events": 1
+  },
+  "progress_events": [
+    {
+      "at": "2026-11-07T16:37:40.209Z",
+      "type": "planning"
+    },
+    {
+      "at": "2026-11-07T16:37:53.189Z",
+      "type": "plan_created",
+      "stepCount": 5
+    },
+    {
+      "at": "2026-11-07T16:37:53.189Z",
+      "type": "plan_step_start",
+      "index": 1,
+      "total": 5,
+      "task": "Locate the official LightRAG documentation site and GitHub repository"
+    },
+    {
+      "at": "2026-11-07T16:37:53.190Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:37:54.485Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-e54db208-eed2-410d-82e8-cb0d6bf39fa3",
+      "args": {
+        "query": "LightRAG official documentation storage backends key-value vector graph",
+        "max_results": 8
+      }
+    },
+    {
+      "at": "2026-11-07T16:37:54.486Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-4887b47f-355c-4c03-a4c1-fea5281567ce",
+      "args": {
+        "query": "LightRAG GitHub repository official",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T16:37:56.341Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 8
+    },
+    {
+      "at": "2026-11-07T16:37:56.341Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-e54db208-eed2-410d-82e8-cb0d6bf39fa3"
+    },
+    {
+      "at": "2026-11-07T16:37:56.347Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 5
+    },
+    {
+      "at": "2026-11-07T16:37:56.347Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-4887b47f-355c-4c03-a4c1-fea5281567ce"
+    },
+    {
+      "at": "2026-11-07T16:37:56.348Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:37:58.259Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-9c9e5a48-08c7-4e24-9c60-9639a40ab988",
+      "args": {
+        "query": "LightRAG official documentation site hkuds lightrag github",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T16:37:58.326Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 5
+    },
+    {
+      "at": "2026-11-07T16:37:58.326Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-9c9e5a48-08c7-4e24-9c60-9639a40ab988"
+    },
+    {
+      "at": "2026-11-07T16:37:58.326Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:00.384Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-02530c08-77c8-40ba-ba93-abfb99b5d162",
+      "args": {
+        "url": "https://lightrag.github.io"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:00.385Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-fdf561ba-946b-4daf-a9b1-40b24d56a3e6",
+      "args": {
+        "url": "https://github.com/hkuds/lightrag"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:00.522Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T16:38:00.524Z",
+      "type": "tool_complete",
+      "tool": "fetch",
+      "toolCallId": "call-02530c08-77c8-40ba-ba93-abfb99b5d162"
+    },
+    {
+      "at": "2026-11-07T16:38:00.905Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T16:38:01.022Z",
+      "type": "tool_complete",
+      "tool": "fetch",
+      "toolCallId": "call-fdf561ba-946b-4daf-a9b1-40b24d56a3e6"
+    },
+    {
+      "at": "2026-11-07T16:38:01.022Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:05.616Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-f1c23499-fb9e-4c33-a587-ac7de4163d0e",
+      "args": {
+        "query": "LightRAG docs site documentation lightrag.ai",
+        "max_results": 8
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:08.211Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 8
+    },
+    {
+      "at": "2026-11-07T16:38:08.211Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-f1c23499-fb9e-4c33-a587-ac7de4163d0e"
+    },
+    {
+      "at": "2026-11-07T16:38:08.212Z",
+      "type": "evidence_reused",
+      "count": 2
+    },
+    {
+      "at": "2026-11-07T16:38:08.212Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:11.810Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-d8440f37-fd53-428a-b7b5-911c7e69b550",
+      "args": {
+        "query": "LightRAG official documentation site hkuds lightrag docs",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:11.878Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 5
+    },
+    {
+      "at": "2026-11-07T16:38:11.878Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-d8440f37-fd53-428a-b7b5-911c7e69b550"
+    },
+    {
+      "at": "2026-11-07T16:38:11.879Z",
+      "type": "evidence_reused",
+      "count": 1
+    },
+    {
+      "at": "2026-11-07T16:38:11.879Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:15.008Z",
+      "type": "evidence_reused",
+      "count": 3
+    },
+    {
+      "at": "2026-11-07T16:38:15.008Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:38:15.009Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:17.586Z",
+      "type": "evidence_reused",
+      "count": 2
+    },
+    {
+      "at": "2026-11-07T16:38:17.586Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:38:17.587Z",
+      "type": "plan_step_partial",
+      "index": 1,
+      "total": 5
+    },
+    {
+      "at": "2026-11-07T16:38:17.587Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:38:17.587Z",
+      "type": "plan_step_start",
+      "index": 1,
+      "total": 5,
+      "task": "Recovering prerequisite: Locate the official LightRAG documentation site and GitHub repository"
+    },
+    {
+      "at": "2026-11-07T16:38:17.588Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:28.921Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-4623b1e7-f824-452e-8de0-be2613569b24",
+      "args": {
+        "url": "https://api.github.com/repos/hkuds/lightrag"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:29.181Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T16:38:29.182Z",
+      "type": "tool_complete",
+      "tool": "fetch",
+      "toolCallId": "call-4623b1e7-f824-452e-8de0-be2613569b24"
+    },
+    {
+      "at": "2026-11-07T16:38:29.182Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:46.613Z",
+      "type": "plan_step_complete",
+      "index": 1,
+      "total": 5
+    },
+    {
+      "at": "2026-11-07T16:38:46.613Z",
+      "type": "plan_step_start",
+      "index": 2,
+      "total": 5,
+      "task": "Enumerate supported storage backends for key-value, vector, graph storage, and document status from official documentation"
+    },
+    {
+      "at": "2026-11-07T16:38:46.614Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:48.831Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-64487b67-7fbe-4f33-ae9e-a3c11569b137",
+      "args": {
+        "url": "https://lightrag.github.io/"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:48.831Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-e66f491a-2ac9-401b-8533-4fdba6e9947d",
+      "args": {
+        "query": "LightRAG storage backends key-value vector graph storage documentation",
+        "max_results": 8
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:48.890Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T16:38:48.890Z",
+      "type": "tool_complete",
+      "tool": "fetch",
+      "toolCallId": "call-64487b67-7fbe-4f33-ae9e-a3c11569b137"
+    },
+    {
+      "at": "2026-11-07T16:38:51.001Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 8
+    },
+    {
+      "at": "2026-11-07T16:38:51.001Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-e66f491a-2ac9-401b-8533-4fdba6e9947d"
+    },
+    {
+      "at": "2026-11-07T16:38:51.001Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:38:55.819Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-c542a710-6e27-4a92-bd76-d3f156da1dad",
+      "args": {
+        "url": "https://raw.githubusercontent.com/hkuds/lightrag/main/README.md"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:55.819Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+      "args": {
+        "url": "https://lightrag.github.io/docs/"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:55.936Z",
+      "type": "tool_error",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+    },
+    {
+      "at": "2026-11-07T16:38:55.937Z",
+      "type": "recovery_retry",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+      "attempt": 2,
+      "maxAttempts": 3
+    },
+    {
+      "at": "2026-11-07T16:38:55.943Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T16:38:55.946Z",
+      "type": "tool_complete",
+      "tool": "fetch",
+      "toolCallId": "call-c542a710-6e27-4a92-bd76-d3f156da1dad"
+    },
+    {
+      "at": "2026-11-07T16:38:56.937Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+      "args": {
+        "url": "https://lightrag.github.io/docs/"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:56.959Z",
+      "type": "tool_error",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+    },
+    {
+      "at": "2026-11-07T16:38:56.959Z",
+      "type": "recovery_retry",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+      "attempt": 3,
+      "maxAttempts": 3
+    },
+    {
+      "at": "2026-11-07T16:38:58.960Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+      "args": {
+        "url": "https://lightrag.github.io/docs/"
+      }
+    },
+    {
+      "at": "2026-11-07T16:38:58.981Z",
+      "type": "tool_error",
+      "tool": "fetch",
+      "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+    },
+    {
+      "at": "2026-11-07T16:38:58.981Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:38:58.982Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:13.935Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "toolCallId": "call-8a2d65ea-b61f-4d75-b1e5-e3b5c037d7f4",
+      "args": {
+        "query": "LightRAG storage backends key-value vector graph document status documentation PostgreSQL",
+        "max_results": 8
+      }
+    },
+    {
+      "at": "2026-11-07T16:39:16.465Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 8
+    },
+    {
+      "at": "2026-11-07T16:39:16.465Z",
+      "type": "tool_complete",
+      "tool": "web_search",
+      "toolCallId": "call-8a2d65ea-b61f-4d75-b1e5-e3b5c037d7f4"
+    },
+    {
+      "at": "2026-11-07T16:39:16.465Z",
+      "type": "evidence_reused",
+      "count": 1
+    },
+    {
+      "at": "2026-11-07T16:39:16.466Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:21.171Z",
+      "type": "evidence_reused",
+      "count": 2
+    },
+    {
+      "at": "2026-11-07T16:39:21.171Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:39:21.172Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:25.470Z",
+      "type": "evidence_reused",
+      "count": 2
+    },
+    {
+      "at": "2026-11-07T16:39:25.470Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:39:25.470Z",
+      "type": "plan_step_partial",
+      "index": 2,
+      "total": 5
+    },
+    {
+      "at": "2026-11-07T16:39:25.470Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:39:25.470Z",
+      "type": "plan_step_start",
+      "index": 2,
+      "total": 5,
+      "task": "Recovering prerequisite: Enumerate supported storage backends for key-value, vector, graph storage, and document status from official documentation"
+    },
+    {
+      "at": "2026-11-07T16:39:25.470Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:32.620Z",
+      "type": "evidence_reused",
+      "count": 2
+    },
+    {
+      "at": "2026-11-07T16:39:32.620Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:39:32.621Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:39.805Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "toolCallId": "call-009af104-85bc-4eb5-9093-4e4777c13cef",
+      "args": {
+        "url": "https://api.github.com/repos/hkuds/lightrag/git/trees/main?recursive=1"
+      }
+    },
+    {
+      "at": "2026-11-07T16:39:40.083Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T16:39:40.167Z",
+      "type": "tool_complete",
+      "tool": "fetch",
+      "toolCallId": "call-009af104-85bc-4eb5-9093-4e4777c13cef"
+    },
+    {
+      "at": "2026-11-07T16:39:40.168Z",
+      "type": "evidence_reused",
+      "count": 1
+    },
+    {
+      "at": "2026-11-07T16:39:40.169Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:46.708Z",
+      "type": "evidence_reused",
+      "count": 2
+    },
+    {
+      "at": "2026-11-07T16:39:46.708Z",
+      "type": "recovery_adjusting"
+    },
+    {
+      "at": "2026-11-07T16:39:46.709Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T16:39:56.762Z",
+      "type": "plan_step_blocked",
+      "index": 3,
+      "total": 5
+    },
+    {
+      "at": "2026-11-07T16:39:56.762Z",
+      "type": "plan_step_blocked",
+      "index": 4,
+      "total": 5
+    },
+    {
+      "at": "2026-11-07T16:39:56.762Z",
+      "type": "plan_step_blocked",
+      "index": 5,
+      "total": 5
+    },
+    {
+      "at": "2026-11-07T16:39:56.762Z",
+      "type": "task_status",
+      "status": "partial",
+      "completedSteps": 1,
+      "partialSteps": 1,
+      "failedSteps": 0,
+      "blockedSteps": 3,
+      "totalSteps": 5
+    },
+    {
+      "at": "2026-11-07T16:39:56.762Z",
+      "type": "verifying"
+    },
+    {
+      "at": "2026-11-07T16:41:08.425Z",
+      "type": "response_ready"
+    }
+  ],
+  "orchestra_events": [
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 1,
+      "emittedAt": "2026-11-07T16:37:40.209Z",
+      "event": {
+        "type": "planning"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 2,
+      "emittedAt": "2026-11-07T16:37:53.189Z",
+      "event": {
+        "type": "plan_created",
+        "stepCount": 5
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 3,
+      "emittedAt": "2026-11-07T16:37:53.189Z",
+      "event": {
+        "type": "plan_step_start",
+        "index": 1,
+        "total": 5,
+        "task": "Locate the official LightRAG documentation site and GitHub repository"
+      },
+      "correlation": {
+        "stepIndex": 1
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 4,
+      "emittedAt": "2026-11-07T16:37:53.190Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 5,
+      "emittedAt": "2026-11-07T16:37:54.485Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-e54db208-eed2-410d-82e8-cb0d6bf39fa3",
+        "args": {
+          "query": "LightRAG official documentation storage backends key-value vector graph",
+          "max_results": 8
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-e54db208-eed2-410d-82e8-cb0d6bf39fa3"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 6,
+      "emittedAt": "2026-11-07T16:37:54.486Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-4887b47f-355c-4c03-a4c1-fea5281567ce",
+        "args": {
+          "query": "LightRAG GitHub repository official",
+          "max_results": 5
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-4887b47f-355c-4c03-a4c1-fea5281567ce"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 7,
+      "emittedAt": "2026-11-07T16:37:56.341Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 8
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 8,
+      "emittedAt": "2026-11-07T16:37:56.341Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-e54db208-eed2-410d-82e8-cb0d6bf39fa3"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-e54db208-eed2-410d-82e8-cb0d6bf39fa3"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 9,
+      "emittedAt": "2026-11-07T16:37:56.347Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 5
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 10,
+      "emittedAt": "2026-11-07T16:37:56.347Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-4887b47f-355c-4c03-a4c1-fea5281567ce"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-4887b47f-355c-4c03-a4c1-fea5281567ce"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 11,
+      "emittedAt": "2026-11-07T16:37:56.348Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 12,
+      "emittedAt": "2026-11-07T16:37:58.259Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-9c9e5a48-08c7-4e24-9c60-9639a40ab988",
+        "args": {
+          "query": "LightRAG official documentation site hkuds lightrag github",
+          "max_results": 5
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-9c9e5a48-08c7-4e24-9c60-9639a40ab988"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 13,
+      "emittedAt": "2026-11-07T16:37:58.326Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 5
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 14,
+      "emittedAt": "2026-11-07T16:37:58.326Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-9c9e5a48-08c7-4e24-9c60-9639a40ab988"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-9c9e5a48-08c7-4e24-9c60-9639a40ab988"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 15,
+      "emittedAt": "2026-11-07T16:37:58.326Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 16,
+      "emittedAt": "2026-11-07T16:38:00.384Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-02530c08-77c8-40ba-ba93-abfb99b5d162",
+        "args": {
+          "url": "https://lightrag.github.io"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-02530c08-77c8-40ba-ba93-abfb99b5d162"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 17,
+      "emittedAt": "2026-11-07T16:38:00.385Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-fdf561ba-946b-4daf-a9b1-40b24d56a3e6",
+        "args": {
+          "url": "https://github.com/hkuds/lightrag"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-fdf561ba-946b-4daf-a9b1-40b24d56a3e6"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 18,
+      "emittedAt": "2026-11-07T16:38:00.522Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "fetch",
+        "stage": "fetch_reading"
+      },
+      "correlation": {
+        "toolName": "fetch"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 19,
+      "emittedAt": "2026-11-07T16:38:00.524Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "fetch",
+        "toolCallId": "call-02530c08-77c8-40ba-ba93-abfb99b5d162"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-02530c08-77c8-40ba-ba93-abfb99b5d162"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 20,
+      "emittedAt": "2026-11-07T16:38:00.905Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "fetch",
+        "stage": "fetch_reading"
+      },
+      "correlation": {
+        "toolName": "fetch"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 21,
+      "emittedAt": "2026-11-07T16:38:01.022Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "fetch",
+        "toolCallId": "call-fdf561ba-946b-4daf-a9b1-40b24d56a3e6"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-fdf561ba-946b-4daf-a9b1-40b24d56a3e6"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 22,
+      "emittedAt": "2026-11-07T16:38:01.022Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 23,
+      "emittedAt": "2026-11-07T16:38:05.616Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-f1c23499-fb9e-4c33-a587-ac7de4163d0e",
+        "args": {
+          "query": "LightRAG docs site documentation lightrag.ai",
+          "max_results": 8
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-f1c23499-fb9e-4c33-a587-ac7de4163d0e"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 24,
+      "emittedAt": "2026-11-07T16:38:08.211Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 8
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 25,
+      "emittedAt": "2026-11-07T16:38:08.211Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-f1c23499-fb9e-4c33-a587-ac7de4163d0e"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-f1c23499-fb9e-4c33-a587-ac7de4163d0e"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 26,
+      "emittedAt": "2026-11-07T16:38:08.212Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 2
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 27,
+      "emittedAt": "2026-11-07T16:38:08.212Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 28,
+      "emittedAt": "2026-11-07T16:38:11.810Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-d8440f37-fd53-428a-b7b5-911c7e69b550",
+        "args": {
+          "query": "LightRAG official documentation site hkuds lightrag docs",
+          "max_results": 5
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-d8440f37-fd53-428a-b7b5-911c7e69b550"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 29,
+      "emittedAt": "2026-11-07T16:38:11.878Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 5
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 30,
+      "emittedAt": "2026-11-07T16:38:11.878Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-d8440f37-fd53-428a-b7b5-911c7e69b550"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-d8440f37-fd53-428a-b7b5-911c7e69b550"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 31,
+      "emittedAt": "2026-11-07T16:38:11.879Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 1
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 32,
+      "emittedAt": "2026-11-07T16:38:11.879Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 33,
+      "emittedAt": "2026-11-07T16:38:15.008Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 3
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 34,
+      "emittedAt": "2026-11-07T16:38:15.008Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 35,
+      "emittedAt": "2026-11-07T16:38:15.009Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 36,
+      "emittedAt": "2026-11-07T16:38:17.586Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 2
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 37,
+      "emittedAt": "2026-11-07T16:38:17.586Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 38,
+      "emittedAt": "2026-11-07T16:38:17.587Z",
+      "event": {
+        "type": "plan_step_partial",
+        "index": 1,
+        "total": 5
+      },
+      "correlation": {
+        "stepIndex": 1
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 39,
+      "emittedAt": "2026-11-07T16:38:17.587Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 40,
+      "emittedAt": "2026-11-07T16:38:17.587Z",
+      "event": {
+        "type": "plan_step_start",
+        "index": 1,
+        "total": 5,
+        "task": "Recovering prerequisite: Locate the official LightRAG documentation site and GitHub repository"
+      },
+      "correlation": {
+        "stepIndex": 1
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 41,
+      "emittedAt": "2026-11-07T16:38:17.588Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 42,
+      "emittedAt": "2026-11-07T16:38:28.921Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-4623b1e7-f824-452e-8de0-be2613569b24",
+        "args": {
+          "url": "https://api.github.com/repos/hkuds/lightrag"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-4623b1e7-f824-452e-8de0-be2613569b24"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 43,
+      "emittedAt": "2026-11-07T16:38:29.181Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "fetch",
+        "stage": "fetch_reading"
+      },
+      "correlation": {
+        "toolName": "fetch"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 44,
+      "emittedAt": "2026-11-07T16:38:29.182Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "fetch",
+        "toolCallId": "call-4623b1e7-f824-452e-8de0-be2613569b24"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-4623b1e7-f824-452e-8de0-be2613569b24"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 45,
+      "emittedAt": "2026-11-07T16:38:29.182Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 46,
+      "emittedAt": "2026-11-07T16:38:46.613Z",
+      "event": {
+        "type": "plan_step_complete",
+        "index": 1,
+        "total": 5
+      },
+      "correlation": {
+        "stepIndex": 1
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 47,
+      "emittedAt": "2026-11-07T16:38:46.613Z",
+      "event": {
+        "type": "plan_step_start",
+        "index": 2,
+        "total": 5,
+        "task": "Enumerate supported storage backends for key-value, vector, graph storage, and document status from official documentation"
+      },
+      "correlation": {
+        "stepIndex": 2
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 48,
+      "emittedAt": "2026-11-07T16:38:46.614Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 49,
+      "emittedAt": "2026-11-07T16:38:48.831Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-64487b67-7fbe-4f33-ae9e-a3c11569b137",
+        "args": {
+          "url": "https://lightrag.github.io/"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-64487b67-7fbe-4f33-ae9e-a3c11569b137"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 50,
+      "emittedAt": "2026-11-07T16:38:48.831Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-e66f491a-2ac9-401b-8533-4fdba6e9947d",
+        "args": {
+          "query": "LightRAG storage backends key-value vector graph storage documentation",
+          "max_results": 8
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-e66f491a-2ac9-401b-8533-4fdba6e9947d"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 51,
+      "emittedAt": "2026-11-07T16:38:48.890Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "fetch",
+        "stage": "fetch_reading"
+      },
+      "correlation": {
+        "toolName": "fetch"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 52,
+      "emittedAt": "2026-11-07T16:38:48.890Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "fetch",
+        "toolCallId": "call-64487b67-7fbe-4f33-ae9e-a3c11569b137"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-64487b67-7fbe-4f33-ae9e-a3c11569b137"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 53,
+      "emittedAt": "2026-11-07T16:38:51.001Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 8
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 54,
+      "emittedAt": "2026-11-07T16:38:51.001Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-e66f491a-2ac9-401b-8533-4fdba6e9947d"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-e66f491a-2ac9-401b-8533-4fdba6e9947d"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 55,
+      "emittedAt": "2026-11-07T16:38:51.001Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 56,
+      "emittedAt": "2026-11-07T16:38:55.819Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-c542a710-6e27-4a92-bd76-d3f156da1dad",
+        "args": {
+          "url": "https://raw.githubusercontent.com/hkuds/lightrag/main/README.md"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-c542a710-6e27-4a92-bd76-d3f156da1dad"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 57,
+      "emittedAt": "2026-11-07T16:38:55.819Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+        "args": {
+          "url": "https://lightrag.github.io/docs/"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 58,
+      "emittedAt": "2026-11-07T16:38:55.936Z",
+      "event": {
+        "type": "tool_error",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 59,
+      "emittedAt": "2026-11-07T16:38:55.937Z",
+      "event": {
+        "type": "recovery_retry",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+        "attempt": 2,
+        "maxAttempts": 3
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 60,
+      "emittedAt": "2026-11-07T16:38:55.943Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "fetch",
+        "stage": "fetch_reading"
+      },
+      "correlation": {
+        "toolName": "fetch"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 61,
+      "emittedAt": "2026-11-07T16:38:55.946Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "fetch",
+        "toolCallId": "call-c542a710-6e27-4a92-bd76-d3f156da1dad"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-c542a710-6e27-4a92-bd76-d3f156da1dad"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 62,
+      "emittedAt": "2026-11-07T16:38:56.937Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+        "args": {
+          "url": "https://lightrag.github.io/docs/"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 63,
+      "emittedAt": "2026-11-07T16:38:56.959Z",
+      "event": {
+        "type": "tool_error",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 64,
+      "emittedAt": "2026-11-07T16:38:56.959Z",
+      "event": {
+        "type": "recovery_retry",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+        "attempt": 3,
+        "maxAttempts": 3
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 65,
+      "emittedAt": "2026-11-07T16:38:58.960Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305",
+        "args": {
+          "url": "https://lightrag.github.io/docs/"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 66,
+      "emittedAt": "2026-11-07T16:38:58.981Z",
+      "event": {
+        "type": "tool_error",
+        "tool": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-34bdb5ef-4490-4374-a667-f19fbefaf305"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 67,
+      "emittedAt": "2026-11-07T16:38:58.981Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 68,
+      "emittedAt": "2026-11-07T16:38:58.982Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 69,
+      "emittedAt": "2026-11-07T16:39:13.935Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "web_search",
+        "toolCallId": "call-8a2d65ea-b61f-4d75-b1e5-e3b5c037d7f4",
+        "args": {
+          "query": "LightRAG storage backends key-value vector graph document status documentation PostgreSQL",
+          "max_results": 8
+        }
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-8a2d65ea-b61f-4d75-b1e5-e3b5c037d7f4"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 70,
+      "emittedAt": "2026-11-07T16:39:16.465Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "web_search",
+        "stage": "search_complete",
+        "resultCount": 8
+      },
+      "correlation": {
+        "toolName": "web_search"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 71,
+      "emittedAt": "2026-11-07T16:39:16.465Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "web_search",
+        "toolCallId": "call-8a2d65ea-b61f-4d75-b1e5-e3b5c037d7f4"
+      },
+      "correlation": {
+        "toolName": "web_search",
+        "toolCallId": "call-8a2d65ea-b61f-4d75-b1e5-e3b5c037d7f4"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 72,
+      "emittedAt": "2026-11-07T16:39:16.465Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 1
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 73,
+      "emittedAt": "2026-11-07T16:39:16.466Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 74,
+      "emittedAt": "2026-11-07T16:39:21.171Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 2
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 75,
+      "emittedAt": "2026-11-07T16:39:21.171Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 76,
+      "emittedAt": "2026-11-07T16:39:21.172Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 77,
+      "emittedAt": "2026-11-07T16:39:25.470Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 2
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 78,
+      "emittedAt": "2026-11-07T16:39:25.470Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 79,
+      "emittedAt": "2026-11-07T16:39:25.470Z",
+      "event": {
+        "type": "plan_step_partial",
+        "index": 2,
+        "total": 5
+      },
+      "correlation": {
+        "stepIndex": 2
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 80,
+      "emittedAt": "2026-11-07T16:39:25.470Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 81,
+      "emittedAt": "2026-11-07T16:39:25.470Z",
+      "event": {
+        "type": "plan_step_start",
+        "index": 2,
+        "total": 5,
+        "task": "Recovering prerequisite: Enumerate supported storage backends for key-value, vector, graph storage, and document status from official documentation"
+      },
+      "correlation": {
+        "stepIndex": 2
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 82,
+      "emittedAt": "2026-11-07T16:39:25.470Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 83,
+      "emittedAt": "2026-11-07T16:39:32.620Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 2
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 84,
+      "emittedAt": "2026-11-07T16:39:32.620Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 85,
+      "emittedAt": "2026-11-07T16:39:32.621Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 86,
+      "emittedAt": "2026-11-07T16:39:39.805Z",
+      "event": {
+        "type": "tool_start",
+        "tool": "fetch",
+        "toolCallId": "call-009af104-85bc-4eb5-9093-4e4777c13cef",
+        "args": {
+          "url": "https://api.github.com/repos/hkuds/lightrag/git/trees/main?recursive=1"
+        }
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-009af104-85bc-4eb5-9093-4e4777c13cef"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 87,
+      "emittedAt": "2026-11-07T16:39:40.083Z",
+      "event": {
+        "type": "tool_progress",
+        "tool": "fetch",
+        "stage": "fetch_reading"
+      },
+      "correlation": {
+        "toolName": "fetch"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 88,
+      "emittedAt": "2026-11-07T16:39:40.167Z",
+      "event": {
+        "type": "tool_complete",
+        "tool": "fetch",
+        "toolCallId": "call-009af104-85bc-4eb5-9093-4e4777c13cef"
+      },
+      "correlation": {
+        "toolName": "fetch",
+        "toolCallId": "call-009af104-85bc-4eb5-9093-4e4777c13cef"
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 89,
+      "emittedAt": "2026-11-07T16:39:40.168Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 1
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 90,
+      "emittedAt": "2026-11-07T16:39:40.169Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 91,
+      "emittedAt": "2026-11-07T16:39:46.708Z",
+      "event": {
+        "type": "evidence_reused",
+        "count": 2
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 92,
+      "emittedAt": "2026-11-07T16:39:46.708Z",
+      "event": {
+        "type": "recovery_adjusting"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 93,
+      "emittedAt": "2026-11-07T16:39:46.709Z",
+      "event": {
+        "type": "thinking",
+        "phase": "model"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 94,
+      "emittedAt": "2026-11-07T16:39:56.762Z",
+      "event": {
+        "type": "plan_step_blocked",
+        "index": 3,
+        "total": 5
+      },
+      "correlation": {
+        "stepIndex": 3
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 95,
+      "emittedAt": "2026-11-07T16:39:56.762Z",
+      "event": {
+        "type": "plan_step_blocked",
+        "index": 4,
+        "total": 5
+      },
+      "correlation": {
+        "stepIndex": 4
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 96,
+      "emittedAt": "2026-11-07T16:39:56.762Z",
+      "event": {
+        "type": "plan_step_blocked",
+        "index": 5,
+        "total": 5
+      },
+      "correlation": {
+        "stepIndex": 5
+      }
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 97,
+      "emittedAt": "2026-11-07T16:39:56.762Z",
+      "event": {
+        "type": "task_status",
+        "status": "partial",
+        "completedSteps": 1,
+        "partialSteps": 1,
+        "failedSteps": 0,
+        "blockedSteps": 3,
+        "totalSteps": 5
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 98,
+      "emittedAt": "2026-11-07T16:39:56.762Z",
+      "event": {
+        "type": "verifying"
+      },
+      "correlation": {}
+    },
+    {
+      "requestId": "9039f82f-59d1-49cd-a8ff-11033572ddd7",
+      "sequence": 99,
+      "emittedAt": "2026-11-07T16:41:08.425Z",
+      "event": {
+        "type": "response_ready"
+      },
+      "correlation": {}
+    }
+  ],
+  "model_calls": [
+    {
+      "call_number": 1,
+      "phase": "planning",
+      "reason": "classify_request_and_create_execution_plan",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "context_mode": "bounded_history",
+      "started_at": "2026-11-07T16:37:40.209Z",
+      "message_count": 2,
+      "context_characters": 2987,
+      "estimated_input_tokens": 747,
+      "duration_ms": 12979,
+      "status": "success",
+      "input_tokens": 582,
+      "output_tokens": 1785,
+      "total_tokens": 2367
+    },
+    {
+      "call_number": 2,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 0,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:37:53.190Z",
+      "message_count": 4,
+      "context_characters": 15409,
+      "estimated_input_tokens": 3853,
+      "duration_ms": 1293,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 4282,
+      "output_tokens": 145,
+      "total_tokens": 4427
+    },
+    {
+      "call_number": 3,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 1,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:37:56.348Z",
+      "message_count": 5,
+      "context_characters": 19732,
+      "estimated_input_tokens": 4933,
+      "duration_ms": 1910,
+      "status": "success",
+      "tool_calls_requested": 1,
+      "input_tokens": 5325,
+      "output_tokens": 214,
+      "total_tokens": 5539
+    },
+    {
+      "call_number": 4,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 2,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:37:58.326Z",
+      "message_count": 5,
+      "context_characters": 21806,
+      "estimated_input_tokens": 5452,
+      "duration_ms": 2058,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 5838,
+      "output_tokens": 308,
+      "total_tokens": 6146
+    },
+    {
+      "call_number": 5,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 3,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:01.022Z",
+      "message_count": 5,
+      "context_characters": 24756,
+      "estimated_input_tokens": 6189,
+      "duration_ms": 4592,
+      "status": "success",
+      "tool_calls_requested": 3,
+      "input_tokens": 6853,
+      "output_tokens": 416,
+      "total_tokens": 7269
+    },
+    {
+      "call_number": 6,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 4,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:08.212Z",
+      "message_count": 5,
+      "context_characters": 24844,
+      "estimated_input_tokens": 6211,
+      "duration_ms": 3598,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 6936,
+      "output_tokens": 467,
+      "total_tokens": 7403
+    },
+    {
+      "call_number": 7,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 5,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:11.879Z",
+      "message_count": 5,
+      "context_characters": 24890,
+      "estimated_input_tokens": 6223,
+      "duration_ms": 3129,
+      "status": "success",
+      "tool_calls_requested": 3,
+      "input_tokens": 6991,
+      "output_tokens": 366,
+      "total_tokens": 7357
+    },
+    {
+      "call_number": 8,
+      "phase": "step_execution",
+      "reason": "execute_step:step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_1",
+      "turn_index": 6,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:15.009Z",
+      "message_count": 5,
+      "context_characters": 24917,
+      "estimated_input_tokens": 6230,
+      "duration_ms": 2577,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 6932,
+      "output_tokens": 265,
+      "total_tokens": 7197
+    },
+    {
+      "call_number": 9,
+      "phase": "recovery",
+      "reason": "recover_step:recovery_step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "recovery_step_1",
+      "turn_index": 0,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:17.588Z",
+      "message_count": 5,
+      "context_characters": 22256,
+      "estimated_input_tokens": 5564,
+      "duration_ms": 11333,
+      "status": "success",
+      "tool_calls_requested": 1,
+      "input_tokens": 6183,
+      "output_tokens": 1283,
+      "total_tokens": 7466
+    },
+    {
+      "call_number": 10,
+      "phase": "recovery",
+      "reason": "recover_step:recovery_step_1",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "recovery_step_1",
+      "turn_index": 1,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:29.182Z",
+      "message_count": 6,
+      "context_characters": 25966,
+      "estimated_input_tokens": 6492,
+      "duration_ms": 17431,
+      "status": "success",
+      "input_tokens": 7197,
+      "output_tokens": 2536,
+      "total_tokens": 9733
+    },
+    {
+      "call_number": 11,
+      "phase": "step_execution",
+      "reason": "execute_step:step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_2",
+      "turn_index": 0,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:46.614Z",
+      "message_count": 5,
+      "context_characters": 19793,
+      "estimated_input_tokens": 4949,
+      "duration_ms": 2217,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 5432,
+      "output_tokens": 230,
+      "total_tokens": 5662
+    },
+    {
+      "call_number": 12,
+      "phase": "step_execution",
+      "reason": "execute_step:step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_2",
+      "turn_index": 1,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:51.002Z",
+      "message_count": 6,
+      "context_characters": 24555,
+      "estimated_input_tokens": 6139,
+      "duration_ms": 4817,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 6700,
+      "output_tokens": 668,
+      "total_tokens": 7368
+    },
+    {
+      "call_number": 13,
+      "phase": "step_execution",
+      "reason": "execute_step:step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_2",
+      "turn_index": 2,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:38:58.982Z",
+      "message_count": 6,
+      "context_characters": 27264,
+      "estimated_input_tokens": 6816,
+      "duration_ms": 14953,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 7565,
+      "output_tokens": 787,
+      "total_tokens": 8352
+    },
+    {
+      "call_number": 14,
+      "phase": "step_execution",
+      "reason": "execute_step:step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_2",
+      "turn_index": 3,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:39:16.466Z",
+      "message_count": 6,
+      "context_characters": 27149,
+      "estimated_input_tokens": 6788,
+      "duration_ms": 4704,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 7622,
+      "output_tokens": 510,
+      "total_tokens": 8132
+    },
+    {
+      "call_number": 15,
+      "phase": "step_execution",
+      "reason": "execute_step:step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "step_2",
+      "turn_index": 4,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:39:21.172Z",
+      "message_count": 6,
+      "context_characters": 28942,
+      "estimated_input_tokens": 7236,
+      "duration_ms": 4296,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 8038,
+      "output_tokens": 501,
+      "total_tokens": 8539
+    },
+    {
+      "call_number": 16,
+      "phase": "recovery",
+      "reason": "recover_step:recovery_step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "recovery_step_2",
+      "turn_index": 0,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:39:25.470Z",
+      "message_count": 5,
+      "context_characters": 25747,
+      "estimated_input_tokens": 6437,
+      "duration_ms": 7149,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 7112,
+      "output_tokens": 887,
+      "total_tokens": 7999
+    },
+    {
+      "call_number": 17,
+      "phase": "recovery",
+      "reason": "recover_step:recovery_step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "recovery_step_2",
+      "turn_index": 1,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:39:32.621Z",
+      "message_count": 6,
+      "context_characters": 30537,
+      "estimated_input_tokens": 7635,
+      "duration_ms": 7183,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 8450,
+      "output_tokens": 775,
+      "total_tokens": 9225
+    },
+    {
+      "call_number": 18,
+      "phase": "recovery",
+      "reason": "recover_step:recovery_step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "recovery_step_2",
+      "turn_index": 2,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:39:40.169Z",
+      "message_count": 6,
+      "context_characters": 35966,
+      "estimated_input_tokens": 8992,
+      "duration_ms": 6539,
+      "status": "success",
+      "tool_calls_requested": 2,
+      "input_tokens": 10420,
+      "output_tokens": 535,
+      "total_tokens": 10955
+    },
+    {
+      "call_number": 19,
+      "phase": "recovery",
+      "reason": "recover_step:recovery_step_2",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "step_id": "recovery_step_2",
+      "turn_index": 3,
+      "context_mode": "step_context_delta",
+      "started_at": "2026-11-07T16:39:46.709Z",
+      "message_count": 6,
+      "context_characters": 36736,
+      "estimated_input_tokens": 9184,
+      "duration_ms": 10053,
+      "status": "success",
+      "tool_calls_requested": 3,
+      "input_tokens": 11075,
+      "output_tokens": 583,
+      "total_tokens": 11658
+    },
+    {
+      "call_number": 20,
+      "phase": "synthesis",
+      "reason": "claim_driven_evidence_package_synthesis",
+      "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "context_mode": "evidence_package",
+      "started_at": "2026-11-07T16:39:56.764Z",
+      "message_count": 2,
+      "context_characters": 54389,
+      "estimated_input_tokens": 13598,
+      "duration_ms": 71660,
+      "status": "success",
+      "input_tokens": 18358,
+      "output_tokens": 8713,
+      "total_tokens": 27071
+    }
+  ],
+  "answer": "# LightRAG Storage Options — Technical Report\n\n**Report status: PARTIAL**  \nExecution reached 1 of 5 steps; step 2 reached a partial answer; steps 3–5 were blocked. This report synthesizes all evidence collected, clearly separates documented facts from reasoned recommendations, and discloses everything that could not be verified.\n\n---\n\n## Coverage Statement\n\n| Requested section | Coverage | Evidence basis |\n|---|---|---|\n| 1. Official documentation and repository | ✅ Covered | GitHub API + docs site fetch |\n| 2. Supported storage backends (KV, vector, graph, doc status) | ⚠️ Partially covered | GitHub README excerpt (search-result citation); full implementation list not fetched |\n| 3. Differences between storage options | ⚠️ Partially covered | Same source; comparative detail limited |\n| 4. PostgreSQL/Neon suitability | ⚠️ Partially covered | PostgreSQL confirmed recommended; Neon not mentioned anywhere in evidence |\n| 5. Compatibility limitations and configuration | ⚠️ Partially covered | Env var *names* identified; values and Neon specifics not captured |\n| 6. Production architecture recommendation | ⚠️ Reasoned (not fully evidenced) | Based on confirmed PostgreSQL recommendation; unverified config details flagged |\n\n**Unresolved claims:** step_2:claims 1–4 (complete backend lists), step_3:claims 1–3 (PostgreSQL detail / Neon), step_4:claims 1–3 (config parameters, constraints), step_5:claims 1–4 (final report completeness).  \n**Blocked steps:** step_3 (PostgreSQL/Neon investigation), step_4 (compatibility/config), step_5 (report compilation) — all blocked because step_2 did not reach a verified final answer.\n\n---\n\n## 1. Official Documentation and Repository\n\n| Item | Finding | Source |\n|---|---|---|\n| Official documentation URL | `https://lightrag.github.io/` — fetched successfully (HTTP 200). Page title: \"LightRAG\"; meta description: \"LightRAG: Simple and Fast Retrieval-Augmented Generation.\" | call-7996e4e2-7a1a-4c7d-a0c9-33ebce6dbb90 |\n| GitHub repository URL | `https://github.com/hkuds/lightrag` | call-4623b1e7-f824-452e-8de0-be2613569b24; call-1779d759-6c50-4f32-b727-399a7fd5b71f |\n| Official status confirmed | GitHub API returns `full_name: \"HKUDS/LightRAG\"`, owner type `Organization` (HKUDS), `fork: false`, description: \"[EMNLP2025] LightRAG: Simple and Fast Retrieval-Augmented Generation\". The docs site runs on the `lightrag.github.io` GitHub Pages domain consistent with the repository. No explicit hyperlink from the fetched docs HTML to the repo was observed, but org ownership, matching description, and EMNLP 2025 attribution establish official maintenance. | call-4623b1e7-f824-452e-8de0-be2613569b24 |\n\n**Claim verdicts (step 1):**\n- step_1:claim_1 — **supported** (docs URL identified and fetched).\n- step_1:claim_2 — **supported** (repo URL identified).\n- step_1:claim_3 — **supported** (official status established via HKUDS org ownership, non-fork status, matching description, EMNLP 2025 attribution; caveat: no direct docs→repo hyperlink observed in fetched HTML).\n\n---\n\n## 2. Supported Storage Backends\n\nThe following is drawn from the LightRAG GitHub repository content (README / repository page), which describes four storage categories:\n\n| Storage type | Stated purpose | Default (dev/eval) | Production-capable options named | Source |\n|---|---|---|---|---|\n| **KV_STORAGE** | LLM response caches, text chunking results, entity-relation extraction results | In-memory DB with local file persistence | PostgreSQL (recommended), MongoDB, OpenSearch | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| **VECTOR_STORAGE** | Vector information for text chunks, entities, and relationships | In-memory DB with local file persistence | PostgreSQL; specialized: Milvus, Qdrant | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| **GRAPH_STORAGE** | Knowledge graph | In-memory DB with local file persistence | PostgreSQL; specialized: Neo4j, Memgraph | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| **DOC_STATUS_STORAGE** | Document list | In-memory DB with local file persistence (implied by \"default KV, vector, and graph stores\") | PostgreSQL (can serve all four types), MongoDB, OpenSearch | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n\nKey official statements from the repository content:\n- \"LightRAG's default KV, vector, and graph stores are in-memory databases with local file persistence — suitable only for small-scale testing and evaluation, not for production.\"\n- \"For production, PostgreSQL is the recommended backend — it can serve all four storage types on its own; MongoDB and OpenSearch are the other single-backend options.\"\n- \"Alternatively, you can select specialized databases for vector or graph storage, such as using Milvus or Qdrant for vector storage, and Neo4j or Memgraph for graph storage.\"\n- \"For the complete list of available implementations per storage type, see Storage Types Supported.\" (That linked page was **not** fetched.)\n\n**Claim verdicts (step 2):**\n- step_2:claim_1 (key-value options) — **partially_supported**: purpose and default confirmed; PostgreSQL/MongoDB/OpenSearch named; complete per-backend implementation list not verified.\n- step_2:claim_2 (vector options) — **partially_supported**: Milvus/Qdrant named; default and PostgreSQL confirmed; complete list not verified.\n- step_2:claim_3 (graph options) — **partially_supported**: Neo4j/Memgraph named; default and PostgreSQL confirmed; complete list not verified.\n- step_2:claim_4 (document status) — **partially_supported**: purpose confirmed (\"store the document list\"); PostgreSQL confirmed able to serve it; no dedicated backend list for doc status observed.\n\n---\n\n## 3. Differences Between the Available Storage Options\n\nBased on the evidence:\n\n1. **Default in-memory + local file persistence** — used for KV, vector, and graph by default. Explicitly labeled suitable only for small-scale testing and evaluation, **not production**.\n2. **PostgreSQL (single-backend, recommended)** — can serve all four storage types (KV, vector, graph, document status) on its own. Positioned as the production recommendation for large datasets.\n3. **MongoDB and OpenSearch** — the other single-backend production options (can each serve all four types, per the source).\n4. **Specialized vector stores (Milvus, Qdrant)** — alternative for vector storage only; would need to be combined with other backends for the remaining storage types.\n5. **Specialized graph stores (Neo4j, Memgraph)** — alternative for graph storage only; same multi-backend operational implication.\n\n**Limitation:** The evidence does not include detailed per-backend feature comparisons (e.g., indexing modes, consistency guarantees, query languages, or performance characteristics), because the \"Storage Types Supported\" page referenced by the README was not fetched.\n\n---\n\n## 4. PostgreSQL / Neon Suitability\n\n### PostgreSQL\n- **Support status: confirmed and recommended.** The repository states PostgreSQL is the recommended backend for production deployments with large datasets and that it can serve all four storage types on its own.  \n  Source: call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388.\n- **Suitability for a production AI agent:** Reasoned — suitable, based on the official recommendation. PostgreSQL provides a unified store for KV, vector, graph, and document status, reducing operational complexity compared to running multiple specialized databases.\n\n### Neon\n- **Evidence: none.** Neon is not mentioned in any fetched source (docs site homepage, GitHub repo page, README excerpt, or GitHub API metadata).  \n- **Compatibility: unverified.** Neon is a serverless PostgreSQL-compatible platform in the general market, but **this could not be verified against LightRAG-specific sources**. I cannot confirm whether LightRAG's PostgreSQL integration works with Neon, whether connection pooling or serverless cold-start behavior is supported, or whether any LightRAG-specific configuration is required.\n\n**Claim verdicts (step 3):**\n- step_3:claim_1 (PostgreSQL support confirmed/denied) — **supported**: PostgreSQL is supported and recommended.\n- step_3:claim_2 (Neon-specific support/compatibility) — **unsupported**: no evidence found.\n- step_3:claim_3 (suitability assessment with reasoning) — **partially_supported**: PostgreSQL suitability is reasoned from the official recommendation; Neon suitability cannot be assessed.\n\n---\n\n## 5. Compatibility Limitations and Configuration Considerations\n\n### Documented limitations (from evidence)\n- Default in-memory stores with local file persistence are **not for production**.\n- Using specialized vector (Milvus/Qdrant) or graph (Neo4j/Memgraph) backends implies a **multi-backend deployment** (you still need backends for the other storage categories).\n- PostgreSQL, MongoDB, and OpenSearch are the named single-backend production options.\n\n### Configuration parameters identified\nThe following environment-variable-style names appear in the repository content, but **their expected values were not captured**:\n- `KV_STORAGE`\n- `VECTOR_STORAGE`\n- `GRAPH_STORAGE`\n- `DOC_STATUS_STORAGE`\n\n### Not verified (disclosed)\n- Exact configuration values for each backend (e.g., connection strings, collection/table names, embedding dimensions).\n- Neon-specific connection requirements (connection pooling, SSL, serverless flags).\n- Known issues or constraints specific to PostgreSQL/Neon deployments of LightRAG.\n- Whether the docs site (`lightrag.github.io`) contains a dedicated storage configuration page beyond the homepage shell that was fetched.\n\n**Claim verdicts (step 4):**\n- step_4:claim_1 (compatibility limitations per backend) — **partially_supported**: high-level limitations documented; per-backend detail not verified.\n- step_4:claim_2 (required env vars and config parameters) — **partially_supported**: names identified; values not captured.\n- step_4:claim_3 (known constraints/issues for PostgreSQL/Neon and others) — **partially_supported**: default-in-memory-not-for-production constraint documented; PostgreSQL recommended; Neon constraints unknown.\n\n---\n\n## 6. Recommended Production Storage Architecture (Reasoned Recommendation)\n\n> **Confidence level: Moderate.** The recommendation rests on the confirmed official statement that PostgreSQL is the recommended production backend. Configuration specifics and Neon compatibility are unverified.\n\n### Recommended baseline architecture\n\n| Component | Recommendation | Rationale |\n|---|---|---|\n| Unified storage backend | **PostgreSQL** serving all four LightRAG storage types (KV, vector, graph, document status) | Official recommendation; single operational surface; suitable for large datasets per the repo. |\n| Deployment model | Managed PostgreSQL (e.g., RDS, Cloud SQL, or self-hosted with replication) | Production-grade availability, backups, and scaling. |\n| Connection management | Connection pooling (e.g., PgBouncer) with tuned `max_connections` | Standard PostgreSQL production practice; LightRAG-specific pool settings not verified. |\n| Backups & HA | Point-in-time recovery, multi-AZ replication | Standard production practice; not LightRAG-specific in evidence. |\n| Monitoring | PostgreSQL metrics + LightRAG query/ingestion observability | General recommendation; no LightRAG-specific dashboards verified. |\n\n### Optional specialization (only if workload demands it)\n- **Vector-heavy workloads:** Evaluate Milvus or Qdrant for `VECTOR_STORAGE`, while retaining PostgreSQL (or MongoDB/OpenSearch) for KV, graph, and doc status. Adds operational complexity.\n- **Graph-heavy workloads:** Evaluate Neo4j or Memgraph for `GRAPH_STORAGE`, same multi-backend caveat.\n\n### Neon consideration\nNeon **cannot be recommended or ruled out** based on current evidence. If you want to use Neon (serverless PostgreSQL), you must verify:\n1. LightRAG's PostgreSQL connector works with Neon's connection model (serverless, connection pooling, SSL requirements).\n2. The expected `KV_STORAGE`/`VECTOR_STORAGE`/`GRAPH_STORAGE`/`DOC_STATUS_STORAGE` values for a PostgreSQL backend.\n3. Any Neon-specific limitations (e.g., storage autoscaling behavior, compute cold starts) affecting RAG ingestion/query latency.\n\n### Configuration actions to verify before deployment\n- Fetch the LightRAG \"Storage Types Supported\" page (referenced in the README) for the complete implementation list per storage type.\n- Capture exact environment-variable values for each backend.\n- Confirm whether the docs site has a dedicated storage/configuration section beyond the homepage.\n\n---\n\n## Claims Ledger Verification\n\n| Claim ID | Status | Rationale | Sources |\n|---|---|---|---|\n| step_1:claim_1 | supported | Docs URL fetched HTTP 200 | call-7996e4e2-7a1a-4c7d-a0c9-33ebce6dbb90 |\n| step_1:claim_2 | supported | Repo URL identified | call-4623b1e7-f824-452e-8de0-be2613569b24 |\n| step_1:claim_3 | supported | HKUDS org, non-fork, matching description, EMNLP2025 | call-4623b1e7-f824-452e-8de0-be2613569b24 |\n| step_2:claim_1 | partially_supported | KV purpose/default/production options named; full list not fetched | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_2:claim_2 | partially_supported | Vector options (Milvus/Qdrant) named; full list not fetched | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_2:claim_3 | partially_supported | Graph options (Neo4j/Memgraph) named; full list not fetched | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_2:claim_4 | partially_supported | Doc status purpose named; PostgreSQL can serve it; no dedicated list | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_3:claim_1 | supported | PostgreSQL confirmed supported and recommended | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_3:claim_2 | unsupported | Neon not mentioned in any evidence | — |\n| step_3:claim_3 | partially_supported | PostgreSQL suitability reasoned; Neon unknown | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_4:claim_1 | partially_supported | High-level limitations documented; per-backend detail missing | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_4:claim_2 | partially_supported | Env var names identified; values not captured | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_4:claim_3 | partially_supported | Default-in-memory constraint documented; Neon constraints unknown | call-1779d759-6c50-4f32-b727-399a7fd5b71f; call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 |\n| step_5:claim_1 | partially_supported | All six sections addressed, but with varying evidence depth | — |\n| step_5:claim_2 | supported | Source links included for key claims | — |\n| step_5:claim_3 | partially_supported | Recommendation provided with rationale and confidence caveats | — |\n| step_5:claim_4 | supported | Unverified items disclosed throughout | — |\n\n---\n\n## Sources\n\n| Source ID | URL | Role |\n|---|---|---|\n| call-4623b1e7-f824-452e-8de0-be2613569b24 | https://api.github.com/repos/hkuds/lightrag | Repository metadata (official status) |\n| call-7996e4e2-7a1a-4c7d-a0c9-33ebce6dbb90 | https://lightrag.github.io/ | Official documentation site (homepage fetched) |\n| call-1779d759-6c50-4f32-b727-399a7fd5b71f | https://github.com/hkuds/lightrag | Storage backend details (README excerpt via search result) |\n| call-bad25f4e-2c85-442f-a7c0-ceee3aa77388 | https://github.com/hkuds/lightrag | Duplicate confirmation of storage backend details |\n| call-64d31c20-40b3-465f-8f5e-a374069f570a | https://raw.githubusercontent.com/hkuds/lightrag/main/README.md | Raw README (fetched; content truncated in excerpt) |\n| call-009af104-85bc-4eb5-9093-4e4777c13cef | https://api.github.com/repos/hkuds/lightrag/git/trees/main?recursive=1 | Repository tree structure |\n| call-d6cd11cc-2e0b-4d4d-9284-158b68549ad5 | https://raw.githubusercontent.com/hkuds/lightrag/main/README.md | Raw README duplicate |\n| call-cc6aa519-c3c1-411e-8403-a5a9d0baa497 | https://raw.githubusercontent.com/hkuds/lightrag/main/README.md | Raw README duplicate |\n| call-10309880-66ba-42f7-bfac-8aef2f8d1616 | https://api.github.com/repos/hkuds/lightrag/git/trees/main?recursive=1 | Repository tree duplicate |\n\n---\n\n## What Would Close the Remaining Gaps\n\n1. **Fetch the LightRAG \"Storage Types Supported\" page** (referenced in the README) to get the complete implementation list per storage type and close step_2 claims 1–4.\n2. **Fetch LightRAG configuration documentation** (environment variables, connection strings) to close step_4 claim 2.\n3. **Investigate Neon specifically** (Neon docs + LightRAG issue/PR search) to close step_3 claim 2 and the Neon portions of claims 1 and 3.\n4. **Re-run steps 3, 4, and 5** once step 2 is complete, since they were blocked by step_2's incomplete status.\n\nThis report is **PARTIAL**: it covers all six requested sections to the extent evidence allows, but several claims remain unverified and steps 3–5 were not executed. No facts were invented; all unsupported items are disclosed above.\n\n## Execution status: PARTIAL\nThe execution completed 1 of 5 planned steps; 1 were partial, 0 failed, and 3 were blocked.\nReason: Some steps could not run because one or more prerequisite steps did not complete.\nUnresolved requirements: Key-value storage options listed with official source; Vector storage options listed with official source; Graph storage options listed with official source; Document status storage mechanism identified with official source; PostgreSQL support status confirmed or denied with source; Neon-specific support or compatibility noted with source; Suitability assessment for production AI agent use with reasoning; Compatibility limitations listed per backend with sources; Required environment variables and configuration parameters identified; Known constraints or issues documented for PostgreSQL/Neon and other backends; Report covers all six requested sections; Source links included for key claims; Final production storage architecture recommendation with rationale; Unverified or could-not-verify items clearly disclosed"
+}
