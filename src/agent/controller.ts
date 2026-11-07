@@ -445,7 +445,10 @@ async function runPlannedRequest(
 
   if (pending.size) {
     for (const step of steps.filter((item) => pending.has(item.id))) {
-      const blocked = step.depends_on.some((dependency) => !completed.has(dependency));
+      const settledIds = new Set(outcomes.map((item) => item.id));
+      const blockedHard = step.depends_on.some((dependency) => !completed.has(dependency));
+      const blockedContext = (step.context_from ?? []).some((dependency) => !settledIds.has(dependency));
+      const blocked = blockedHard || blockedContext;
       outcomes.push({
         id: step.id,
         task: step.task,
@@ -606,7 +609,17 @@ export async function runAgent(
   }
 
   if (plan) {
-    await emitProgress({ type: "plan_created", stepCount: plan.steps.length });
+    await emitProgress({
+      type: "plan_created",
+      stepCount: plan.steps.length,
+      steps: plan.steps.map((step) => ({
+        id: step.id,
+        task: step.task,
+        depends_on: [...step.depends_on],
+        context_from: [...(step.context_from ?? [])],
+        parallel_safe: step.parallel_safe
+      }))
+    });
     const answer = await runPlannedRequest(messages, plan.steps, telegramId, budget, signal, emitProgress, telemetry);
     await emitProgress({ type: signal?.aborted ? "request_cancelled" : "response_ready" });
     return answer;
