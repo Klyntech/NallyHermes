@@ -132,6 +132,20 @@ jobs:
             };
           };
           const duration = summary('duration_ms');
+          const modelTime = runs.map((run) => run.model_calls.reduce((sum, call) => sum + call.duration_ms, 0));
+          const synthesisTime = runs.map((run) => run.model_calls.filter((call) => call.phase === 'synthesis').reduce((sum, call) => sum + call.duration_ms, 0));
+          const summaryOf = (items) => {
+            const data = [...items].sort((a, b) => a - b);
+            const mid = Math.floor(data.length / 2);
+            return {
+              min: data[0],
+              median: data.length % 2 ? data[mid] : (data[mid - 1] + data[mid]) / 2,
+              max: data[data.length - 1],
+              range: data[data.length - 1] - data[0]
+            };
+          };
+          const modelTimeSummary = summaryOf(modelTime);
+          const synthesisTimeSummary = summaryOf(synthesisTime);
           const metrics = {
             duration_ms: duration,
             tool_errors: {
@@ -158,15 +172,17 @@ jobs:
             '',
             '## Results',
             '',
-            '| Run | Duration (s) | Model calls | Tool calls | Tool errors | Task outcome |',
-            '|---:|---:|---:|---:|---:|---|',
-            ...runs.map((run, index) => `| ${index + 1} | ${(run.duration_ms / 1000).toFixed(2)} | ${run.metrics.model_call_count ?? 'n/a'} | ${run.metrics.tool_call_starts} | ${run.metrics.tool_errors} | ${run.task_status} |`),
+            '| Run | Duration (s) | Model time (s) | Synthesis (s) | Model calls | Tool calls | Tool errors | Task outcome |',
+            '|---:|---:|---:|---:|---:|---:|---:|---|',
+            ...runs.map((run, index) => `| ${index + 1} | ${(run.duration_ms / 1000).toFixed(2)} | ${(modelTime[index] / 1000).toFixed(2)} | ${(synthesisTime[index] / 1000).toFixed(2)} | ${run.metrics.model_call_count ?? 'n/a'} | ${run.metrics.tool_call_starts} | ${run.metrics.tool_errors} | ${run.task_status} |`),
             '',
             '## Latency distribution',
             '',
             '| Statistic | Duration (seconds) |',
             '|---|---:|',
-            ...Object.entries(duration ?? {}).map(([key, value]) => `| ${key.replaceAll('_', ' ')} | ${(value / 1000).toFixed(2)} |`),
+            ...Object.entries(duration ?? {}).map(([key, value]) => `| Total duration — ${key.replaceAll('_', ' ')} | ${(value / 1000).toFixed(2)} |`),
+            ...Object.entries(modelTimeSummary).map(([key, value]) => `| Model-call time — ${key} | ${(value / 1000).toFixed(2)} |`),
+            ...Object.entries(synthesisTimeSummary).map(([key, value]) => `| Synthesis time — ${key} | ${(value / 1000).toFixed(2)} |`),
             '',
             '## Reliability',
             '',
