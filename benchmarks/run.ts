@@ -71,6 +71,7 @@ const stepFailures = progress.filter((event) => event.type === "plan_step_failed
 const stepPartials = progress.filter((event) => event.type === "plan_step_partial");
 const stepBlocked = progress.filter((event) => event.type === "plan_step_blocked");
 const taskStatusEvent = [...progress].reverse().find((event) => event.type === "task_status");
+const planCreatedEvent = progress.find((event) => event.type === "plan_created");
 const cachedToolResults = progress.filter((event) => event.type === "evidence_reused").reduce((sum, event) => sum + event.count, 0);
 const modelTelemetrySupported = runAgent.length >= 7;
 const median = (values) => {
@@ -94,7 +95,7 @@ const result = {
   status: runError ? "runtime_error" : "completed",
   run_status: runError ? "errored" : "completed",
   task_status: taskStatusEvent?.status ?? "not_reported",
-  task_outcome: taskStatusEvent ?? null,
+  task_outcome: taskStatusEvent ?? null,\n  plan_graph: planCreatedEvent?.type === "plan_created" ? planCreatedEvent.steps : null,
   error: runError,
   prompt,
   metrics: {
@@ -112,7 +113,7 @@ const result = {
     tool_errors: toolErrors.length,
     cached_tool_results: cachedToolResults,
     retry_events: retries.length,
-    planned_step_starts: stepStarts.length,
+    planned_step_starts: stepStarts.length,\n    hard_dependency_edges: planCreatedEvent?.type === "plan_created" ? planCreatedEvent.steps.reduce((sum, step) => sum + step.depends_on.length, 0) : null,\n    context_dependency_edges: planCreatedEvent?.type === "plan_created" ? planCreatedEvent.steps.reduce((sum, step) => sum + step.context_from.length, 0) : null,
     completed_step_events: stepCompletes.length,
     failed_step_events: stepFailures.length,
     partial_step_events: stepPartials.length,
