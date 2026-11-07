@@ -1,7 +1,9 @@
 import OpenAI from "openai";
+import { randomUUID } from "node:crypto";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { config } from "../config.js";
-import type { ProgressEvent } from "./progress.js";
+import type { OrchestraEvent, ProgressEvent } from "./progress.js";
+import { createExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
 import { agentTools } from "./definitions.js";
 import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
@@ -39,6 +41,7 @@ async function runPlannedStep(
   maxToolRounds: number,
   readOnlyOnly: boolean,
   deadline: number,
+  budget: ExecutionBudget,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<StepOutcome> {
   const stepMessageStart = messages.length;
@@ -62,6 +65,10 @@ async function runPlannedStep(
     for (let round = 0; round <= maxToolRounds; round++) {
       if (Date.now() >= deadline) {
         failureReason = "The overall planned-execution time budget was reached.";
+        break;
+      }
+      if (!budget.reserveModelTurn()) {
+        failureReason = "The request model-turn budget was exhausted.";
         break;
       }
       await onProgress?.({ type: "thinking", phase: "model" });
@@ -109,7 +116,8 @@ async function runPlannedStep(
       const results = await executeToolCalls(
         functionCalls as ToolCallInput[],
         telegramId,
-        onProgress
+        onProgress,
+        budget
       );
       const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
       let hadToolErrors = false;
@@ -224,6 +232,7 @@ async function runPlannedRequest(
   messages: ChatCompletionMessageParam[],
   steps: ExecutionPlanStep[],
   telegramId: string,
+  budget: ExecutionBudget,
   onProgress?: (event: ProgressEvent) => Promise<void> | void
 ): Promise<string> {
   const completed = new Set<string>();
@@ -288,6 +297,7 @@ async function runPlannedRequest(
         Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingRecoveryBudget)),
         true,
         deadline,
+        budget,
         onProgress
       );
       totalToolRounds += recovered.toolRounds;
@@ -368,6 +378,7 @@ async function runPlannedRequest(
         perStepBudget,
         step.parallel_safe,
         deadline,
+        budget,
         onProgress
       )
     ));
@@ -470,6 +481,7 @@ async function runPlannedRequest(
       recoveryBudget,
       true,
       deadline,
+      budget,
       onProgress
     );
     totalToolRounds += recovered.toolRounds;
@@ -518,11 +530,39 @@ export async function runAgent(
   history: ChatCompletionMessageParam[],
   userMessage: string,
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  onEvent?: (event: OrchestraEvent) => Promise<void> | void
 ): Promise<string> {
+  const requestId = randomUUID();
+  let sequence = 0;
+  let eventQueue: Promise<void> = Promise.resolve();
+  const emitProgress = (event: ProgressEvent): Promise<void> => {
+    eventQueue = eventQueue.then(async () => {
+      await emitProgress(event);
+      const envelope: OrchestraEvent = {
+        requestId,
+        sequence: ++sequence,
+        emittedAt: new Date().toISOString(),
+        event,
+        correlation: {
+          ...("index" in event ? { stepIndex: event.index } : {}),
+          ...("tool" in event ? { toolName: event.tool } : {}),
+          ...("toolCallId" in event && event.toolCallId ? { toolCallId: event.toolCallId } : {})
+        }
+      };
+      await onEvent?.(envelope);
+    }).catch((error) => {
+      console.warn("Orchestra event delivery failed:", error);
+    });
+    return eventQueue;
+  };
+  const budget = createExecutionBudget({
+    maxToolCalls: config.AGENT_MAX_TOOL_CALLS,
+    maxModelTurns: config.AGENT_MAX_PLAN_MODEL_TURNS
+  });
   const { messages } = await prepareRequest(history, userMessage, telegramId);
 
-  await onProgress?.({ type: "planning" });
+  await emitProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
   try {
     plan = await createExecutionPlan(llm, history, userMessage);
@@ -531,15 +571,19 @@ export async function runAgent(
   }
 
   if (plan) {
-    await onProgress?.({ type: "plan_created", stepCount: plan.steps.length });
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress);
-    await onProgress?.({ type: "response_ready" });
+    await emitProgress({ type: "plan_created", stepCount: plan.steps.length });
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, budget, emitProgress);
+    await emitProgress({ type: "response_ready" });
     return answer;
   }
 
   let stopReason = "The direct tool-round budget was reached.";
   for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
-    await onProgress?.({ type: "thinking", phase: "model" });
+    if (!budget.reserveModelTurn()) {
+      stopReason = "The request model-turn budget was exhausted.";
+      break;
+    }
+    await emitProgress({ type: "thinking", phase: "model" });
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages,
@@ -556,7 +600,7 @@ export async function runAgent(
 
     const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
-      await onProgress?.({ type: "response_ready" });
+      await emitProgress({ type: "response_ready" });
       return finalResponse(evaluation.answer);
     }
     if (evaluation.kind === "limit_reached") {
@@ -572,7 +616,8 @@ export async function runAgent(
     const results = await executeToolCalls(
       functionCalls as ToolCallInput[],
       telegramId,
-      onProgress
+      emitProgress,
+      budget
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
     let hadToolErrors = false;
@@ -592,7 +637,7 @@ export async function runAgent(
       }
     }
     if (hadToolErrors) {
-      await onProgress?.({ type: "recovery_adjusting" });
+      await emitProgress({ type: "recovery_adjusting" });
       messages.push({
         role: "system",
         content: "One or more tool calls failed. Diagnose the returned error. Continue only if the missing information is necessary; if so, try a materially different safe approach. Do not repeat the same call unless the error is transient. Do not repeat mutations. If the existing evidence is already sufficient, finish with it and disclose any relevant limitation."
@@ -600,8 +645,8 @@ export async function runAgent(
     }
   }
 
-  await onProgress?.({ type: "verifying" });
+  await emitProgress({ type: "verifying" });
   const answer = await synthesizeReport(messages, [], 0, stopReason);
-  await onProgress?.({ type: "response_ready" });
+  await emitProgress({ type: "response_ready" });
   return answer;
 }
