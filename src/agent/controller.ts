@@ -281,7 +281,19 @@ async function runPlannedRequest(
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   telemetry?: ModelCallTelemetry
 ): Promise<string> {
-  const evidenceCache = new ToolEvidenceCache();
+  // A cache is isolated per logical step so parallel independent steps do not
+  // race to populate or accidentally share each other's read results. Recovery
+  // reuses the original step's cache.
+  const evidenceCaches = new Map<string, ToolEvidenceCache>();
+  const evidenceCacheFor = (stepId: string): ToolEvidenceCache => {
+    const originalId = stepId.startsWith("recovery_") ? stepId.slice("recovery_".length) : stepId;
+    let cache = evidenceCaches.get(originalId);
+    if (!cache) {
+      cache = new ToolEvidenceCache();
+      evidenceCaches.set(originalId, cache);
+    }
+    return cache;
+  };
   const completed = new Set<string>();
   const outcomes: StepOutcome[] = [];
   const pending = new Set(steps.map((step) => step.id));
@@ -355,7 +367,7 @@ async function runPlannedRequest(
         signal,
         onProgress,
         telemetry,
-        evidenceCache
+        evidenceCacheFor(recoverable.id)
       );
       totalToolRounds += recovered.toolRounds;
       if (recovered.status === "completed") {
@@ -429,7 +441,7 @@ async function runPlannedRequest(
         signal,
         onProgress,
         telemetry,
-        evidenceCache
+        evidenceCacheFor(step.id)
       )
     ));
 
@@ -519,7 +531,7 @@ async function runPlannedRequest(
       signal,
       onProgress,
       telemetry,
-      evidenceCache
+      evidenceCacheFor(step.id)
     );
     totalToolRounds += recovered.toolRounds;
     if (recovered.status === "completed") {
