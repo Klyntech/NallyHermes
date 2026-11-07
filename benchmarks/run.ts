@@ -41,6 +41,7 @@ if (!existing) {
 
 const progress = [];
 const structured = [];
+const modelCalls = [];
 const startedAt = new Date().toISOString();
 const start = performance.now();
 let answer = "";
@@ -53,6 +54,8 @@ try {
     progress.push({ at: new Date().toISOString(), ...event });
   }, async (event) => {
     structured.push(event);
+  }, undefined, async (trace) => {
+    modelCalls.push(trace);
   });
 } catch (error) {
   runError = error instanceof Error ? error.message : String(error);
@@ -65,6 +68,10 @@ const retries = progress.filter((event) => event.type === "recovery_retry");
 const stepStarts = progress.filter((event) => event.type === "plan_step_start");
 const stepCompletes = progress.filter((event) => event.type === "plan_step_complete");
 const stepFailures = progress.filter((event) => event.type === "plan_step_failed");
+const sortedInputTokens = modelCalls.map((call) => call.input_tokens ?? call.estimated_input_tokens).sort((a, b) => a - b);
+const medianInputTokens = sortedInputTokens.length
+  ? sortedInputTokens[Math.floor((sortedInputTokens.length - 1) / 2)]
+  : null;
 
 const result = {
   schema_version: 1,
@@ -80,6 +87,9 @@ const result = {
   metrics: {
     progress_event_count: progress.length,
     structured_event_count: structured.length,
+    model_call_count: modelCalls.length,
+    median_input_tokens_per_call: medianInputTokens,
+    model_call_errors: modelCalls.filter((call) => call.status === "error").length,
     tool_call_starts: toolStarts.length,
     tool_errors: toolErrors.length,
     retry_events: retries.length,
@@ -89,6 +99,7 @@ const result = {
   },
   progress_events: progress,
   orchestra_events: structured,
+  model_calls: modelCalls,
   answer
 };
 
