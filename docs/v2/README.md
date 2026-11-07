@@ -1,6 +1,6 @@
 # Nally v2 Engineering Foundation
 
-**Status:** Phase 0 baseline  
+**Status:** Phase 0 complete; Phase 1 Orchestra 2.0 implementation complete pending CI verification  
 **Target:** NallyHermes v2  
 **Compatibility baseline:** Nally v1 beta  
 **Implementation policy:** Additive evolution; no v1 rewrite
@@ -26,14 +26,14 @@ These are the Phase 0 working decisions. They are intentionally documented as de
 - [Module boundaries and contracts](./module-boundaries.md)
 - [V1-to-v2 migration strategy](./migration.md)
 - [Architecture decisions](./decisions/)
-- [Orchestra 2.0 execution design](./orchestra-2.0.md)
+- [Orchestra 2.0 execution design and implementation status](./orchestra-2.0.md)
 - [Full-duplex voice readiness](./voice-readiness.md)
 
 ## Delivery sequence
 
 1. Freeze these boundaries and identify current v1 ownership.
 2. Add shared domain contracts only when a concrete v2 feature needs them.
-3. Implement Orchestra 2.0 behind a compatibility boundary, with channel-neutral execution and interruption-ready lifecycle contracts.
+3. Complete Orchestra 2.0 behind a compatibility boundary, with hard request budgets, structured correlated events, and channel-neutral execution. (Implementation complete; CI verification pending.)
 4. Introduce voice in V2.5 or V3 as an interface and speech pipeline over the same Orchestra; do not build a second agent runtime.
 5. Add memory, mission, proactive, workspace, model, and interface capabilities incrementally.
 6. Keep observability, security, and evaluation requirements active in every phase.
