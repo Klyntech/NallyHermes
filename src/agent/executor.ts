@@ -134,7 +134,13 @@ export async function executeToolCall(
     });
     const delayMs = Math.min(1_000 * 2 ** (attempt - 2), 4_000);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-    if (budget && !budget.reserveToolCall()) break;
+    if (budget && !budget.reserveToolCall()) {
+      return {
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify({ error: "The request tool-call budget was exhausted; the transient failure was not retried." })
+      };
+    }
     result = await executeToolCallOnce(call, telegramId, onProgress);
   }
   return result;
