@@ -74,6 +74,26 @@ jobs:
         run: |
           mkdir -p baseline/benchmarks/results current/benchmarks/results
           cp current/benchmarks/run.ts baseline/benchmarks/run.ts
+      - name: Add identical diagnostic-only telemetry to both revisions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for root in ("baseline", "current"):
+              controller = Path(root) / "src/agent/controller.ts"
+              source = controller.read_text()
+              old = 'await emitProgress({ type: "plan_created", stepCount: plan.steps.length });'
+              new = 'await emitProgress({ type: "plan_created", stepCount: plan.steps.length, steps: plan.steps });'
+              if old in source:
+                  source = source.replace(old, new, 1)
+              controller.write_text(source)
+              executor = Path(root) / "src/agent/executor.ts"
+              source = executor.read_text()
+              old = 'await onProgress?.({ type: "tool_error", tool: call.function.name, toolCallId: call.id });'
+              new = 'await onProgress?.({ type: "tool_error", tool: call.function.name, toolCallId: call.id, error: reason });'
+              if old in source:
+                  source = source.replace(old, new, 1)
+              executor.write_text(source)
+          PY
       - name: Run 1 — baseline
         working-directory: baseline
         env:
