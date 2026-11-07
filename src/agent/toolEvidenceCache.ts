@@ -112,7 +112,7 @@ export class ToolEvidenceCache {
   }
 
   remember(call: ToolCallInput, result: ToolMessage): void {
-    if (!isReadOnlyCall(call) || !successful(result) || this.find(call)) return;
+    if (!isCacheableRead(call) || !successful(result) || this.find(call)) return;
     this.entries.push({ call: { ...call }, result: { ...result } });
   }
 
