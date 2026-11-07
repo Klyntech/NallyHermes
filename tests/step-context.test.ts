@@ -9,7 +9,7 @@ const plan: ExecutionPlanStep[] = [
   { id: "locate", task: "Find official docs", depends_on: [], parallel_safe: true },
   { id: "backends", task: "List backends", depends_on: ["locate"], parallel_safe: true },
   { id: "neon", task: "Evaluate Neon", depends_on: ["backends"], parallel_safe: true },
-  { id: "recommend", task: "Recommend architecture", depends_on: ["neon"], parallel_safe: false },
+  { id: "recommend", task: "Recommend architecture", depends_on: ["neon"], parallel_safe: false, completion_criteria: ["Compare operational complexity and compatibility evidence"] },
   { id: "unrelated", task: "Unrelated independent task", depends_on: [], parallel_safe: true }
 ];
 
@@ -31,6 +31,7 @@ test("step context keeps the original request and only prerequisite outcomes", (
   assert.doesNotMatch(serialized, /Unrelated independent task/);
   assert.doesNotMatch(serialized, /Verified answer for unrelated/);
   assert.match(serialized, /Recommend architecture/);
+  assert.match(serialized, /Compare operational complexity and compatibility evidence/);
 });
 
 test("independent steps do not receive unrelated completed work", () => {
