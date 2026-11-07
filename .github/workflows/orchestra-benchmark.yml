@@ -134,7 +134,6 @@ jobs:
           const duration = summary('duration_ms');
           const metrics = {
             duration_ms: duration,
-            model_calls: summary('model_calls_count'),
             tool_errors: {
               values: runs.map((run) => run.metrics.tool_errors),
               total: runs.reduce((sum, run) => sum + run.metrics.tool_errors, 0)
