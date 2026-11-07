@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { collectStepEvidence, getReadyPlanSteps, getRecoverablePrerequisites, orderPlanSteps } from "../src/agent/executionState.js";
-import { normalizeResearchDependencies, type ExecutionPlanStep } from "../src/agent/smartPlanner.js";
+import { normalizeResearchDependencies } from "../src/agent/researchDependencies.js";
+import type { ExecutionPlanStep } from "../src/agent/smartPlanner.js";
 
 const step = (id: string, depends_on: string[] = [], parallel_safe = true): ExecutionPlanStep => ({
   id, task: id, depends_on, parallel_safe
