@@ -26,6 +26,23 @@ test("rejects cyclic graphs", () => {
   assert.equal(orderPlanSteps([step("a", ["b"]), step("b", ["a"])]), null);
 });
 
+test("waits for soft context sources to settle but does not require them to succeed", () => {
+  const steps = [step("source"), { ...step("consumer"), context_from: ["source"] }];
+  assert.deepEqual(getReadyPlanSteps(steps, new Set(), new Set(["source", "consumer"]), new Set()).map((item) => item.id), ["source"]);
+  assert.deepEqual(getReadyPlanSteps(steps, new Set(), new Set(["consumer"]), new Set(["source"])).map((item) => item.id), ["consumer"]);
+});
+
+test("hard dependencies still require successful completion", () => {
+  const steps = [step("source"), step("consumer", ["source"])];
+  assert.deepEqual(getReadyPlanSteps(steps, new Set(), new Set(["consumer"]), new Set(["source"])), []);
+});
+
+test("orders contextual evidence links and rejects contextual cycles", () => {
+  const ordered = orderPlanSteps([step("consumer"), { ...step("source"), context_from: [] }]);
+  assert.deepEqual(ordered?.map((item) => item.id), ["consumer", "source"]);
+  assert.equal(orderPlanSteps([{ ...step("a"), context_from: ["b"] }, step("b", ["a"])]), null);
+});
+
 test("rejects duplicate dependency edges", () => {
   assert.equal(orderPlanSteps([step("a"), step("b", ["a", "a"])]), null);
 });
@@ -40,7 +57,8 @@ test("returns only pending steps whose prerequisites have completed", () => {
   const ready = getReadyPlanSteps(
     steps,
     new Set(["first"]),
-    new Set(["second", "third", "independent"])
+    new Set(["second", "third", "independent"]),
+    new Set(["first"])
   );
   assert.deepEqual(ready.map((item) => item.id), ["second", "independent"]);
 });
@@ -51,7 +69,7 @@ test("a recovered prerequisite makes its dependent ready on the next scheduling 
   assert.deepEqual(getReadyPlanSteps(steps, new Set(), pending).map((item) => item.id), ["source"]);
   // Recovery changes the prerequisite state to completed; readiness is recalculated.
   assert.deepEqual(
-    getReadyPlanSteps(steps, new Set(["source"]), new Set(["dependent"])).map((item) => item.id),
+    getReadyPlanSteps(steps, new Set(["source"]), new Set(["dependent"]), new Set(["source"])).map((item) => item.id),
     ["dependent"]
   );
 });
