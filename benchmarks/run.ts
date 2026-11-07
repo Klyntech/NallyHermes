@@ -68,6 +68,9 @@ const retries = progress.filter((event) => event.type === "recovery_retry");
 const stepStarts = progress.filter((event) => event.type === "plan_step_start");
 const stepCompletes = progress.filter((event) => event.type === "plan_step_complete");
 const stepFailures = progress.filter((event) => event.type === "plan_step_failed");
+const stepPartials = progress.filter((event) => event.type === "plan_step_partial");
+const stepBlocked = progress.filter((event) => event.type === "plan_step_blocked");
+const taskStatusEvent = [...progress].reverse().find((event) => event.type === "task_status");
 const modelTelemetrySupported = runAgent.length >= 7;
 const median = (values) => {
   const sorted = values.filter((value) => typeof value === "number").sort((a, b) => a - b);
@@ -88,6 +91,9 @@ const result = {
   completed_at: new Date().toISOString(),
   duration_ms: durationMs,
   status: runError ? "runtime_error" : "completed",
+  run_status: runError ? "errored" : "completed",
+  task_status: taskStatusEvent?.status ?? "not_reported",
+  task_outcome: taskStatusEvent ?? null,
   error: runError,
   prompt,
   metrics: {
@@ -106,7 +112,10 @@ const result = {
     retry_events: retries.length,
     planned_step_starts: stepStarts.length,
     completed_step_events: stepCompletes.length,
-    failed_step_events: stepFailures.length
+    failed_step_events: stepFailures.length,
+    partial_step_events: stepPartials.length,
+    blocked_step_events: stepBlocked.length,
+    task_status_events: progress.filter((event) => event.type === "task_status").length
   },
   progress_events: progress,
   orchestra_events: structured,
