@@ -67,7 +67,7 @@ async function executeToolCallOnce(
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
   try {
     const args = parseToolArguments(call.function.name, call.function.arguments);
-    await onProgress?.({ type: "tool_start", tool: call.function.name, args });
+    await onProgress?.({ type: "tool_start", tool: call.function.name, toolCallId: call.id, args });
     const reportToolProgress: ToolProgressReporter = (event) => onProgress?.(event);
     let result: unknown;
 
@@ -91,11 +91,11 @@ async function executeToolCallOnce(
         throw new Error("Unknown tool.");
     }
 
-    await onProgress?.({ type: "tool_complete", tool: call.function.name });
+    await onProgress?.({ type: "tool_complete", tool: call.function.name, toolCallId: call.id });
     return { role: "tool", tool_call_id: call.id, content: JSON.stringify(result) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Tool execution failed";
-    await onProgress?.({ type: "tool_error", tool: call.function.name });
+    await onProgress?.({ type: "tool_error", tool: call.function.name, toolCallId: call.id });
     return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: reason }) };
   }
 }
@@ -128,6 +128,7 @@ export async function executeToolCall(
     await onProgress?.({
       type: "recovery_retry",
       tool: call.function.name,
+      toolCallId: call.id,
       attempt,
       maxAttempts
     });
