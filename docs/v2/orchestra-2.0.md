@@ -1,6 +1,6 @@
 # Orchestra 2.0
 
-Status: implementation design
+Status: implemented; CI verification pending
 Branch: `v2`
 Scope: strengthen the existing custom orchestration engine without replacing it or changing the model-visible tool set.
 
@@ -13,7 +13,8 @@ The current engine is a model-led controller with:
 - serialized mutation execution;
 - per-tool schema validation and bounded transient retries for read-only calls;
 - a final synthesis pass that reports partial work rather than claiming completion;
-- progress events consumed by the Telegram presentation layer.
+- progress events consumed by the Telegram presentation layer; and
+- a request-scoped execution budget with independent model-turn and tool-call ceilings, including read-only retries.
 
 The engine currently lives primarily in `controller.ts`, with planning, tool execution, evaluation, context assembly, and progress formatting split across adjacent modules. This is a sound v1 foundation, but controller responsibilities and execution state are still tightly coupled. The V2 core is also being designed for future full-duplex voice: interfaces must consume semantic execution events and control a request by ID, without introducing voice-specific logic into the reasoning kernel.
 
@@ -75,16 +76,21 @@ No model-generated field can expand permissions, budgets, concurrency, or retry 
 - Keep recovery bounded to two attempts per request and exclude non-read-only steps; mutations are never automatically replayed.
 - Preserve final blocked outcomes when prerequisites remain unresolved.
 
-### Slice 4 — hard budget enforcement
-- Count each tool call, including retries, independently of model rounds.
-- Reserve budget before execution; never start work that exceeds the remaining budget.
-- Keep per-request elapsed-time and model-turn limits.
-- Report which budget ended execution.
+### Slice 4 — hard budget enforcement (implemented; CI verification pending)
+- A request-scoped budget reserves model turns and tool calls independently.
+- Every actual tool attempt reserves one call, including each transient read-only retry.
+- Reservations are synchronous and shared across parallel workers, so concurrent steps cannot overspend the request ceiling.
+- The budget is reserved before execution; an exhausted reservation returns a structured tool error without starting the operation.
+- Planner, planned-step and direct-execution model turns share the same request ceiling; final synthesis also reserves a model turn.
+- Existing per-step rounds, plan rounds, and elapsed-time deadlines remain additional ceilings.
 
-### Slice 5 — event and controller boundary
-- Add request/step/tool correlation to internal events.
-- Keep Telegram presentation as an adapter; do not leak Telegram concepts into the orchestration core.
-- Extract orchestration kernel from the large controller incrementally.
+### Slice 5 — event and controller boundary (implemented; CI verification pending)
+- `createEventPublisher` serializes progress delivery and assigns each event a request ID, monotonic sequence number, and timestamp.
+- Structured events include step index, tool name and tool-call ID correlation where available.
+- The existing progress callback remains supported; a new optional structured-event callback can be consumed by future interfaces.
+- Tool lifecycle events carry the tool-call ID; event delivery is isolated from execution failures.
+- Telegram presentation remains an adapter; no Telegram concepts enter the event contract.
+- The custom controller remains incrementally modularized rather than being replaced wholesale.
 - Preserve the existing five model-visible tools and current provider interfaces.
 
 ## Compatibility constraints
@@ -99,3 +105,11 @@ No model-generated field can expand permissions, budgets, concurrency, or retry 
 ## Definition of done
 
 Orchestra 2.0 is ready when deterministic tests prove the execution-state invariants, the hard budgets cannot be exceeded, recovered dependencies are scheduled correctly, evidence remains attributable to its step, progress events are correlated and ordered, direct fallback remains functional, and the existing tool and Telegram behavior remains compatible. CI and deployed runtime verification are separate gates and must be reported separately.
+
+
+## Implemented runtime contracts
+
+- `AGENT_MAX_TOOL_CALLS` defaults to 120 and caps actual tool attempts per request (including retries).
+- `AGENT_MAX_PLAN_MODEL_TURNS` defaults to 100 and caps planner, execution, and final-synthesis model turns.
+- The event publisher is transport-neutral. Existing Telegram consumers continue using `ProgressEvent`; future adapters can subscribe to `OrchestraEvent` without changing the reasoning kernel.
+- Request cancellation is still a follow-on controller capability: the event envelope and request ID establish the correlation contract, but this slice does not claim in-flight provider or tool cancellation.
