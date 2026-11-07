@@ -14,6 +14,7 @@ import { collectStepEvidence, getRecoverablePrerequisites, type StepEvidence } f
 import { createModelCallTelemetry, type ModelCallTelemetry, type ModelCallTrace } from "./modelTelemetry.js";
 import { buildStepContext, compactStepConversation, mergeStepEvidence, type StepExecutionOutcome } from "./stepContext.js";
 import { ToolEvidenceCache } from "./toolEvidenceCache.js";
+import { buildSynthesisEvidencePackage, buildSynthesisMessages, enforceCompletionDisclosure } from "./synthesis.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -193,9 +194,11 @@ async function runPlannedStep(
 function fallbackReport(outcomes: StepOutcome[], totalSteps: number, reason: string): string {
   const completed = outcomes.filter((item) => item.status === "completed").length;
   const partial = outcomes.filter((item) => item.status === "partial").length;
+  const failed = outcomes.filter((item) => item.status === "failed").length;
+  const blocked = outcomes.filter((item) => item.status === "blocked").length;
   const lines = [
     "Execution report",
-    `Completed steps: ${completed}/${totalSteps}; partial steps: ${partial}/${totalSteps}.`,
+    `Completed steps: ${completed}/${totalSteps}; partial: ${partial}; failed: ${failed}; blocked: ${blocked}.`,
     reason
   ];
   for (const item of outcomes) {
@@ -203,7 +206,7 @@ function fallbackReport(outcomes: StepOutcome[], totalSteps: number, reason: str
     if (item.failureReason) lines.push(`  Limitation: ${item.failureReason}`);
   }
   if (!outcomes.length) lines.push("No verified findings were produced before execution stopped.");
-  return lines.join("\n");
+  return lines.join("\\n");
 }
 
 async function synthesizeReport(
@@ -214,62 +217,37 @@ async function synthesizeReport(
   deadline?: number,
   budget?: ExecutionBudget,
   signal?: AbortSignal,
-  telemetry?: ModelCallTelemetry
+  telemetry?: ModelCallTelemetry,
+  planSteps: ExecutionPlanStep[] = []
 ): Promise<string> {
-  const reportData = {
-    execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
-      ? "complete"
-      : "partial_or_incomplete",
-    completed_steps: outcomes.filter((item) => item.status === "completed").length,
-    partial_steps: outcomes.filter((item) => item.status === "partial").length,
-    failed_steps: outcomes.filter((item) => item.status === "failed").length,
-    blocked_steps: outcomes.filter((item) => item.status === "blocked").length,
-    total_steps: totalSteps,
-    stop_reason: reason,
-    step_results: outcomes
-  };
-  const reportMessages: ChatCompletionMessageParam[] = [
-    ...messages,
-    {
-      role: "system",
-      content: [
-        "Produce the best useful report you can for the user's original request using only the execution evidence provided.",
-        "First assess whether the evidence already collected is sufficient for the user's actual request. If it is sufficient, use it directly and do not imply that more research was needed.",
-        "Do not discard useful results or request more information merely to make the report exhaustive. Prefer the minimum sufficient evidence.",
-        "Execution may be incomplete. Synthesize all verified findings, including useful partial observations.",
-        "Clearly separate confirmed findings from uncertainty. Identify steps that remain incomplete and explain why when known.",
-        "Never invent facts, sources, tool results, or claim unfinished work succeeded.",
-        "Do not ask the user to clarify or retry merely because an execution limit was reached. Give the useful report first.",
-        JSON.stringify(reportData)
-      ].join("\n\n")
-    }
-  ];
-  if (signal?.aborted) return fallbackReport(outcomes, totalSteps, reason + " (request cancelled)");
+  const evidencePackage = buildSynthesisEvidencePackage(messages, outcomes, planSteps, totalSteps, reason);
+  const reportMessages = buildSynthesisMessages(evidencePackage);
+  if (signal?.aborted) return enforceCompletionDisclosure(fallbackReport(outcomes, totalSteps, reason + " (request cancelled)"), evidencePackage);
   if (budget && !budget.reserveModelTurn()) {
-    return fallbackReport(outcomes, totalSteps, reason + " (final synthesis model-turn budget exhausted)");
+    return enforceCompletionDisclosure(fallbackReport(outcomes, totalSteps, reason + " (final synthesis model-turn budget exhausted)"), evidencePackage);
   }
   try {
     const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS, signal };
     const request = () => llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages: reportMessages,
-      temperature: 0.4
+      temperature: 0.3
     }, options);
     const final = telemetry
       ? await telemetry.run({
           phase: "synthesis",
-          reason: "synthesize_step_outcomes_and_verify_report_requirements",
+          reason: "claim_driven_evidence_package_synthesis",
           model: config.NVIDIA_NIM_MODEL,
           contextMode: "evidence_package",
           messages: reportMessages
         }, request)
       : await request();
     const answer = final.choices[0]?.message?.content;
-    if (answer?.trim()) return finalResponse(answer);
+    if (answer?.trim()) return finalResponse(enforceCompletionDisclosure(answer, evidencePackage));
   } catch (error) {
     console.warn("Final execution report synthesis failed:", error);
   }
-  return fallbackReport(outcomes, totalSteps, reason);
+  return enforceCompletionDisclosure(fallbackReport(outcomes, totalSteps, reason), evidencePackage);
 }
 
 async function runPlannedRequest(
@@ -584,7 +562,7 @@ async function runPlannedRequest(
     totalSteps: steps.length
   });
   await onProgress?.({ type: "verifying" });
-  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget, signal, telemetry);
+  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget, signal, telemetry, steps);
 }
 
 /**
