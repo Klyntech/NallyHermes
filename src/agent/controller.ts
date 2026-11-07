@@ -1,9 +1,10 @@
 import OpenAI from "openai";
-import { randomUUID } from "node:crypto";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { config } from "../config.js";
 import type { OrchestraEvent, ProgressEvent } from "./progress.js";
+import { randomUUID } from "node:crypto";
 import { createExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
+import { createEventPublisher } from "./eventStream.js";
 import { agentTools } from "./definitions.js";
 import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
@@ -537,29 +538,11 @@ export async function runAgent(
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   onEvent?: (event: OrchestraEvent) => Promise<void> | void
 ): Promise<string> {
-  const requestId = randomUUID();
-  let sequence = 0;
-  let eventQueue: Promise<void> = Promise.resolve();
-  const emitProgress = (event: ProgressEvent): Promise<void> => {
-    eventQueue = eventQueue.then(async () => {
-      await onProgress?.(event);
-      const envelope: OrchestraEvent = {
-        requestId,
-        sequence: ++sequence,
-        emittedAt: new Date().toISOString(),
-        event,
-        correlation: {
-          ...("index" in event ? { stepIndex: event.index } : {}),
-          ...("tool" in event ? { toolName: event.tool } : {}),
-          ...("toolCallId" in event && event.toolCallId ? { toolCallId: event.toolCallId } : {})
-        }
-      };
-      await onEvent?.(envelope);
-    }).catch((error) => {
-      console.warn("Orchestra event delivery failed:", error);
-    });
-    return eventQueue;
-  };
+  const emitProgress = createEventPublisher({
+    requestId: randomUUID(),
+    onProgress,
+    onEvent
+  });
   const budget = createExecutionBudget({
     maxToolCalls: config.AGENT_MAX_TOOL_CALLS,
     maxModelTurns: config.AGENT_MAX_PLAN_MODEL_TURNS
