@@ -89,6 +89,7 @@ No model-generated field can expand permissions, budgets, concurrency, or retry 
 - Structured events include step index, tool name and tool-call ID correlation where available.
 - The existing progress callback remains supported; a new optional structured-event callback can be consumed by future interfaces.
 - Tool lifecycle events carry the tool-call ID; event delivery is isolated from execution failures.
+- An explicit `request_cancelled` lifecycle event distinguishes cancellation from successful completion.
 - Telegram presentation remains an adapter; no Telegram concepts enter the event contract.
 - The custom controller remains incrementally modularized rather than being replaced wholesale.
 - Preserve the existing five model-visible tools and current provider interfaces.
@@ -112,4 +113,4 @@ Orchestra 2.0 is ready when deterministic tests prove the execution-state invari
 - `AGENT_MAX_TOOL_CALLS` defaults to 120 and caps actual tool attempts per request (including retries).
 - `AGENT_MAX_PLAN_MODEL_TURNS` defaults to 100 and caps planner, execution, and final-synthesis model turns.
 - The event publisher is transport-neutral. Existing Telegram consumers continue using `ProgressEvent`; future adapters can subscribe to `OrchestraEvent` without changing the reasoning kernel.
-- Request cancellation is still a follow-on controller capability: the event envelope and request ID establish the correlation contract, but this slice does not claim in-flight provider or tool cancellation.
+- `runAgent` accepts an optional `AbortSignal`; planned and direct execution check it between turns and before starting tool work, model requests receive the signal, and queued read-only retries are skipped after cancellation. A tool operation already in progress may finish because the current tool adapters do not expose abortable I/O contracts; mutations are never replayed.
