@@ -456,9 +456,11 @@ async function runPlannedRequest(
         toolRounds: 0,
         answer: "This step was not executed.",
         evidence: { observations: [], assistantNotes: [] },
-        failureReason: blocked
-          ? "A prerequisite step did not complete."
-          : stopReason
+        failureReason: blockedHard
+          ? "A hard prerequisite did not complete successfully."
+          : blockedContext
+            ? "A contextual evidence step did not settle before execution stopped."
+            : stopReason
       });
       await onProgress?.({
         type: blocked ? "plan_step_blocked" : "plan_step_failed",
