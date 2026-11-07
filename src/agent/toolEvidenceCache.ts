@@ -1,10 +1,31 @@
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
-import { isReadOnlyCall, type ToolCallInput } from "./executor.js";
+import type { ToolCallInput } from "./executor.js";
 
 type ToolMessage = Extract<ChatCompletionMessageParam, { role: "tool" }>;
 interface CacheEntry { call: ToolCallInput; result: ToolMessage }
 
 const STOP_WORDS = new Set(["a","an","and","are","as","at","by","for","from","find","get","in","is","it","of","on","or","the","to","via","with","about","official","site","web","search"]);
+
+function isCacheableRead(call: ToolCallInput): boolean {
+  const args = argsOf(call);
+  if (!args) return false;
+  switch (call.function.name) {
+    case "web_search":
+      return typeof args.query === "string" && args.query.trim().length > 0 &&
+        (args.max_results === undefined || (Number.isInteger(args.max_results) && Number(args.max_results) >= 1 && Number(args.max_results) <= 10));
+    case "fetch":
+      return typeof args.url === "string" && Boolean(canonicalUrl(args.url));
+    case "file_io":
+      return ["read", "list", "grep"].includes(String(args.operation)) &&
+        typeof args.path === "string" && args.path.trim().length > 0;
+    case "memory":
+      return args.operation === "recall";
+    case "schedule":
+      return args.operation === "list";
+    default:
+      return false;
+  }
+}
 
 function argsOf(call: ToolCallInput): Record<string, unknown> | null {
   try {
@@ -85,7 +106,7 @@ export class ToolEvidenceCache {
   private readonly entries: CacheEntry[] = [];
 
   find(call: ToolCallInput): ToolMessage | undefined {
-    if (!isReadOnlyCall(call)) return undefined;
+    if (!isCacheableRead(call)) return undefined;
     const match = this.entries.find((entry) => equivalent(call, entry.call));
     return match ? reusedResult(call, match.result) : undefined;
   }
