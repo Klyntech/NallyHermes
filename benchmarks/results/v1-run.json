@@ -3,14 +3,14 @@
   "version": "v1",
   "git_sha": "4ba2b87084a4b003331e0f9c687bbf0822558edd",
   "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
-  "started_at": "2026-11-07T13:35:07.901Z",
-  "completed_at": "2026-11-07T13:37:58.491Z",
-  "duration_ms": 170590,
+  "started_at": "2026-11-07T13:59:55.128Z",
+  "completed_at": "2026-11-07T14:03:19.182Z",
+  "duration_ms": 204053,
   "status": "completed",
   "error": null,
   "prompt": "Find the official LightRAG documentation and investigate its storage options.\n\nI need a technical report covering:\n\n1. Identify the official documentation and repository.\n2. Find the supported storage backends for key-value storage, vector storage, graph storage and document status.\n3. Explain the differences between the available storage options.\n4. Investigate whether PostgreSQL/Neon is a suitable storage setup.\n5. Identify any compatibility limitations or important configuration considerations.\n6. Recommend a practical storage architecture for a production AI agent.\n\nUse official sources wherever possible. Cross-check important claims.\n\nIf one research step fails, do not abandon the entire task. Recover where possible, use the evidence already collected, continue independent steps, and clearly disclose anything you could not verify.\n\nDo not invent facts or claim that research was completed when it wasn't.\n\nProduce a structured technical report with source links and a final recommendation.",
   "metrics": {
-    "progress_event_count": 96,
+    "progress_event_count": 68,
     "structured_event_count": 0,
     "model_telemetry_supported": false,
     "model_call_count": null,
@@ -18,71 +18,73 @@
     "median_output_tokens_per_call": null,
     "median_total_tokens_per_call": null,
     "model_call_errors": null,
-    "tool_call_starts": 23,
-    "tool_errors": 3,
-    "retry_events": 2,
+    "model_turns_with_tool_calls": null,
+    "model_tool_calls_requested": null,
+    "tool_call_starts": 15,
+    "tool_errors": 0,
+    "retry_events": 0,
     "planned_step_starts": 4,
     "completed_step_events": 4,
     "failed_step_events": 0
   },
   "progress_events": [
     {
-      "at": "2026-11-07T13:35:07.973Z",
+      "at": "2026-11-07T13:59:55.146Z",
       "type": "planning"
     },
     {
-      "at": "2026-11-07T13:35:14.827Z",
+      "at": "2026-11-07T14:00:06.340Z",
       "type": "plan_created",
       "stepCount": 4
     },
     {
-      "at": "2026-11-07T13:35:14.827Z",
+      "at": "2026-11-07T14:00:06.341Z",
       "type": "plan_step_start",
       "index": 1,
       "total": 4,
-      "task": "Find the official LightRAG documentation website and official GitHub repository URLs"
+      "task": "Find the official LightRAG documentation site and repository URL via web search"
     },
     {
-      "at": "2026-11-07T13:35:14.827Z",
+      "at": "2026-11-07T14:00:06.341Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:15.597Z",
+      "at": "2026-11-07T14:00:07.343Z",
       "type": "tool_start",
       "tool": "web_search",
       "args": {
-        "query": "LightRAG official documentation GitHub repository",
-        "max_results": 10
+        "query": "LightRAG official documentation repository GitHub",
+        "max_results": 8
       }
     },
     {
-      "at": "2026-11-07T13:35:17.478Z",
+      "at": "2026-11-07T14:00:07.481Z",
       "type": "tool_progress",
       "tool": "web_search",
       "stage": "search_complete",
-      "resultCount": 10
+      "resultCount": 8
     },
     {
-      "at": "2026-11-07T13:35:17.478Z",
+      "at": "2026-11-07T14:00:07.481Z",
       "type": "tool_complete",
       "tool": "web_search"
     },
     {
-      "at": "2026-11-07T13:35:17.479Z",
+      "at": "2026-11-07T14:00:07.482Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:18.881Z",
+      "at": "2026-11-07T14:00:09.518Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
-        "url": "https://github.com/HKUDS/LightRAG"
+        "url": "https://github.com/hkuds/lightrag"
       }
     },
     {
-      "at": "2026-11-07T13:35:18.882Z",
+      "at": "2026-11-07T14:00:09.518Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
@@ -90,199 +92,97 @@
       }
     },
     {
-      "at": "2026-11-07T13:35:19.001Z",
+      "at": "2026-11-07T14:00:09.580Z",
       "type": "tool_progress",
       "tool": "fetch",
       "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:19.003Z",
+      "at": "2026-11-07T14:00:09.583Z",
       "type": "tool_complete",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:19.282Z",
+      "at": "2026-11-07T14:00:09.938Z",
       "type": "tool_progress",
       "tool": "fetch",
       "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:19.288Z",
+      "at": "2026-11-07T14:00:09.947Z",
       "type": "tool_complete",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:19.288Z",
+      "at": "2026-11-07T14:00:09.948Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:25.597Z",
+      "at": "2026-11-07T14:00:17.514Z",
       "type": "plan_step_complete",
       "index": 1,
       "total": 4
     },
     {
-      "at": "2026-11-07T13:35:25.598Z",
+      "at": "2026-11-07T14:00:17.514Z",
       "type": "plan_step_start",
       "index": 2,
       "total": 4,
-      "task": "Investigate supported storage backends for key-value, vector, graph storage, and document status from official LightRAG documentation"
+      "task": "Investigate supported storage backends for key-value, vector, graph storage, and document status from official documentation"
     },
     {
-      "at": "2026-11-07T13:35:25.598Z",
-      "type": "plan_step_start",
-      "index": 3,
-      "total": 4,
-      "task": "Investigate PostgreSQL/Neon storage support, compatibility limitations, and configuration considerations for LightRAG"
-    },
-    {
-      "at": "2026-11-07T13:35:25.598Z",
+      "at": "2026-11-07T14:00:17.514Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:25.598Z",
-      "type": "thinking",
-      "phase": "model"
-    },
-    {
-      "at": "2026-11-07T13:35:27.037Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG PostgreSQL storage backend documentation",
-        "max_results": 10
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:27.037Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG storage backends key-value vector graph document status",
-        "max_results": 10
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:27.717Z",
+      "at": "2026-11-07T14:00:23.787Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
-        "url": "https://github.com/HKUDS/LightRAG/tree/main/docs"
+        "url": "https://api.github.com/repos/HKUDS/LightRAG/contents/docs"
       }
     },
     {
-      "at": "2026-11-07T13:35:27.717Z",
+      "at": "2026-11-07T14:00:23.787Z",
       "type": "tool_start",
       "tool": "web_search",
       "args": {
-        "query": "LightRAG storage backends key-value vector graph document status documentation",
-        "max_results": 8
+        "query": "LightRAG storage backends key-value vector graph storage documentation",
+        "max_results": 5
       }
     },
     {
-      "at": "2026-11-07T13:35:27.985Z",
+      "at": "2026-11-07T14:00:23.890Z",
       "type": "tool_progress",
       "tool": "fetch",
       "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:27.987Z",
+      "at": "2026-11-07T14:00:23.892Z",
       "type": "tool_complete",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:29.353Z",
+      "at": "2026-11-07T14:00:26.926Z",
       "type": "tool_progress",
       "tool": "web_search",
       "stage": "search_complete",
-      "resultCount": 10
+      "resultCount": 5
     },
     {
-      "at": "2026-11-07T13:35:29.354Z",
+      "at": "2026-11-07T14:00:26.926Z",
       "type": "tool_complete",
       "tool": "web_search"
     },
     {
-      "at": "2026-11-07T13:35:29.354Z",
-      "type": "tool_progress",
-      "tool": "web_search",
-      "stage": "search_complete",
-      "resultCount": 10
-    },
-    {
-      "at": "2026-11-07T13:35:29.354Z",
-      "type": "tool_complete",
-      "tool": "web_search"
-    },
-    {
-      "at": "2026-11-07T13:35:29.355Z",
+      "at": "2026-11-07T14:00:26.926Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:29.957Z",
-      "type": "tool_progress",
-      "tool": "web_search",
-      "stage": "search_complete",
-      "resultCount": 8
-    },
-    {
-      "at": "2026-11-07T13:35:29.957Z",
-      "type": "tool_complete",
-      "tool": "web_search"
-    },
-    {
-      "at": "2026-11-07T13:35:29.957Z",
-      "type": "thinking",
-      "phase": "model"
-    },
-    {
-      "at": "2026-11-07T13:35:32.056Z",
-      "type": "tool_start",
-      "tool": "fetch",
-      "args": {
-        "url": "https://github.com/HKUDS/LightRAG/blob/main/docs/ProgramingWithCore.md"
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:32.056Z",
-      "type": "tool_start",
-      "tool": "fetch",
-      "args": {
-        "url": "https://github.com/HKUDS/LightRAG/blob/main/docs/LightRAG-API-Server.md"
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:32.446Z",
-      "type": "tool_progress",
-      "tool": "fetch",
-      "stage": "fetch_reading"
-    },
-    {
-      "at": "2026-11-07T13:35:32.453Z",
-      "type": "tool_complete",
-      "tool": "fetch"
-    },
-    {
-      "at": "2026-11-07T13:35:32.456Z",
-      "type": "tool_progress",
-      "tool": "fetch",
-      "stage": "fetch_reading"
-    },
-    {
-      "at": "2026-11-07T13:35:32.464Z",
-      "type": "tool_complete",
-      "tool": "fetch"
-    },
-    {
-      "at": "2026-11-07T13:35:32.464Z",
-      "type": "thinking",
-      "phase": "model"
-    },
-    {
-      "at": "2026-11-07T13:35:37.117Z",
+      "at": "2026-11-07T14:00:32.530Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
@@ -290,7 +190,7 @@
       }
     },
     {
-      "at": "2026-11-07T13:35:37.117Z",
+      "at": "2026-11-07T14:00:32.530Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
@@ -298,202 +198,126 @@
       }
     },
     {
-      "at": "2026-11-07T13:35:37.117Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG Neon PostgreSQL serverless storage",
-        "max_results": 10
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:37.272Z",
-      "type": "tool_progress",
-      "tool": "fetch",
-      "stage": "fetch_reading"
-    },
-    {
-      "at": "2026-11-07T13:35:37.273Z",
-      "type": "tool_progress",
-      "tool": "fetch",
-      "stage": "fetch_reading"
-    },
-    {
-      "at": "2026-11-07T13:35:37.277Z",
-      "type": "tool_complete",
-      "tool": "fetch"
-    },
-    {
-      "at": "2026-11-07T13:35:37.278Z",
-      "type": "tool_complete",
-      "tool": "fetch"
-    },
-    {
-      "at": "2026-11-07T13:35:37.730Z",
+      "at": "2026-11-07T14:00:32.530Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
-        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/README.md"
+        "url": "https://api.github.com/repos/HKUDS/LightRAG/contents/docs/design"
       }
     },
     {
-      "at": "2026-11-07T13:35:37.730Z",
-      "type": "tool_start",
-      "tool": "fetch",
-      "args": {
-        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/LightRAG-API-Server.md"
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:37.738Z",
+      "at": "2026-11-07T14:00:32.620Z",
       "type": "tool_progress",
       "tool": "fetch",
       "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:37.741Z",
-      "type": "tool_complete",
-      "tool": "fetch"
-    },
-    {
-      "at": "2026-11-07T13:35:37.875Z",
+      "at": "2026-11-07T14:00:32.622Z",
       "type": "tool_progress",
       "tool": "fetch",
       "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:37.878Z",
+      "at": "2026-11-07T14:00:32.623Z",
       "type": "tool_complete",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:37.878Z",
+      "at": "2026-11-07T14:00:32.625Z",
+      "type": "tool_complete",
+      "tool": "fetch"
+    },
+    {
+      "at": "2026-11-07T14:00:32.641Z",
+      "type": "tool_progress",
+      "tool": "fetch",
+      "stage": "fetch_reading"
+    },
+    {
+      "at": "2026-11-07T14:00:32.645Z",
+      "type": "tool_complete",
+      "tool": "fetch"
+    },
+    {
+      "at": "2026-11-07T14:00:32.646Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:39.595Z",
+      "at": "2026-11-07T14:00:45.060Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "args": {
+        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/design/PgVectorFilteredSearch.md"
+      }
+    },
+    {
+      "at": "2026-11-07T14:00:45.060Z",
+      "type": "tool_start",
+      "tool": "fetch",
+      "args": {
+        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/MilvusConfigurationGuide.md"
+      }
+    },
+    {
+      "at": "2026-11-07T14:00:45.060Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "args": {
+        "query": "LightRAG PGGraphStorage Apache AGE pgvector PostgreSQL extension requirements",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T14:00:45.125Z",
       "type": "tool_progress",
-      "tool": "web_search",
-      "stage": "search_complete",
-      "resultCount": 10
+      "tool": "fetch",
+      "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:39.595Z",
+      "at": "2026-11-07T14:00:45.126Z",
       "type": "tool_complete",
-      "tool": "web_search"
-    },
-    {
-      "at": "2026-11-07T13:35:39.595Z",
-      "type": "thinking",
-      "phase": "model"
-    },
-    {
-      "at": "2026-11-07T13:35:45.250Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG \"Storage Types Supported\" PostgreSQL pgvector AGE graph storage",
-        "max_results": 5
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:45.250Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG Neon serverless postgres compatibility pgvector AGE extension",
-        "max_results": 5
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:45.252Z",
-      "type": "tool_start",
-      "tool": "fetch",
-      "args": {
-        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/StorageTypesSupported.md"
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:45.433Z",
-      "type": "tool_error",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:45.433Z",
-      "type": "recovery_retry",
+      "at": "2026-11-07T14:00:45.156Z",
+      "type": "tool_progress",
       "tool": "fetch",
-      "attempt": 2,
-      "maxAttempts": 3
+      "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:46.432Z",
-      "type": "tool_start",
-      "tool": "fetch",
-      "args": {
-        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/StorageTypesSupported.md"
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:46.440Z",
-      "type": "tool_error",
+      "at": "2026-11-07T14:00:45.157Z",
+      "type": "tool_complete",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:46.441Z",
-      "type": "recovery_retry",
-      "tool": "fetch",
-      "attempt": 3,
-      "maxAttempts": 3
-    },
-    {
-      "at": "2026-11-07T13:35:47.311Z",
+      "at": "2026-11-07T14:00:47.379Z",
       "type": "tool_progress",
       "tool": "web_search",
       "stage": "search_complete",
       "resultCount": 5
     },
     {
-      "at": "2026-11-07T13:35:47.311Z",
+      "at": "2026-11-07T14:00:47.379Z",
       "type": "tool_complete",
       "tool": "web_search"
     },
     {
-      "at": "2026-11-07T13:35:47.568Z",
-      "type": "tool_progress",
-      "tool": "web_search",
-      "stage": "search_complete",
-      "resultCount": 5
-    },
-    {
-      "at": "2026-11-07T13:35:47.568Z",
-      "type": "tool_complete",
-      "tool": "web_search"
-    },
-    {
-      "at": "2026-11-07T13:35:48.441Z",
-      "type": "tool_start",
-      "tool": "fetch",
-      "args": {
-        "url": "https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/StorageTypesSupported.md"
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:48.448Z",
-      "type": "tool_error",
-      "tool": "fetch"
-    },
-    {
-      "at": "2026-11-07T13:35:48.448Z",
-      "type": "recovery_adjusting"
-    },
-    {
-      "at": "2026-11-07T13:35:48.448Z",
+      "at": "2026-11-07T14:00:47.379Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:49.983Z",
+      "at": "2026-11-07T14:00:53.633Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "args": {
+        "query": "LightRAG Neon serverless PostgreSQL Apache AGE extension compatibility",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T14:00:53.633Z",
       "type": "tool_start",
       "tool": "fetch",
       "args": {
@@ -501,134 +325,132 @@
       }
     },
     {
-      "at": "2026-11-07T13:35:50.103Z",
+      "at": "2026-11-07T14:00:53.702Z",
       "type": "tool_progress",
       "tool": "fetch",
       "stage": "fetch_reading"
     },
     {
-      "at": "2026-11-07T13:35:50.106Z",
+      "at": "2026-11-07T14:00:53.706Z",
       "type": "tool_complete",
       "tool": "fetch"
     },
     {
-      "at": "2026-11-07T13:35:50.106Z",
-      "type": "thinking",
-      "phase": "model"
-    },
-    {
-      "at": "2026-11-07T13:35:50.725Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "Neon PostgreSQL Apache AGE extension support",
-        "max_results": 5
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:50.725Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG PGTableGraphStorage vs PGGraphStorage difference Apache AGE",
-        "max_results": 5
-      }
-    },
-    {
-      "at": "2026-11-07T13:35:52.474Z",
+      "at": "2026-11-07T14:00:55.876Z",
       "type": "tool_progress",
       "tool": "web_search",
       "stage": "search_complete",
       "resultCount": 5
     },
     {
-      "at": "2026-11-07T13:35:52.474Z",
+      "at": "2026-11-07T14:00:55.876Z",
       "type": "tool_complete",
       "tool": "web_search"
     },
     {
-      "at": "2026-11-07T13:35:53.327Z",
-      "type": "tool_progress",
-      "tool": "web_search",
-      "stage": "search_complete",
-      "resultCount": 5
-    },
-    {
-      "at": "2026-11-07T13:35:53.327Z",
-      "type": "tool_complete",
-      "tool": "web_search"
-    },
-    {
-      "at": "2026-11-07T13:35:53.327Z",
+      "at": "2026-11-07T14:00:55.876Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:35:58.479Z",
-      "type": "tool_start",
-      "tool": "web_search",
-      "args": {
-        "query": "LightRAG PostgreSQL storage PGKVStorage PGVectorStorage PGGraphStorage PGDocStatusStorage POSTGRES_URI pgvector Apache AGE env",
-        "max_results": 6
-      }
-    },
-    {
-      "at": "2026-11-07T13:36:01.348Z",
-      "type": "tool_progress",
-      "tool": "web_search",
-      "stage": "search_complete",
-      "resultCount": 6
-    },
-    {
-      "at": "2026-11-07T13:36:01.348Z",
-      "type": "tool_complete",
-      "tool": "web_search"
-    },
-    {
-      "at": "2026-11-07T13:36:01.349Z",
-      "type": "thinking",
-      "phase": "model"
-    },
-    {
-      "at": "2026-11-07T13:37:26.363Z",
+      "at": "2026-11-07T14:01:36.871Z",
       "type": "plan_step_complete",
       "index": 2,
       "total": 4
     },
     {
-      "at": "2026-11-07T13:37:26.363Z",
+      "at": "2026-11-07T14:01:36.871Z",
+      "type": "plan_step_start",
+      "index": 3,
+      "total": 4,
+      "task": "Investigate PostgreSQL/Neon suitability, compatibility limitations, and configuration considerations"
+    },
+    {
+      "at": "2026-11-07T14:01:36.871Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T14:01:41.357Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "args": {
+        "query": "Neon PostgreSQL pgvector extension support",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T14:01:41.357Z",
+      "type": "tool_start",
+      "tool": "web_search",
+      "args": {
+        "query": "Neon PostgreSQL Apache AGE extension support superuser",
+        "max_results": 5
+      }
+    },
+    {
+      "at": "2026-11-07T14:01:43.573Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 5
+    },
+    {
+      "at": "2026-11-07T14:01:43.573Z",
+      "type": "tool_complete",
+      "tool": "web_search"
+    },
+    {
+      "at": "2026-11-07T14:01:43.682Z",
+      "type": "tool_progress",
+      "tool": "web_search",
+      "stage": "search_complete",
+      "resultCount": 5
+    },
+    {
+      "at": "2026-11-07T14:01:43.682Z",
+      "type": "tool_complete",
+      "tool": "web_search"
+    },
+    {
+      "at": "2026-11-07T14:01:43.682Z",
+      "type": "thinking",
+      "phase": "model"
+    },
+    {
+      "at": "2026-11-07T14:01:51.493Z",
       "type": "plan_step_complete",
       "index": 3,
       "total": 4
     },
     {
-      "at": "2026-11-07T13:37:26.363Z",
+      "at": "2026-11-07T14:01:51.493Z",
       "type": "plan_step_start",
       "index": 4,
       "total": 4,
-      "task": "Compile structured technical report with source links, storage option differences, and production architecture recommendation"
+      "task": "Cross-check claims, identify limitations, and compile the technical report with final production storage architecture recommendation"
     },
     {
-      "at": "2026-11-07T13:37:26.363Z",
+      "at": "2026-11-07T14:01:51.493Z",
       "type": "thinking",
       "phase": "model"
     },
     {
-      "at": "2026-11-07T13:37:41.055Z",
+      "at": "2026-11-07T14:02:43.344Z",
       "type": "plan_step_complete",
       "index": 4,
       "total": 4
     },
     {
-      "at": "2026-11-07T13:37:41.055Z",
+      "at": "2026-11-07T14:02:43.344Z",
       "type": "verifying"
     },
     {
-      "at": "2026-11-07T13:37:58.491Z",
+      "at": "2026-11-07T14:03:19.182Z",
       "type": "response_ready"
     }
   ],
   "orchestra_events": [],
   "model_calls": [],
-  "answer": "# Technical Report: LightRAG Storage Options Investigation\n\n## 1. Official Documentation and Repository\n\n| Item | Value |\n|------|-------|\n| **Official GitHub repository** | https://github.com/HKUDS/LightRAG — `HKUDS/LightRAG`, \"[EMNLP2025] LightRAG: Simple and Fast Retrieval-Augmented Generation\" |\n| **Project / paper page** | https://lightrag.github.io (University of Hong Kong Data Intelligence Lab) |\n| **arXiv paper** | https://arxiv.org/abs/2410.05779 |\n| **Detailed operational docs** | Stored in the repo's `/docs` folder (`ProgramingWithCore.md`, `LightRAG-API-Server.md`, `DockerDeployment.md`, etc.) — not on lightrag.github.io, which is primarily a paper landing page |\n\n## 2. Supported Storage Backends\n\nLightRAG defines four pluggable storage roles:\n\n| Role | Default (dev) | Production-capable backends |\n|------|--------------|------------------------------|\n| **KV Storage** | `JsonKVStorage` | `PGKVStorage`, `RedisKVStorage`, `MongoKVStorage`, `OpenSearchKVStorage` |\n| **Vector Storage** | `NanoVectorDBStorage` | `PGVectorStorage`, `MilvusVectorDBStorage`, `ChromaVectorDBStorage`, `FaissVectorDBStorage`, `MongoVectorDBStorage`, `QdrantVectorDBStorage`, `OpenSearchVectorDBStorage` |\n| **Graph Storage** | `NetworkXStorage` | `Neo4JStorage`, `PGGraphStorage`, `PGTableGraphStorage`, `AGEStorage`, `OpenSearchGraphStorage`, `MemgraphStorage` |\n| **Doc Status Storage** | `JsonDocStatusStorage` | `PGDocStatusStorage`, `MongoDocStatusStorage`, `OpenSearchDocStatusStorage` |\n\n**Single-backend options** (one database for all four roles): PostgreSQL (officially recommended), MongoDB, OpenSearch.\n\n**Specialized per-role options:** Milvus/Qdrant (vector), Neo4j/Memgraph (graph).\n\n**Community branches (not main):** `dev-lancedb`, `dev-nebula-graph` — not officially supported for production.\n\nThe four defaults (`JsonKVStorage`, `NanoVectorDBStorage`, `NetworkXStorage`, `JsonDocStatusStorage`) are file-based/in-memory under `working_dir`, bounded by RAM, and explicitly not for production.\n\n## 3. Differences Between Storage Options\n\n**PostgreSQL** can serve all four roles in one instance (`PGKVStorage`, `PGVectorStorage` via pgvector, `PGGraphStorage` via Apache AGE or `PGTableGraphStorage` on plain tables, `PGDocStatusStorage`). This is the simplest operations story — single backup, single connection pool. Requires PostgreSQL 16.6+ plus the `pgvector` extension, and `apache_age` if using `PGGraphStorage`.\n\n**MongoDB** and **OpenSearch** are also single-backend options. OpenSearch requires version 3.3.0+ for the v1.5 storage path.\n\n**Specialized backends** (Neo4j, Memgraph for graph; Milvus, Qdrant for vector) offer better performance for their specific role but require managing additional services.\n\n**Redis** supports KV and doc-status only — it cannot serve vector or graph roles on its own.\n\n**Workspace isolation** differs by backend: file subdirectories (defaults), collection/index name prefixes (Redis, MongoDB, OpenSearch), a `workspace` column in tables (PostgreSQL KV/vector/doc-status), labels (Neo4j/Memgraph), or payload partitioning (Qdrant). Default workspace: PostgreSQL = `default`; Neo4j = `base`.\n\n## 4. Is PostgreSQL / Neon Suitable?\n\n**PostgreSQL: Yes — officially recommended for production.** It can host all four storage roles on a single instance.\n\n**Neon: Partially suitable.** Neon supports pgvector (confirmed from Neon's documentation), so `PGVectorStorage` works. `PGKVStorage` and `PGDocStatusStorage` should work via standard connection strings. However, **Apache AGE support on Neon is unconfirmed** — `PGGraphStorage` requires the AGE extension (`shared_preload_libraries = 'age'`), which may not be available on serverless Neon. Workarounds: use `PGTableGraphStorage` (graph on plain indexed tables, no AGE required) or pair Neon with a dedicated graph store (Neo4j/Memgraph).\n\nNeon-specific considerations: serverless cold-start latency, PgBouncer-based connection pooling, free tier limits (0.5 GB storage, 100 compute hours/month).\n\n## 5. Compatibility Limitations and Configuration Considerations\n\n- **No direct storage migration** between implementations (one exception: an already-extracted graph can move from `PGGraphStorage` to `PGTableGraphStorage` without re-indexing). Choose storage before the first upload.\n- **Embedding model/dimension is locked after indexing.** Changing model, dimension, asymmetric-embedding flag, or prefixes requires clearing vector data and re-indexing. PostgreSQL vector dimension must be defined at initial table creation.\n- **Workspace isolation is mandatory** when multiple instances share one external database — use distinct `WORKSPACE` (or `POSTGRES_WORKSPACE`) values, otherwise data will conflict and be corrupted.\n- **Authentication:** Without `AUTH_ACCOUNTS`/`LIGHTRAG_API_KEY`, all endpoints are public — only safe on `127.0.0.1`.\n- **Production server:** `lightrag-gunicorn --workers 4` (not supported on Windows); `lightrag-server` (Uvicorn) is for simple/single-worker runs.\n- **Rolling restart:** Stop all old writers sharing the same storage/workspace before starting a new version.\n- **OpenSearch:** v1.5 storage path requires OpenSearch ≥ 3.3.0.\n\n## 6. Recommended Production Storage Architecture\n\n**Primary recommendation: Unified PostgreSQL backend for all four roles.**\n\n```\nLightRAG Server (gunicorn + uvicorn, workers ≥ 2)\n  └─ PostgreSQL 16.6+ (pgvector + apache_age optional)\n       ├─ PGKVStorage            (LLM cache, chunks, extraction results)\n       ├─ PGVectorStorage        (vectors, HNSW index)\n       ├─ PGTableGraphStorage    (graph on plain tables — no AGE required)\n       │   OR PGGraphStorage     (graph via Apache AGE)\n       └─ PGDocStatusStorage     (document indexing status)\n```\n\n**Key `.env` settings:**\n```bash\nLIGHTRAG_KV_STORAGE=PGKVStorage\nLIGHTRAG_VECTOR_STORAGE=PGVectorStorage\nLIGHTRAG_GRAPH_STORAGE=PGTableGraphStorage   # or PGGraphStorage if AGE available\nLIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage\nPOSTGRES_HOST=...\nPOSTGRES_PORT=5432\nPOSTGRES_USER=...\nPOSTGRES_PASSWORD=...\nPOSTGRES_DATABASE=...\nPOSTGRES_MAX_CONNECTIONS=20\nPOSTGRES_WORKSPACE=production\nEMBEDDING_DIM=1024   # must match embedding model exactly\n```\n\n**If Neon cannot run Apache AGE:** Use Neon (pgvector) for KV/vector/doc-status and Neo4j or Memgraph for the graph role.\n\n**Avoid for production:** in-memory defaults and LanceDB/Nebula community branches.\n\n## Sources\n\n1. LightRAG repository: https://github.com/HKUDS/LightRAG\n2. Programming With LightRAG Core (storage backends): https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/ProgramingWithCore.md\n3. LightRAG Server docs (configuration, workspace isolation, production): https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/LightRAG-API-Server.md\n4. LightRAG project page: https://lightrag.github.io\n5. arXiv paper: https://arxiv.org/abs/2410.05779\n6. Neon pgvector extension: https://neon.com/docs/extensions/pgvector\n\n## Verification Notes\n\n- All storage backend types and defaults confirmed from official `ProgramingWithCore.md`.\n- PostgreSQL 16.6+ requirement confirmed from official docs.\n- pgvector support on Neon confirmed from Neon's official documentation.\n- Apache AGE support on Neon **could not be confirmed** — disclosed as a limitation; `PGTableGraphStorage` is the AGE-free alternative.\n- The `StorageTypesSupported.md` page was not found at the expected path (404), but equivalent information was obtained from `ProgramingWithCore.md` and `LightRAG-API-Server.md`."
+  "answer": "# Technical Report: LightRAG Storage Backends\n\n## Evidence Sufficiency\n\nThe research is complete. All four planned steps were executed successfully, and the collected evidence is sufficient to answer every part of your request. No further research steps remain pending. Claims below are drawn from official LightRAG sources (GitHub repository docs and the project site), with Neon-specific claims flagged where LightRAG documentation is silent.\n\n---\n\n## 1. Official Documentation and Repository\n\n| Item | Value | Source |\n|------|-------|--------|\n| **Official Repository** | https://github.com/HKUDS/LightRAG | GitHub API, verified HTTP 200 |\n| **Repository Owner** | HKUDS (The University of Hong Kong) | GitHub metadata |\n| **Public / Non-fork** | Yes | GitHub metadata |\n| **Description** | \"[EMNLP2025] LightRAG: Simple and Fast Retrieval-Augmented Generation\" | GitHub repository page |\n| **Official Documentation Site** | https://lightrag.github.io | Project landing page |\n| **Research Paper** | https://arxiv.org/abs/2410.05779 | Linked from official site |\n| **Docker Image** | ghcr.io/hkuds/lightrag | docs/DockerDeployment.md |\n| **PyPI Package** | `lightrag-hku` | docs/LightRAG-API-Server.md |\n\nThe primary storage documentation lives in `docs/ProgramingWithCore.md` (the \"LightRAG Init Parameters\" table) and `docs/LightRAG-API-Server.md` (deployment and production guidance). Supporting design docs include `docs/design/PgVectorFilteredSearch.md` and `docs/MilvusConfigurationGuide.md`.\n\n---\n\n## 2. Supported Storage Backends\n\nLightRAG abstracts storage into four pluggable categories, selected via constructor parameters (or `LIGHTRAG_*_STORAGE` environment variables for the API server).\n\n### 2.1 Key-Value Storage (`kv_storage`)\n\n| Backend | Class Name | Default? | Notes |\n|---------|-----------|----------|-------|\n| JSON file | `JsonKVStorage` | **Yes** | Local file persistence; development only |\n| PostgreSQL | `PGKVStorage` | No | Requires PostgreSQL |\n| Redis | `RedisKVStorage` | No | Requires Redis |\n| MongoDB | `MongoKVStorage` | No | Requires MongoDB |\n| OpenSearch | `OpenSearchKVStorage` | No | Requires OpenSearch 3.3.0+ |\n\n**Purpose:** LLM response caches, text chunking results, entity-relation extraction results, document information.\n\n### 2.2 Vector Storage (`vector_storage`)\n\n| Backend | Class Name | Default? | Notes |\n|---------|-----------|----------|-------|\n| NanoVectorDB | `NanoVectorDBStorage` | **Yes** | Local file-based; development only |\n| PostgreSQL + pgvector | `PGVectorStorage` | No | Requires pgvector extension |\n| Milvus | `MilvusVectorDBStorage` | No | Specialized vector DB |\n| Chroma | `ChromaVectorDBStorage` | No | |\n| Faiss | `FaissVectorDBStorage` | No | |\n| MongoDB | `MongoVectorDBStorage` | No | |\n| Qdrant | `QdrantVectorDBStorage` | No | Tenant-local search (workspace isolation via payload) |\n| OpenSearch | `OpenSearchVectorDBStorage` | No | Requires OpenSearch 3.3.0+ |\n\n**Purpose:** Embedding vectors for text chunks, entities, and relationships.\n\n### 2.3 Graph Storage (`graph_storage`)\n\n| Backend | Class Name | Default? | Notes |\n|---------|-----------|----------|-------|\n| NetworkX | `NetworkXStorage` | **Yes** | Local file-based; development only |\n| Neo4j | `Neo4JStorage` | No | Specialized graph DB |\n| PostgreSQL + Apache AGE | `PGGraphStorage` | No | Requires Apache AGE extension |\n| PostgreSQL tables (pure SQL) | `PGTableGraphStorage` | No | No AGE required |\n| Apache AGE | `AGEStorage` | No | AGE-based implementation |\n| OpenSearch | `OpenSearchGraphStorage` | No | Requires OpenSearch 3.3.0+ |\n\n**Purpose:** Entity-relation knowledge graph edges and nodes.\n\n### 2.4 Document Status Storage (`doc_status_storage`)\n\n| Backend | Class Name | Default? | Notes |\n|---------|-----------|----------|-------|\n| JSON file | `JsonDocStatusStorage` | **Yes** | Local file persistence; development only |\n| PostgreSQL | `PGDocStatusStorage` | No | Requires PostgreSQL |\n| MongoDB | `MongoDocStatusStorage` | No | Requires MongoDB |\n| OpenSearch | `OpenSearchDocStatusStorage` | No | Requires OpenSearch 3.3.0+ |\n\n**Purpose:** Document ingestion/processing status tracking.\n\n### 2.5 Single-Backend Options (All Four Storage Types)\n\n| Backend | KV | Vector | Graph | Doc Status |\n|---------|----|--------|-------|------------|\n| PostgreSQL | PGKVStorage | PGVectorStorage | PGGraphStorage / PGTableGraphStorage | PGDocStatusStorage |\n| MongoDB | MongoKVStorage | MongoVectorDBStorage | MongoGraphStorage | MongoDocStatusStorage |\n| OpenSearch | OpenSearchKVStorage | OpenSearchVectorDBStorage | OpenSearchGraphStorage | OpenSearchDocStatusStorage |\n\n### 2.6 Community-Contributed (Not in Main Branch)\n\n| Backend | Branch | Coverage | Status |\n|---------|--------|----------|--------|\n| LanceDB | `dev-lancedb` | All four types | Community-contributed; not official |\n| Nebula Graph | `dev-nebula-graph` | Graph only | Community-contributed; not official |\n\nThese are **not** part of the official main release and are not listed in the core `LightRAG` init parameters.\n\n---\n\n## 3. Differences Between Available Storage Options\n\n### Default (File-Based) Backends — Development Only\n\n`JsonKVStorage`, `NanoVectorDBStorage`, `NetworkXStorage`, and `JsonDocStatusStorage` are the defaults. The documentation explicitly states these are **suitable only for small-scale testing and evaluation, not for production**. Data persists as local files under `working_dir` (default `./rag_storage`). They do not support concurrent multi-worker access, lack query optimization, and are vulnerable to file corruption.\n\n### PostgreSQL (Unified Backend)\n\n**Advantages:** Single database for all four storage types; ACID transactions; mature backup/replication tooling; `PGTableGraphStorage` avoids the Apache AGE extension requirement.\n\n**Considerations:** `PGVectorStorage` requires the `pgvector` extension. `PGGraphStorage` requires Apache AGE (typically needs superuser to install). Workspace isolation is achieved via a `workspace` column in tables. For multi-workspace vector search, pgvector >= 0.8 with HNSW and `SET LOCAL hnsw.iterative_scan = strict_order` is required to avoid the \"workspace filter after ANN index\" defect.\n\n### MongoDB\n\n**Advantages:** Single backend for all four types; document-oriented; good for flexible schemas.\n\n**Considerations:** Not as mature for graph traversal as dedicated graph databases; workspace isolation via collection-name prefix.\n\n### OpenSearch\n\n**Advantages:** Single backend for all four types; built-in full-text and vector search.\n\n**Considerations:** Requires OpenSearch 3.3.0 or later (older clusters must be upgraded before enabling v1.5 storage path). Workspace isolation via index name prefixes.\n\n### Specialized Vector Databases (Milvus, Qdrant, Chroma, Faiss)\n\n**Milvus:** One collection per workspace (`{workspace}_{namespace}_{model_suffix}`), so no shared-index filtering defect. Supports HNSW, IVF_FLAT, HNSW_SQ quantization.\n\n**Qdrant:** All workspaces in one collection with tenant-local HNSW graphs per workspace (`KeywordIndexParams(is_tenant=True)`). No shared-index defect; no scan budget needed. Best for many workspaces or uneven workspace sizes.\n\n**Chroma / Faiss:** Listed as supported backends but with less documentation detail.\n\n### Specialized Graph Databases (Neo4j, Memgraph)\n\n**Neo4j:** Native graph database with Cypher query language. Workspace isolation via labels.\n\n**Memgraph:** Mentioned in API server docs as a graph storage option. Workspace isolation via labels.\n\n---\n\n## 4. PostgreSQL / Neon Suitability Investigation\n\n### Can PostgreSQL Serve All Four Storage Types?\n\n**Yes.** PostgreSQL is the officially recommended single-backend option for production. All four LightRAG storage roles have PostgreSQL implementations:\n\n| Role | PostgreSQL Backend | Extension Required |\n|------|-------------------|-------------------|\n| KV | `PGKVStorage` | None |\n| Vector | `PGVectorStorage` | pgvector |\n| Graph | `PGGraphStorage` or `PGTableGraphStorage` | Apache AGE (for PGGraphStorage); none (for PGTableGraphStorage) |\n| Doc Status | `PGDocStatusStorage` | None |\n\n### Is Neon Suitable?\n\n| Requirement | Neon Compatibility | Confidence | Evidence |\n|-------------|-------------------|------------|----------|\n| PostgreSQL protocol compatibility | Yes | High | Neon is PostgreSQL-compatible |\n| pgvector extension | Yes | High | Neon docs confirm `CREATE EXTENSION IF NOT EXISTS vector;` |\n| Apache AGE extension | Likely No | Medium | AGE requires superuser; managed providers typically restrict; Neon community feature request exists |\n| `PGTableGraphStorage` (no AGE) | Yes | High | Pure SQL, no extension needed |\n| `PGKVStorage` / `PGDocStatusStorage` | Yes | High | Standard PostgreSQL tables |\n| pgvector >= 0.8 + iterative scan | Unknown | Medium | Specific pgvector version on Neon not verified |\n\n**Key finding:** Neon is suitable for LightRAG production **if you use `PGTableGraphStorage` for graph** (avoiding Apache AGE) and verify pgvector >= 0.8 for multi-workspace vector correctness. `PGGraphStorage` (Apache AGE) likely will not work on Neon.\n\n### Evidence from Production Deployments\n\nThe Railway deployment template uses a custom PostgreSQL image with **pgvector + Apache AGE pre-built**, explicitly noting that \"a stock Postgres won't provide graph storage\" because `PGGraphStorage` runs on the AGE extension. GitHub issue #2255 confirms LightRAG initializing with `PGGraphStorage` + `AGE extension enabled` on PostgreSQL, with `EMBEDDING_DIM` matching the embedding model (e.g., 1024 for bge-m3).\n\n---\n\n## 5. Compatibility Limitations and Configuration Considerations\n\n### 5.1 Embedding Model / Dimension Lock-In\n\n- The embedding model, dimension, and asymmetric embedding settings must be chosen **before the first document upload**.\n- Changing them later requires clearing affected vector data and re-indexing all source files (`lightrag-rebuild-vdb`).\n- `EMBEDDING_DIM` must match the embedding model exactly, or indexing fails with a dimension mismatch.\n- Changing parser routing (`LIGHTRAG_PARSER`) or chunker settings (`CHUNK_*`) affects only newly uploaded documents; existing documents must be deleted and re-uploaded.\n\n### 5.2 No Direct Storage Migration\n\n- Direct migration between storage implementations is **not supported**, with one exception: an already-extracted graph can be moved from `PGGraphStorage` to `PGTableGraphStorage` without re-indexing.\n- Switching vector backends requires a full re-embedding (`lightrag-rebuild-vdb`); the other three stores are unaffected.\n\n### 5.3 Workspace Isolation Varies by Backend\n\n| Backend Type | Isolation Mechanism | Examples |\n|-------------|-------------------|----------|\n| Local file-based | Workspace subdirectories | JsonKVStorage, JsonDocStatusStorage, NetworkXStorage, NanoVectorDBStorage, FaissVectorDBStorage |\n| Collection prefix | Workspace prefix on collection name | RedisKVStorage, MilvusVectorDBStorage, MongoKVStorage, MongoDocStatusStorage, MongoVectorDBStorage, MongoGraphStorage, PGGraphStorage |\n| Payload filtering | Qdrant tenant indexes | QdrantVectorDBStorage |\n| `workspace` column | Logical field in tables | PGKVStorage, PGVectorStorage, PGDocStatusStorage |\n| Labels | Graph labels | Neo4JStorage, MemgraphStorage |\n| Index prefixes | Index name prefixes | OpenSearchKVStorage, OpenSearchDocStatusStorage, OpenSearchGraphStorage, OpenSearchVectorDBStorage |\n\nStorage-specific workspace env vars: `REDIS_WORKSPACE`, `MILVUS_WORKSPACE`, `QDRANT_WORKSPACE`, `MONGODB_WORKSPACE`, `POSTGRES_WORKSPACE`, `NEO4J_WORKSPACE`, `MEMGRAPH_WORKSPACE`, `OPENSEARCH_WORKSPACE`.\n\nDefault workspace: PostgreSQL = `default`, Neo4j = `base`.\n\n### 5.4 PostgreSQL Vector Search Defect (Multi-Workspace)\n\nWhen multiple workspaces share one vector table, the HNSW index is global and the workspace filter runs after the ANN search. Small workspaces may get zero results. Mitigation: pgvector >= 0.8 with `SET LOCAL hnsw.iterative_scan = strict_order` (adds 2–3 round trips per query). For many or unevenly-sized workspaces, Qdrant (tenant-local search) is the structural alternative.\n\n### 5.5 OpenSearch Version Requirement\n\nOpenSearch 3.3.0 or later is required for the v1.5 storage path. Older clusters must be upgraded first.\n\n### 5.6 Concurrency / Multi-Worker\n\n- File-backed stores (NetworkX, NanoVectorDB, JSON) are **not** safe for multiple Gunicorn workers or multiple instances sharing the same storage.\n- PostgreSQL, Qdrant, and Milvus are fine with multiple workers.\n- When upgrading the server, stop all old workers sharing the same storage and workspace before starting the new version (rolling restart with an old worker is a failure case).\n\n### 5.7 PostgreSQL Environment Variables\n\n```\nPOSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD,\nPOSTGRES_DATABASE, POSTGRES_MAX_CONNECTIONS, POSTGRES_WORKSPACE\n```\n\nStorage selection env vars:\n```\nLIGHTRAG_KV_STORAGE=PGKVStorage\nLIGHTRAG_VECTOR_STORAGE=PGVectorStorage\nLIGHTRAG_GRAPH_STORAGE=PGGraphStorage (or PGTableGraphStorage)\nLIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage\n```\n\n---\n\n## 6. Recommended Production Storage Architecture\n\n### Recommended: PostgreSQL-Unified Architecture (Single Database)\n\nFor most production AI agent deployments, a single PostgreSQL instance is the best balance of operational simplicity, capability, and official support:\n\n| Role | Backend | Rationale |\n|------|---------|-----------|\n| KV | `PGKVStorage` | ACID, simple, no extra infrastructure |\n| Vector | `PGVectorStorage` | pgvector with HNSW; single DB; pgvector >= 0.8 for multi-workspace correctness |\n| Graph | `PGTableGraphStorage` | Pure PostgreSQL, no Apache AGE superuser requirement; works on managed/serverless PostgreSQL (e.g., Neon) |\n| Doc Status | `PGDocStatusStorage` | ACID, simple, no extra infrastructure |\n\n**Configuration:**\n```env\nLIGHTRAG_KV_STORAGE=PGKVStorage\nLIGHTRAG_VECTOR_STORAGE=PGVectorStorage\nLIGHTRAG_GRAPH_STORAGE=PGTableGraphStorage\nLIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage\nPOSTGRES_HOST=<your-postgres-host>\nPOSTGRES_PORT=5432\nPOSTGRES_USER=<user>\nPOSTGRES_PASSWORD=<password>\nPOSTGRES_DATABASE=lightrag\nPOSTGRES_WORKSPACE=<workspace-name>\nEMBEDDING_DIM=1024  # must match your embedding model (e.g., bge-m3)\n```\n\n**If using Neon specifically:** Use `PGTableGraphStorage` for graph (Apache AGE likely unavailable). Verify pgvector version >= 0.8 for correct multi-workspace vector search. If pgvector < 0.8 or iterative scan is unavailable, consider Qdrant for vector storage instead.\n\n### Alternative: Split Architecture (For Scale or Specialized Needs)\n\nIf you have many workspaces, uneven workspace sizes, or need advanced graph capabilities:\n\n| Role | Backend | Rationale |\n|------|---------|-----------|\n| KV | `PGKVStorage` or `RedisKVStorage` | Redis if you need sub-ms cache access |\n| Vector | `QdrantVectorDBStorage` | Tenant-local HNSW per workspace; no shared-index defect; best for many/uneven workspaces |\n| Graph | `Neo4JStorage` or `MemgraphStorage` | Native graph DB; Cypher queries; label-based workspace isolation |\n| Doc Status | `PGDocStatusStorage` or `MongoDocStatusStorage` | PostgreSQL for simplicity; MongoDB if already in your stack |\n\nThis adds operational complexity (multiple systems to back up, monitor, and upgrade) but avoids the PostgreSQL multi-workspace vector search limitation and provides native graph query capabilities.\n\n### What to Avoid in Production\n\n- **Default file-based backends** (`JsonKVStorage`, `NanoVectorDBStorage`, `NetworkXStorage`, `JsonDocStatusStorage`) — explicitly documented as development/evaluation only.\n- **Apache AGE on managed/serverless PostgreSQL** (e.g., Neon) — likely unavailable due to superuser extension requirements; use `PGTableGraphStorage` instead.\n- **Rolling upgrades with shared storage** — stop all old workers before starting new versions against the same PostgreSQL/workspace.\n\n---\n\n## Sources\n\n1. LightRAG GitHub Repository: https://github.com/HKUDS/LightRAG\n2. LightRAG Official Documentation Site: https://lightrag.github.io\n3. Programming With LightRAG Core (storage backend matrix): https://github.com/HKUDS/LightRAG/blob/main/docs/ProgramingWithCore.md\n4. LightRAG Server and WebUI (production deployment, workspace isolation, storage recommendations): https://github.com/HKUDS/LightRAG/blob/main/docs/LightRAG-API-Server.md\n5. PostgreSQL Filtered Vector Search Design (pgvector iterative scan, workspace defect): https://github.com/HKUDS/LightRAG/blob/main/docs/design/PgVectorFilteredSearch.md\n6. Milvus Configuration Guide: https://github.com/HKUDS/LightRAG/blob/main/docs/MilvusConfigurationGuide.md\n7. env.example (configuration reference): https://github.com/HKUDS/LightRAG/blob/main/env.example\n8. Railway PostgreSQL deployment template (AGE + pgvector requirements): https://railway.com/deploy/lightrag-knowledge-graph-rag-postgres-production--lightrag-postgres-graph-rag\n9. GitHub Issue #2255 (PostgreSQL + AGE production logs): https://github.com/HKUDS/LightRAG/issues/2255\n10. Apache AGE: https://age.apache.org\n11. Neon PostgreSQL Compatibility: https://neon.com/docs/reference/compatibility\n\n---\n\n## Verification Notes & Unverified Items\n\n- All storage backend class names and defaults were taken directly from the `LightRAG Init Parameters` table in `docs/ProgramingWithCore.md` (official repository).\n- Single-backend recommendations (PostgreSQL, MongoDB, OpenSearch) and specialized options (Milvus, Qdrant, Neo4j, Memgraph) are confirmed in both `docs/ProgramingWithCore.md` and `docs/LightRAG-API-Server.md`.\n- The Apache AGE requirement for `PGGraphStorage` is confirmed by the Railway deployment template and GitHub issue #2255.\n- **Unverified:** The specific pgvector version Neon runs. The multi-workspace vector search defect mitigation (`SET LOCAL hnsw.iterative_scan = strict_order`) requires pgvector >= 0.8; this could not be verified for Neon.\n- **Unverified:** Apache AGE availability on Neon. Based on general knowledge that AGE requires superuser privileges and a Neon community feature request exists, it is likely unavailable, but this was not confirmed by Neon's official documentation.\n- Community-contributed backends (LanceDB, Nebula Graph) are noted as not part of the official main release.\n\n---\n\n## Final Recommendation\n\nFor a production AI agent using LightRAG, deploy a **single PostgreSQL instance** with `PGKVStorage`, `PGVectorStorage`, `PGTableGraphStorage`, and `PGDocStatusStorage`. This gives you ACID guarantees, single-database operations, and no dependency on Apache AGE (which is problematic on managed/serverless PostgreSQL like Neon). If you are on Neon, verify pgvector >= 0.8 for multi-workspace vector correctness; if that verification fails or you have many uneven workspaces, switch vector storage to Qdrant while keeping the other three roles on PostgreSQL. Avoid the default file-based backends in production."
 }
