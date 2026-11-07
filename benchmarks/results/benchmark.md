@@ -2,7 +2,7 @@
 
 ## Benchmark controls
 
-- V2 commit: afbb93f83c7b41a4c0f5000d3e50de6819a22f21
+- V2 commit: eda01a45ddbf8214c3757ca73afac31df633adec
 - Model: nvidia/nemotron-3.5-super-vl-120b-a12b
 - Scenario, prompt, tool limits, provider endpoint, and benchmark database configuration are held constant.
 - Four runs execute sequentially to avoid deliberately adding concurrency pressure to the model provider.
@@ -10,38 +10,38 @@
 
 ## Results
 
-| Run | Duration (s) | Model time (s) | Synthesis (s) | Model calls | Tool calls | Tool errors | Task outcome |
-|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | 160.00 | 146.24 | 66.14 | 13 | 10 | 0 | partial |
-| 2 | 208.26 | 194.47 | 71.66 | 20 | 16 | 3 | partial |
-| 3 | 297.97 | 271.44 | 167.61 | 19 | 19 | 0 | partial |
-| 4 | 253.47 | 248.09 | 86.05 | 11 | 8 | 0 | partial |
+| Run | Duration (s) | Model time (s) | Synthesis (s) | Model calls | Tool calls | Tool errors | Hard deps | Context deps | Task outcome |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 1 | 235.27 | 256.06 | 61.53 | 40 | 54 | 3 | 2 | 0 | partial |
+| 2 | 308.11 | 423.21 | 132.79 | 63 | 97 | 12 | 0 | 1 | partial |
+| 3 | 372.13 | 506.00 | 162.19 | 64 | 101 | 12 | 4 | 0 | partial |
+| 4 | 304.10 | 445.91 | 173.24 | 66 | 93 | 9 | 5 | 0 | partial |
 
 ## Latency distribution
 
 | Statistic | Duration (seconds) |
 |---|---:|
-| Total duration — min | 160.00 |
-| Total duration — median | 230.86 |
-| Total duration — max | 297.97 |
-| Total duration — mean | 229.93 |
-| Total duration — standard deviation | 51.34 |
-| Total duration — range | 137.97 |
-| Model-call time — min | 146.24 |
-| Model-call time — median | 221.28 |
-| Model-call time — max | 271.44 |
-| Model-call time — range | 125.20 |
-| Synthesis time — min | 66.14 |
-| Synthesis time — median | 78.85 |
-| Synthesis time — max | 167.61 |
-| Synthesis time — range | 101.47 |
+| Total duration — min | 235.27 |
+| Total duration — median | 306.11 |
+| Total duration — max | 372.13 |
+| Total duration — mean | 304.90 |
+| Total duration — standard deviation | 48.42 |
+| Total duration — range | 136.86 |
+| Model-call time — min | 256.06 |
+| Model-call time — median | 434.56 |
+| Model-call time — max | 506.00 |
+| Model-call time — range | 249.94 |
+| Synthesis time — min | 61.53 |
+| Synthesis time — median | 147.49 |
+| Synthesis time — max | 173.24 |
+| Synthesis time — range | 111.71 |
 
 ## Reliability
 
 - Complete runs: 0/4
 - Partial runs: 4/4
 - Failed runs: 0/4
-- Total tool errors: 3
+- Total tool errors: 36
 
 ## Interpretation
 
