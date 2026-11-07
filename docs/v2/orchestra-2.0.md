@@ -1,6 +1,6 @@
 # Orchestra 2.0
 
-Status: implemented; CI verification pending
+Status: implemented; CI verified; runtime verification pending
 Branch: `v2`
 Scope: strengthen the existing custom orchestration engine without replacing it or changing the model-visible tool set.
 
@@ -69,7 +69,7 @@ No model-generated field can expand permissions, budgets, concurrency, or retry 
 - Make final synthesis consume structured outcomes, not reconstructed prose alone.
 - Ensure old conversation tool messages cannot affect a new step's status.
 
-### Slice 3 — dependency-aware recovery (implemented; CI verification pending)
+### Slice 3 — dependency-aware recovery (implemented; CI verified)
 - Recalculate ready steps on every scheduler pass and immediately after a recovery transition.
 - Recover unresolved read-only prerequisites before finalizing dependent steps as blocked.
 - A successful recovery marks the prerequisite complete and returns control to the scheduler, allowing newly-ready dependents to execute.
