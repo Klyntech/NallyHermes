@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createEventPublisher } from "../src/agent/eventStream.js";
+import type { OrchestraEvent } from "../src/agent/progress.js";
 
 test("publishes correlated events in invocation order with contiguous sequence numbers", async () => {
   const received: Array<{ requestId: string; sequence: number; event: string }> = [];
@@ -31,7 +32,7 @@ test("publishes correlated events in invocation order with contiguous sequence n
 
 test("preserves legacy progress delivery and attaches step/tool correlation", async () => {
   const legacy: string[] = [];
-  const structured: Array<{ correlation: Record<string, unknown>; sequence: number }> = [];
+  const structured: Array<{ correlation: OrchestraEvent["correlation"]; sequence: number }> = [];
   const emit = createEventPublisher({
     requestId: "r-2",
     onProgress: (event) => { legacy.push(event.type); },
