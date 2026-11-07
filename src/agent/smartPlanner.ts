@@ -49,11 +49,11 @@ export function normalizeResearchDependencies(steps: ExecutionPlanStep[]): Execu
       }
       const task = step.task;
       const consumesArtifact =
-        /\\b(?:url|page|file|document|endpoint|output|result)\\s+(?:identified|found|returned|discovered|created|produced)\\b/i.test(task) ||
-        /\\b(?:identified|found|returned|discovered|created|produced)\\s+(?:url|page|file|document|endpoint)\\b/i.test(task) ||
-        /\\b(?:fetch|read|open)\\b.*\\b(?:linked|referenced|listed|returned)\\s+(?:by|in|from)\\b/i.test(task);
+        /\b(?:url|page|file|document|endpoint|output|result)\s+(?:identified|found|returned|discovered|created|produced)\b/i.test(task) ||
+        /\b(?:identified|found|returned|discovered|created|produced)\s+(?:url|page|file|document|endpoint)\b/i.test(task) ||
+        /\b(?:fetch|read|open)\b.*\b(?:linked|referenced|listed|returned)\s+(?:by|in|from)\b/i.test(task);
       const usesContext =
-        /\\b(?:compare|cross[- ]check|validate|verify|extend|follow[- ]up|based on|using|in light of|consistent with)\\b/i.test(task);
+        /\b(?:compare|cross[- ]check|validate|verify|extend|follow[- ]up|based on|using|in light of|consistent with)\b/i.test(task);
       if (consumesArtifact) hard.push(dependencyId);
       else if (usesContext) contextual.push(dependencyId);
       // Otherwise the research step is independent; do not serialize it.
