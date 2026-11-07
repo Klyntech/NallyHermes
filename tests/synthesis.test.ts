@@ -56,7 +56,7 @@ test("incomplete execution receives deterministic disclosure if model omits it",
   const answer = enforceCompletionDisclosure("Here are the verified findings.", pkg);
   assert.match(answer, /Execution status: PARTIAL/);
   assert.match(answer, /Verify Neon extension compatibility/);
-  assert.equal(enforceCompletionDisclosure("This report is incomplete.", pkg), "This report is incomplete.");
+  assert.equal(enforceCompletionDisclosure("This report is incomplete.", pkg).includes("Execution status: PARTIAL"), true);
 });
 
 test("completed execution does not receive a partial warning", () => {
