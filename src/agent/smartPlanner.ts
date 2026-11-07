@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { config } from "../config.js";
+import type { ModelCallTelemetry } from "./modelTelemetry.js";
 import { orderPlanSteps } from "./executionState.js";
 
 export interface ExecutionPlanStep {
@@ -27,27 +28,38 @@ function extractJson(value: string): unknown {
 export async function createExecutionPlan(
   llm: OpenAI,
   history: ChatCompletionMessageParam[],
-  userMessage: string
+  userMessage: string,
+  telemetry?: ModelCallTelemetry
 ): Promise<ExecutionPlan | null> {
-  const response = await llm.chat.completions.create({
+  const plannerMessages: ChatCompletionMessageParam[] = [
+    {
+      role: "system",
+      content: [
+        "You are Nally's task planner. Decide whether the user's request genuinely requires multiple dependent or independently executable steps.",
+        "Simple questions, explanations, calculations, single searches, and single actions do not need a plan.",
+        "If no plan is needed, return exactly JSON: {\"needs_plan\":false,\"reason\":\"brief reason\",\"steps\":[]}.",
+        "If a plan is needed, return JSON only matching this shape: {\"needs_plan\":true,\"reason\":\"...\",\"steps\":[{\"id\":\"step_1\",\"task\":\"...\",\"depends_on\":[],\"parallel_safe\":true}]}. Each step must include all four fields.",
+        "Create the minimum number of steps needed, between 2 and 10. Do not split work into redundant research steps. Plan only information or actions required by the request; stop the plan once sufficient evidence will be available. Reuse results from earlier steps instead of repeating work. Use unique step IDs. Dependencies must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
+        "Do not include markdown, code fences, commentary, or extra keys."
+      ].join("\n")
+    },
+    ...history.filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.content === "string").slice(-8),
+    { role: "user", content: userMessage }
+  ];
+  const request = () => llm.chat.completions.create({
     model: config.NVIDIA_NIM_MODEL,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You are Nally's task planner. Decide whether the user's request genuinely requires multiple dependent or independently executable steps.",
-          "Simple questions, explanations, calculations, single searches, and single actions do not need a plan.",
-          "If no plan is needed, return exactly JSON: {\"needs_plan\":false,\"reason\":\"brief reason\",\"steps\":[]}.",
-          "If a plan is needed, return JSON only matching this shape: {\"needs_plan\":true,\"reason\":\"...\",\"steps\":[{\"id\":\"step_1\",\"task\":\"...\",\"depends_on\":[],\"parallel_safe\":true}]}. Each step must include all four fields.",
-          "Create the minimum number of steps needed, between 2 and 10. Do not split work into redundant research steps. Plan only information or actions required by the request; stop the plan once sufficient evidence will be available. Reuse results from earlier steps instead of repeating work. Use unique step IDs. Dependencies must reference step IDs. Include parallel_safe as a boolean; set true only for independent read-only work (web search, fetch, file read/grep/list, memory recall, schedule list). Set false for any write, edit, delete, memory mutation, or schedule creation/cancellation.",
-          "Do not include markdown, code fences, commentary, or extra keys."
-        ].join("\n")
-      },
-      ...history.filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.content === "string").slice(-8),
-      { role: "user", content: userMessage }
-    ],
+    messages: plannerMessages,
     temperature: 0.1
   }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
+  const response = telemetry
+    ? await telemetry.run({
+        phase: "planning",
+        reason: "classify_request_and_create_execution_plan",
+        model: config.NVIDIA_NIM_MODEL,
+        contextMode: "bounded_history",
+        messages: plannerMessages
+      }, request)
+    : await request();
 
   const raw = response.choices[0]?.message?.content;
   if (!raw) return null;
