@@ -14,8 +14,8 @@ function argsOf(call: ToolCallInput): Record<string, unknown> | null {
 }
 
 function tokens(value: string): Set<string> {
-  return new Set(value.toLowerCase().replace(/https?:\\/\\//g, "").replace(/[^a-z0-9]+/g, " ")
-    .split(/\\s+/).filter((token) => token.length > 2 && !STOP_WORDS.has(token)));
+  return new Set(value.toLowerCase().replaceAll("https://", "").replaceAll("http://", "").replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/).filter((token) => token.length > 2 && !STOP_WORDS.has(token)));
 }
 
 function similarQuery(left: string, right: string): boolean {
@@ -32,7 +32,7 @@ function canonicalUrl(value: string): string | null {
     const url = new URL(value);
     url.hash = "";
     url.hostname = url.hostname.toLowerCase();
-    if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\\/+$/, "");
+    if (url.pathname.length > 1) while (url.pathname.length > 1 && url.pathname.endsWith("/")) url.pathname = url.pathname.slice(0, -1);
     return url.toString();
   } catch { return null; }
 }
