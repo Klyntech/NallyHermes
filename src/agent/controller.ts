@@ -604,13 +604,22 @@ export async function runAgent(
       break;
     }
     await emitProgress({ type: "thinking", phase: "model" });
-    const response = await llm.chat.completions.create({
-      model: config.NVIDIA_NIM_MODEL,
-      messages,
-      tools: agentTools,
-      tool_choice: "auto",
-      temperature: 0.4
-    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
+    let response;
+    try {
+      response = await llm.chat.completions.create({
+        model: config.NVIDIA_NIM_MODEL,
+        messages,
+        tools: agentTools,
+        tool_choice: "auto",
+        temperature: 0.4
+      }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
+    } catch (error) {
+      if (signal?.aborted) {
+        stopReason = "The request was cancelled while waiting for the model.";
+        break;
+      }
+      throw error;
+    }
     const message = response.choices[0]?.message;
     if (!message) {
       stopReason = "The model returned an empty response.";
