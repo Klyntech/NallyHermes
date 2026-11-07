@@ -61,7 +61,7 @@ export function normalizeResearchDependencies(steps: ExecutionPlanStep[]): Execu
     return {
       ...step,
       depends_on: hard,
-      context_from: [...new Set(contextual)]
+      context_from: [...new Set(contextual)].filter((id) => !hard.includes(id))
     };
   });
 }
