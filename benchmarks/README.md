@@ -19,7 +19,7 @@ LightRAG is disabled for this scenario. The task uses web search and fetch only.
 ## Run
 
 1. Open **Actions → V1 vs V2 Orchestra Benchmark**.
-2. Choose **Run workflow** on the `v2` branch.
+2. Choose **Run workflow** on the default `main` branch (the workflow is exposed there and checks out the current `v2` source internally).
 3. Keep the same model selection for repeated comparisons.
 4. Start the run and inspect the individual V1 and V2 steps.
 
@@ -30,9 +30,9 @@ On success, the workflow commits these files to `v2`:
 - `benchmarks/results/benchmark.md` — readable side-by-side report.
 - `benchmarks/results/benchmark.json` — combined machine-readable report.
 - `benchmarks/results/v1-run.json` — V1 raw progress trace and answer.
-- `benchmarks/results/v2-run.json` — V2 raw progress and structured Orchestra trace.
+- `benchmarks/results/v2-run.json` — V2 raw progress, structured Orchestra trace, and per-model-call telemetry.
 
-The raw traces are also uploaded as a GitHub Actions artifact, retained for 90 days. The Markdown report leaves the seven 0–5 quality scores pending for human review; raw counts are not treated as quality scores.
+The raw traces are also uploaded as a GitHub Actions artifact, retained for 90 days. The V2 model-call trace records phase, reason, call number, elapsed time, provider token usage when returned, estimated prompt size, and context mode (bounded history, full step context, or full accumulated context). The comparison reports model-call count and median input/output/total tokens per call. V1 is marked as not instrumented rather than treating missing measurements as zero. The Markdown report leaves the seven 0–5 quality scores pending for human review; raw counts are not treated as quality scores.
 
 ## Interpretation
 
