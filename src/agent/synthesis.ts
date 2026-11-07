@@ -46,7 +46,7 @@ export interface SynthesisEvidencePackage {
 
 const MAX_PACKAGE_CHARS = 48_000;
 const MAX_EXCERPT_CHARS = 2_800;
-const URL_PATTERN = /https?:\\/\\/[^\\s"'<>\\])}]+/g;
+const URL_PATTERN = /https?:\/\/[^\s"'<>[\])}]+/g;
 
 function extractUrls(value: string): string[] {
   return [...new Set((value.match(URL_PATTERN) ?? []).map((url) => url.replace(/[.,;]+$/, "")))].slice(0, 12);
@@ -178,7 +178,7 @@ export function enforceCompletionDisclosure(
   pkg: SynthesisEvidencePackage
 ): string {
   if (pkg.execution.status === "complete") return answer;
-  if (/\\b(partial|incomplete|not completed|could not be completed)\\b/i.test(answer)) return answer;
+  if (/\b(partial|incomplete|not completed|could not be completed)\b/i.test(answer)) return answer;
   const unresolved = pkg.claims.filter((claim) => claim.status === "unresolved");
   const lines = [
     "## Execution status: PARTIAL",
