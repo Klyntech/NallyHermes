@@ -31,7 +31,7 @@ On success, the workflow commits these files to `v2`:
 - `benchmarks/results/benchmark.json` — machine-readable aggregate and all four run records.
 - `benchmarks/results/v2-run-1.json` through `v2-run-4.json` — raw per-run traces and answers.
 
-The raw traces are also uploaded as a GitHub Actions artifact retained for 90 days. Each trace includes the exact V2 SHA, model, duration, task outcome, progress events, Orchestra events, model-call telemetry, tool errors, retries, and answer.
+The raw traces are also uploaded as a GitHub Actions artifact retained for 90 days. Each trace includes the exact V2 SHA, model, duration, task outcome, normalized plan graph (`depends_on` and `context_from`), dependency-edge counts, progress events, Orchestra events, model-call telemetry, tool errors, retries, and answer. The aggregate Markdown/JSON reports include per-run hard/context edge counts and the normalized graph, so blocked execution can be traced to the actual plan rather than inferred from step events.
 
 ## Interpretation
 
