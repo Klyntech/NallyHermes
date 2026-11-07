@@ -14,6 +14,9 @@ export type ProgressEvent =
   | { type: "plan_step_start"; index: number; total: number; task: string }
   | { type: "plan_step_complete"; index: number; total: number }
   | { type: "plan_step_failed"; index: number; total: number }
+  | { type: "plan_step_partial"; index: number; total: number }
+  | { type: "plan_step_blocked"; index: number; total: number }
+  | { type: "task_status"; status: "complete" | "partial" | "failed"; completedSteps: number; partialSteps: number; failedSteps: number; blockedSteps: number; totalSteps: number }
   | { type: "recovery_retry"; tool: string; toolCallId?: string; attempt: number; maxAttempts: number }
   | { type: "recovery_adjusting" }
   | { type: "verifying" }
@@ -103,6 +106,12 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
       return { text: `Completed step ${event.index}/${event.total}…` };
     case "plan_step_failed":
       return { text: `Step ${event.index}/${event.total} could not be completed…` };
+    case "plan_step_partial":
+      return { text: `Step ${event.index}/${event.total} partially completed…` };
+    case "plan_step_blocked":
+      return { text: `Step ${event.index}/${event.total} blocked by a prerequisite…` };
+    case "task_status":
+      return null;
     case "recovery_retry":
       return { text: `Retrying ${event.tool} (${event.attempt}/${event.maxAttempts})…` };
     case "recovery_adjusting":
