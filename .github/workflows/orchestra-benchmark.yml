@@ -57,6 +57,10 @@ jobs:
           ref: 4ba2b87084a4b003331e0f9c687bbf0822558edd
           path: v1
 
+      - name: Record exact V2 source revision
+        shell: bash
+        run: echo "BENCHMARK_V2_SHA=$(git -C v2 rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -68,10 +72,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            v1/package-lock.json
-            v2/package-lock.json
 
       - name: Install V1 dependencies
         working-directory: v1
@@ -99,7 +99,7 @@ jobs:
         working-directory: v2
         env:
           BENCHMARK_VERSION: v2
-          BENCHMARK_SHA: ${{ github.sha }}
+          BENCHMARK_SHA: ${{ env.BENCHMARK_V2_SHA }}
           BENCHMARK_USER_ID: "900000000000000002"
         run: npx tsx benchmarks/run.ts
 
