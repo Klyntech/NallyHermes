@@ -184,7 +184,8 @@ async function synthesizeReport(
   outcomes: StepOutcome[],
   totalSteps: number,
   reason: string,
-  deadline?: number
+  deadline?: number,
+  budget?: ExecutionBudget
 ): Promise<string> {
   const reportData = {
     execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
@@ -213,6 +214,9 @@ async function synthesizeReport(
       ].join("\n\n")
     }
   ];
+  if (budget && !budget.reserveModelTurn()) {
+    return fallbackReport(outcomes, totalSteps, reason + " (final synthesis model-turn budget exhausted)");
+  }
   try {
     const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS };
     const final = await llm.chat.completions.create({
@@ -519,7 +523,7 @@ async function runPlannedRequest(
   }
 
   await onProgress?.({ type: "verifying" });
-  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
+  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, budget);
 }
 
 /**
@@ -565,6 +569,7 @@ export async function runAgent(
   await emitProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
   try {
+    if (!budget.reserveModelTurn()) throw new Error("The request model-turn budget was exhausted before planning.");
     plan = await createExecutionPlan(llm, history, userMessage);
   } catch (error) {
     console.warn("Smart planning unavailable; using direct execution:", error);
@@ -646,7 +651,7 @@ export async function runAgent(
   }
 
   await emitProgress({ type: "verifying" });
-  const answer = await synthesizeReport(messages, [], 0, stopReason);
+  const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, budget);
   await emitProgress({ type: "response_ready" });
   return answer;
 }
