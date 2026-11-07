@@ -4,7 +4,7 @@
 
 | Field | V1 | V2 |
 |---|---|---|
-| Commit | 4ba2b87084a4b003331e0f9c687bbf0822558edd | 95ebcf046da6938b5a1d91a13237d450084adc8c |
+| Commit | 4ba2b87084a4b003331e0f9c687bbf0822558edd | 75e28b5736085c86d301378db31d4e924100f847 |
 | Model | nvidia/nemotron-3.5-super-vl-120b-a12b | nvidia/nemotron-3.5-super-vl-120b-a12b |
 | Status | completed | completed |
 
@@ -12,269 +12,182 @@
 
 | Metric | V1 | V2 | V2 vs V1 |
 |---|---:|---:|---:|
-| Duration (ms) | 204053 | 212411 | 4.1% |
-| Model calls | not instrumented | 26 | n/a |
-| Median input tokens / call | n/a | 6284 | n/a |
-| Median output tokens / call | n/a | 251.5 | n/a |
-| Median total tokens / call | n/a | 6561.5 | n/a |
+| Duration (ms) | 167821 | 132956 | -20.8% |
+| Model calls | not instrumented | 17 | n/a |
+| Median input tokens / call | n/a | 6842 | n/a |
+| Median output tokens / call | n/a | 394 | n/a |
+| Median total tokens / call | n/a | 7253 | n/a |
 | Model-call errors | not instrumented | 0 | n/a |
-| Model turns with tool calls | not instrumented | 24 | n/a |
-| Tool calls requested by model | not instrumented | 44 | n/a |
-| Progress events | 68 | 152 | 123.5% |
-| Tool calls started | 15 | 38 | 153.3% |
-| Tool errors | 0 | 0 | n/a |
-| Retry events | 0 | 0 | n/a |
-| Plan steps started | 4 | 3 | -25.0% |
+| Model turns with tool calls | not instrumented | 15 | n/a |
+| Tool calls requested by model | not instrumented | 29 | n/a |
+| Progress events | 113 | 79 | -30.1% |
+| Tool calls started | 28 | 12 | -57.1% |
+| Tool errors | 3 | 0 | -100.0% |
+| Cached read-only tool results | 0 | 16 | n/a |
+| Retry events | 2 | 0 | -100.0% |
+| Plan steps started | 4 | 2 | -50.0% |
 | Plan steps completed | 4 | 0 | -100.0% |
-| Plan steps failed | 0 | 5 | n/a |
+| Plan steps partially completed | 0 | 1 | n/a |
+| Plan steps failed | 0 | 0 | n/a |
+| Plan steps blocked | 0 | 3 | n/a |
+| Task outcome | not_reported | partial | n/a |
 
 > Lower is not always better: fewer tool calls or events can mean efficiency, but can also mean incomplete work. Interpret metrics alongside the reports and event traces.
 
 ## V1 final response
 
-# Technical Report: LightRAG Storage Backends
-
-## Evidence Sufficiency
-
-The research is complete. All four planned steps were executed successfully, and the collected evidence is sufficient to answer every part of your request. No further research steps remain pending. Claims below are drawn from official LightRAG sources (GitHub repository docs and the project site), with Neon-specific claims flagged where LightRAG documentation is silent.
-
----
+# LightRAG Storage Options — Technical Report
 
 ## 1. Official Documentation and Repository
 
-| Item | Value | Source |
-|------|-------|--------|
-| **Official Repository** | https://github.com/HKUDS/LightRAG | GitHub API, verified HTTP 200 |
-| **Repository Owner** | HKUDS (The University of Hong Kong) | GitHub metadata |
-| **Public / Non-fork** | Yes | GitHub metadata |
-| **Description** | "[EMNLP2025] LightRAG: Simple and Fast Retrieval-Augmented Generation" | GitHub repository page |
-| **Official Documentation Site** | https://lightrag.github.io | Project landing page |
-| **Research Paper** | https://arxiv.org/abs/2410.05779 | Linked from official site |
-| **Docker Image** | ghcr.io/hkuds/lightrag | docs/DockerDeployment.md |
-| **PyPI Package** | `lightrag-hku` | docs/LightRAG-API-Server.md |
+| Item | Detail |
+|------|--------|
+| **Official GitHub repository** | HKUDS/LightRAG — https://github.com/HKUDS/LightRAG |
+| **Official project page** | https://lightrag.github.io |
+| **PyPI package** | `lightrag-hku` |
+| **License** | MIT |
+| **Maintainer** | HKUDS (Data Intelligence Lab, University of Hong Kong) |
 
-The primary storage documentation lives in `docs/ProgramingWithCore.md` (the "LightRAG Init Parameters" table) and `docs/LightRAG-API-Server.md` (deployment and production guidance). Supporting design docs include `docs/design/PgVectorFilteredSearch.md` and `docs/MilvusConfigurationGuide.md`.
+Key documentation files in the repository:
+- `README.md` — project overview, storage selection guidance, production recommendations
+- `docs/ProgramingWithCore.md` — SDK/init parameters including all storage type options
+- `docs/LightRAG-API-Server.md` — server deployment, storage types supported, environment variables
+- `docs/DockerDeployment.md` — Docker/Compose deployment including PostgreSQL image details
+- `docs/InteractiveSetup.md` — `make env-*` setup wizard for storage configuration
+- `env.example` — full configuration reference
 
 ---
 
 ## 2. Supported Storage Backends
 
-LightRAG abstracts storage into four pluggable categories, selected via constructor parameters (or `LIGHTRAG_*_STORAGE` environment variables for the API server).
+LightRAG requires **four distinct storage roles**, each with its own pluggable backend:
 
-### 2.1 Key-Value Storage (`kv_storage`)
+| Storage Role | Purpose | Default (dev only) | Production Options |
+|---|---|---|---|
+| **KV_STORAGE** | LLM response cache, text chunks, entity-relation extraction results | `JsonKVStorage` | `PGKVStorage`, `RedisKVStorage`, `MongoKVStorage`, `OpenSearchKVStorage` |
+| **VECTOR_STORAGE** | Embedding vectors for chunks, entities, relationships | `NanoVectorDBStorage` | `PGVectorStorage`, `MilvusVectorDBStorage`, `QdrantVectorDBStorage`, `FaissVectorDBStorage`, `ChromaVectorDBStorage`, `MongoVectorDBStorage`, `OpenSearchVectorDBStorage` |
+| **GRAPH_STORAGE** | Entity-relation knowledge graph structure | `NetworkXStorage` | `Neo4JStorage`, `PGGraphStorage`, `PGTableGraphStorage`, `AGEStorage`, `MemgraphStorage`, `OpenSearchGraphStorage`, `MongoGraphStorage` |
+| **DOC_STATUS_STORAGE** | Document indexing/processing status | `JsonDocStatusStorage` | `PGDocStatusStorage`, `MongoDocStatusStorage`, `OpenSearchDocStatusStorage`, `RedisDocStatusStorage` |
 
-| Backend | Class Name | Default? | Notes |
-|---------|-----------|----------|-------|
-| JSON file | `JsonKVStorage` | **Yes** | Local file persistence; development only |
-| PostgreSQL | `PGKVStorage` | No | Requires PostgreSQL |
-| Redis | `RedisKVStorage` | No | Requires Redis |
-| MongoDB | `MongoKVStorage` | No | Requires MongoDB |
-| OpenSearch | `OpenSearchKVStorage` | No | Requires OpenSearch 3.3.0+ |
+**Source:** `docs/ProgramingWithCore.md` (init parameter table) and `docs/LightRAG-API-Server.md` (Storage Types Supported section).
 
-**Purpose:** LLM response caches, text chunking results, entity-relation extraction results, document information.
+### Single-backend options (one database serves all four roles)
+- **PostgreSQL** — explicitly recommended for production; all four via `PGKVStorage`, `PGVectorStorage`, `PGGraphStorage`/`PGTableGraphStorage`, `PGDocStatusStorage`
+- **MongoDB** — all four roles; vector storage requires MongoDB Atlas Cloud
+- **OpenSearch** — all four roles; requires OpenSearch 3.3.0+ for the v1.5 storage path
 
-### 2.2 Vector Storage (`vector_storage`)
-
-| Backend | Class Name | Default? | Notes |
-|---------|-----------|----------|-------|
-| NanoVectorDB | `NanoVectorDBStorage` | **Yes** | Local file-based; development only |
-| PostgreSQL + pgvector | `PGVectorStorage` | No | Requires pgvector extension |
-| Milvus | `MilvusVectorDBStorage` | No | Specialized vector DB |
-| Chroma | `ChromaVectorDBStorage` | No | |
-| Faiss | `FaissVectorDBStorage` | No | |
-| MongoDB | `MongoVectorDBStorage` | No | |
-| Qdrant | `QdrantVectorDBStorage` | No | Tenant-local search (workspace isolation via payload) |
-| OpenSearch | `OpenSearchVectorDBStorage` | No | Requires OpenSearch 3.3.0+ |
-
-**Purpose:** Embedding vectors for text chunks, entities, and relationships.
-
-### 2.3 Graph Storage (`graph_storage`)
-
-| Backend | Class Name | Default? | Notes |
-|---------|-----------|----------|-------|
-| NetworkX | `NetworkXStorage` | **Yes** | Local file-based; development only |
-| Neo4j | `Neo4JStorage` | No | Specialized graph DB |
-| PostgreSQL + Apache AGE | `PGGraphStorage` | No | Requires Apache AGE extension |
-| PostgreSQL tables (pure SQL) | `PGTableGraphStorage` | No | No AGE required |
-| Apache AGE | `AGEStorage` | No | AGE-based implementation |
-| OpenSearch | `OpenSearchGraphStorage` | No | Requires OpenSearch 3.3.0+ |
-
-**Purpose:** Entity-relation knowledge graph edges and nodes.
-
-### 2.4 Document Status Storage (`doc_status_storage`)
-
-| Backend | Class Name | Default? | Notes |
-|---------|-----------|----------|-------|
-| JSON file | `JsonDocStatusStorage` | **Yes** | Local file persistence; development only |
-| PostgreSQL | `PGDocStatusStorage` | No | Requires PostgreSQL |
-| MongoDB | `MongoDocStatusStorage` | No | Requires MongoDB |
-| OpenSearch | `OpenSearchDocStatusStorage` | No | Requires OpenSearch 3.3.0+ |
-
-**Purpose:** Document ingestion/processing status tracking.
-
-### 2.5 Single-Backend Options (All Four Storage Types)
-
-| Backend | KV | Vector | Graph | Doc Status |
-|---------|----|--------|-------|------------|
-| PostgreSQL | PGKVStorage | PGVectorStorage | PGGraphStorage / PGTableGraphStorage | PGDocStatusStorage |
-| MongoDB | MongoKVStorage | MongoVectorDBStorage | MongoGraphStorage | MongoDocStatusStorage |
-| OpenSearch | OpenSearchKVStorage | OpenSearchVectorDBStorage | OpenSearchGraphStorage | OpenSearchDocStatusStorage |
-
-### 2.6 Community-Contributed (Not in Main Branch)
-
-| Backend | Branch | Coverage | Status |
-|---------|--------|----------|--------|
-| LanceDB | `dev-lancedb` | All four types | Community-contributed; not official |
-| Nebula Graph | `dev-nebula-graph` | Graph only | Community-contributed; not official |
-
-These are **not** part of the official main release and are not listed in the core `LightRAG` init parameters.
+### Specialized per-role options
+- Vector: Milvus, Qdrant, Chroma, Faiss
+- Graph: Neo4j, Memgraph
 
 ---
 
-## 3. Differences Between Available Storage Options
+## 3. Differences Between Storage Options
 
-### Default (File-Based) Backends — Development Only
+### Default / Development Storage
+`JsonKVStorage` + `NanoVectorDBStorage` + `NetworkXStorage` + `JsonDocStatusStorage` are in-memory databases with local JSON file persistence under `WORKING_DIR`. Capacity is bounded by available RAM. The documentation is explicit: **these are for small-scale testing, evaluation, and debugging only — not for production.**
 
-`JsonKVStorage`, `NanoVectorDBStorage`, `NetworkXStorage`, and `JsonDocStatusStorage` are the defaults. The documentation explicitly states these are **suitable only for small-scale testing and evaluation, not for production**. Data persists as local files under `working_dir` (default `./rag_storage`). They do not support concurrent multi-worker access, lack query optimization, and are vulnerable to file corruption.
+### PostgreSQL (Recommended for Production)
+Can serve all four storage types on a single database:
+- `PGKVStorage`, `PGDocStatusStorage` — run on stock PostgreSQL, no extensions required
+- `PGVectorStorage` — requires the **pgvector** extension
+- `PGGraphStorage` — requires the **Apache AGE** extension
+- `PGTableGraphStorage` — runs on **any stock PostgreSQL 14+**, creates its own tables at `initialize()`, **no extension required**
 
-### PostgreSQL (Unified Backend)
+Key behaviors:
+- Vector dimension (`EMBEDDING_DIM`) is fixed when vector tables are first created; changing the embedding model, dimension, or asymmetric-embedding settings requires clearing vector data and re-indexing all documents. LightRAG provides no re-embedding tool.
+- Workspace isolation via a `workspace` column in tables (for `PGKVStorage`, `PGVectorStorage`, `PGDocStatusStorage`); `PGGraphStorage` uses collection-name prefixes.
+- A graph migration path exists from `PGGraphStorage` → `PGTableGraphStorage` without re-indexing.
 
-**Advantages:** Single database for all four storage types; ACID transactions; mature backup/replication tooling; `PGTableGraphStorage` avoids the Apache AGE extension requirement.
+### Neo4j / Memgraph (Graph-Specialized)
+Native graph databases purpose-built for entity-relation traversal and multi-hop queries. Graph only; must be paired with separate KV, vector, and doc-status backends.
 
-**Considerations:** `PGVectorStorage` requires the `pgvector` extension. `PGGraphStorage` requires Apache AGE (typically needs superuser to install). Workspace isolation is achieved via a `workspace` column in tables. For multi-workspace vector search, pgvector >= 0.8 with HNSW and `SET LOCAL hnsw.iterative_scan = strict_order` is required to avoid the "workspace filter after ANN index" defect.
+### Milvus / Qdrant / Chroma / Faiss (Vector-Specialized)
+Purpose-built vector databases with advanced ANN indexing. Vector only; must be paired with separate backends for KV, graph, and doc-status.
 
-### MongoDB
+### MongoDB / OpenSearch (Unified Alternatives)
+MongoDB: flexible document storage, all four roles, but vector storage requires MongoDB Atlas Cloud. OpenSearch: all four roles, requires OpenSearch 3.3.0+.
 
-**Advantages:** Single backend for all four types; document-oriented; good for flexible schemas.
-
-**Considerations:** Not as mature for graph traversal as dedicated graph databases; workspace isolation via collection-name prefix.
-
-### OpenSearch
-
-**Advantages:** Single backend for all four types; built-in full-text and vector search.
-
-**Considerations:** Requires OpenSearch 3.3.0 or later (older clusters must be upgraded before enabling v1.5 storage path). Workspace isolation via index name prefixes.
-
-### Specialized Vector Databases (Milvus, Qdrant, Chroma, Faiss)
-
-**Milvus:** One collection per workspace (`{workspace}_{namespace}_{model_suffix}`), so no shared-index filtering defect. Supports HNSW, IVF_FLAT, HNSW_SQ quantization.
-
-**Qdrant:** All workspaces in one collection with tenant-local HNSW graphs per workspace (`KeywordIndexParams(is_tenant=True)`). No shared-index defect; no scan budget needed. Best for many workspaces or uneven workspace sizes.
-
-**Chroma / Faiss:** Listed as supported backends but with less documentation detail.
-
-### Specialized Graph Databases (Neo4j, Memgraph)
-
-**Neo4j:** Native graph database with Cypher query language. Workspace isolation via labels.
-
-**Memgraph:** Mentioned in API server docs as a graph storage option. Workspace isolation via labels.
+### Key Architectural Difference
+LightRAG separates concerns: KV (cache/chunks), vector (semantic search), graph (relationships), and doc-status (ingestion tracking) each have different access patterns. Using specialized backends per role optimizes each pattern but increases operational complexity. A unified PostgreSQL backend simplifies operations at the cost of using AGE (an extension) for graph rather than a native graph engine — unless `PGTableGraphStorage` is used, which needs no extension.
 
 ---
 
-## 4. PostgreSQL / Neon Suitability Investigation
+## 4. Is PostgreSQL/Neon a Suitable Storage Setup?
 
-### Can PostgreSQL Serve All Four Storage Types?
+### PostgreSQL — Yes, Recommended
+LightRAG's own documentation states PostgreSQL is the recommended production backend — it can serve all four storage types on its own.
 
-**Yes.** PostgreSQL is the officially recommended single-backend option for production. All four LightRAG storage roles have PostgreSQL implementations:
+### Neon (Serverless PostgreSQL) — Suitable with Conditions
 
-| Role | PostgreSQL Backend | Extension Required |
-|------|-------------------|-------------------|
-| KV | `PGKVStorage` | None |
-| Vector | `PGVectorStorage` | pgvector |
-| Graph | `PGGraphStorage` or `PGTableGraphStorage` | Apache AGE (for PGGraphStorage); none (for PGTableGraphStorage) |
-| Doc Status | `PGDocStatusStorage` | None |
+**Confirmed to work on Neon:**
+- **pgvector:** Neon officially supports the `pgvector` extension on every plan (no add-on required). `PGKVStorage`, `PGVectorStorage`, and `PGDocStatusStorage` work on Neon.
+- **`PGTableGraphStorage`:** Runs on any stock PostgreSQL 14+ with no extensions. Works on Neon as the graph backend without AGE.
 
-### Is Neon Suitable?
+**Does NOT work on Neon:**
+- **Apache AGE:** Neon is a managed/serverless PostgreSQL and does **not** offer Apache AGE. LightRAG's documentation lists Neon among managed PostgreSQL services where AGE is unavailable. `PGGraphStorage` **cannot** be used on Neon.
 
-| Requirement | Neon Compatibility | Confidence | Evidence |
-|-------------|-------------------|------------|----------|
-| PostgreSQL protocol compatibility | Yes | High | Neon is PostgreSQL-compatible |
-| pgvector extension | Yes | High | Neon docs confirm `CREATE EXTENSION IF NOT EXISTS vector;` |
-| Apache AGE extension | Likely No | Medium | AGE requires superuser; managed providers typically restrict; Neon community feature request exists |
-| `PGTableGraphStorage` (no AGE) | Yes | High | Pure SQL, no extension needed |
-| `PGKVStorage` / `PGDocStatusStorage` | Yes | High | Standard PostgreSQL tables |
-| pgvector >= 0.8 + iterative scan | Unknown | Medium | Specific pgvector version on Neon not verified |
+**Verdict:** Neon is fully suitable for LightRAG production use **if you use `PGTableGraphStorage` for graph** (or pair Neon with a separate Neo4j/Memgraph for graph). It is **not** suitable as a single-backend replacement using `PGGraphStorage`, because AGE is unavailable.
 
-**Key finding:** Neon is suitable for LightRAG production **if you use `PGTableGraphStorage` for graph** (avoiding Apache AGE) and verify pgvector >= 0.8 for multi-workspace vector correctness. `PGGraphStorage` (Apache AGE) likely will not work on Neon.
-
-### Evidence from Production Deployments
-
-The Railway deployment template uses a custom PostgreSQL image with **pgvector + Apache AGE pre-built**, explicitly noting that "a stock Postgres won't provide graph storage" because `PGGraphStorage` runs on the AGE extension. GitHub issue #2255 confirms LightRAG initializing with `PGGraphStorage` + `AGE extension enabled` on PostgreSQL, with `EMBEDDING_DIM` matching the embedding model (e.g., 1024 for bge-m3).
+Neon-specific operational considerations (inferred from Neon's serverless architecture, not LightRAG docs): serverless Postgres scales to zero and can terminate idle connections after ~5 minutes of inactivity, which can cause cold-start latency on first query. Connection pooling and stable connection strings matter for a long-running LightRAG service.
 
 ---
 
 ## 5. Compatibility Limitations and Configuration Considerations
 
-### 5.1 Embedding Model / Dimension Lock-In
+### Critical Limitations
 
-- The embedding model, dimension, and asymmetric embedding settings must be chosen **before the first document upload**.
-- Changing them later requires clearing affected vector data and re-indexing all source files (`lightrag-rebuild-vdb`).
-- `EMBEDDING_DIM` must match the embedding model exactly, or indexing fails with a dimension mismatch.
-- Changing parser routing (`LIGHTRAG_PARSER`) or chunker settings (`CHUNK_*`) affects only newly uploaded documents; existing documents must be deleted and re-uploaded.
+1. **No direct storage migration.** Direct migration between storage implementations is **not supported**, with one exception: an already-extracted graph can be moved from `PGGraphStorage` to `PGTableGraphStorage` without re-indexing. Switching storage backends generally requires re-ingesting all documents.
 
-### 5.2 No Direct Storage Migration
+2. **Embedding model immutability.** The embedding model and dimension must be fixed before the first document upload. Changing the model, dimension, or asymmetric embedding settings requires clearing vector data and re-indexing. PostgreSQL requires the vector dimension defined at table creation time.
 
-- Direct migration between storage implementations is **not supported**, with one exception: an already-extracted graph can be moved from `PGGraphStorage` to `PGTableGraphStorage` without re-indexing.
-- Switching vector backends requires a full re-embedding (`lightrag-rebuild-vdb`); the other three stores are unaffected.
+3. **Default storage is dev-only.** `JsonKVStorage`, `NanoVectorDBStorage`, `NetworkXStorage`, `JsonDocStatusStorage` are in-memory with file persistence — not for production.
 
-### 5.3 Workspace Isolation Varies by Backend
+4. **Apache AGE dependency for PostgreSQL graph.** `PGGraphStorage` requires the AGE extension, which is not available on managed PostgreSQL services (Neon, RDS, Cloud SQL, Supabase). `PGTableGraphStorage` is the non-AGE alternative.
 
-| Backend Type | Isolation Mechanism | Examples |
-|-------------|-------------------|----------|
-| Local file-based | Workspace subdirectories | JsonKVStorage, JsonDocStatusStorage, NetworkXStorage, NanoVectorDBStorage, FaissVectorDBStorage |
-| Collection prefix | Workspace prefix on collection name | RedisKVStorage, MilvusVectorDBStorage, MongoKVStorage, MongoDocStatusStorage, MongoVectorDBStorage, MongoGraphStorage, PGGraphStorage |
-| Payload filtering | Qdrant tenant indexes | QdrantVectorDBStorage |
-| `workspace` column | Logical field in tables | PGKVStorage, PGVectorStorage, PGDocStatusStorage |
-| Labels | Graph labels | Neo4JStorage, MemgraphStorage |
-| Index prefixes | Index name prefixes | OpenSearchKVStorage, OpenSearchDocStatusStorage, OpenSearchGraphStorage, OpenSearchVectorDBStorage |
+5. **OpenSearch version requirement.** OpenSearch storage requires OpenSearch 3.3.0 or later; older clusters must be upgraded before enabling the v1.5 storage path.
 
-Storage-specific workspace env vars: `REDIS_WORKSPACE`, `MILVUS_WORKSPACE`, `QDRANT_WORKSPACE`, `MONGODB_WORKSPACE`, `POSTGRES_WORKSPACE`, `NEO4J_WORKSPACE`, `MEMGRAPH_WORKSPACE`, `OPENSEARCH_WORKSPACE`.
+6. **MongoDB vector limitation.** MongoDB vector storage is only available on MongoDB Atlas Cloud, not self-managed MongoDB.
 
-Default workspace: PostgreSQL = `default`, Neo4j = `base`.
+7. **Concurrency / writer protocol.** When upgrading storage-backed instances, all old writers must be stopped before starting new ones against the same storage and workspace. A rolling restart with an old worker still running is a documented failure case.
 
-### 5.4 PostgreSQL Vector Search Defect (Multi-Workspace)
+8. **Authentication.** Without `LIGHTRAG_API_KEY` or `AUTH_ACCOUNTS`, the server runs with no authentication — unsafe for network exposure.
 
-When multiple workspaces share one vector table, the HNSW index is global and the workspace filter runs after the ANN search. Small workspaces may get zero results. Mitigation: pgvector >= 0.8 with `SET LOCAL hnsw.iterative_scan = strict_order` (adds 2–3 round trips per query). For many or unevenly-sized workspaces, Qdrant (tenant-local search) is the structural alternative.
+### Configuration Considerations
 
-### 5.5 OpenSearch Version Requirement
-
-OpenSearch 3.3.0 or later is required for the v1.5 storage path. Older clusters must be upgraded first.
-
-### 5.6 Concurrency / Multi-Worker
-
-- File-backed stores (NetworkX, NanoVectorDB, JSON) are **not** safe for multiple Gunicorn workers or multiple instances sharing the same storage.
-- PostgreSQL, Qdrant, and Milvus are fine with multiple workers.
-- When upgrading the server, stop all old workers sharing the same storage and workspace before starting the new version (rolling restart with an old worker is a failure case).
-
-### 5.7 PostgreSQL Environment Variables
-
-```
-POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD,
-POSTGRES_DATABASE, POSTGRES_MAX_CONNECTIONS, POSTGRES_WORKSPACE
-```
-
-Storage selection env vars:
-```
-LIGHTRAG_KV_STORAGE=PGKVStorage
-LIGHTRAG_VECTOR_STORAGE=PGVectorStorage
-LIGHTRAG_GRAPH_STORAGE=PGGraphStorage (or PGTableGraphStorage)
-LIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage
-```
+| Variable | Purpose | Production Guidance |
+|---|---|---|
+| `LIGHTRAG_KV_STORAGE` | KV backend | `PGKVStorage` for production |
+| `LIGHTRAG_VECTOR_STORAGE` | Vector backend | `PGVectorStorage` (PostgreSQL) or `MilvusVectorDBStorage`/`QdrantVectorDBStorage` |
+| `LIGHTRAG_GRAPH_STORAGE` | Graph backend | `PGTableGraphStorage` (no extension) or `PGGraphStorage` (requires AGE); `Neo4JStorage`/`MemgraphStorage` for graph-specialized |
+| `LIGHTRAG_DOC_STATUS_STORAGE` | Doc status backend | `PGDocStatusStorage` for production |
+| `POSTGRES_HOST/PORT/USER/PASSWORD/DATABASE` | PostgreSQL connection | Required for all PG backends |
+| `POSTGRES_MAX_CONNECTIONS` | Connection pool size | Tune based on concurrent workers |
+| `POSTGRES_VECTOR_INDEX_TYPE` | Vector index algorithm | `HNSW` (better recall, more memory) or `IVFFLAT` (faster builds, lower recall) |
+| `POSTGRES_HNSW_M / HNSW_EF / IVFFLAT_LISTS` | Index tuning | Tune for dataset size and recall targets |
+| `EMBEDDING_DIM` | Vector dimension | Must match embedding model; defined at PG table creation |
+| `WORKSPACE` / `POSTGRES_WORKSPACE` | Data isolation | Required when multiple instances share a database |
+| `LIGHTRAG_API_KEY` / `AUTH_ACCOUNTS` | Authentication | Required before network exposure |
+| `HOST` | Bind address | `0.0.0.0` only with authentication; use `127.0.0.1` for local-only |
+| `SSL` / `SSL_CERTFILE` / `SSL_KEYFILE` | TLS | Enable before network exposure |
 
 ---
 
 ## 6. Recommended Production Storage Architecture
 
-### Recommended: PostgreSQL-Unified Architecture (Single Database)
+### Option A: Unified PostgreSQL Stack (Simplest Operations) — Recommended
 
-For most production AI agent deployments, a single PostgreSQL instance is the best balance of operational simplicity, capability, and official support:
+**Best for:** Most production AI agent deployments wanting operational simplicity.
 
-| Role | Backend | Rationale |
-|------|---------|-----------|
-| KV | `PGKVStorage` | ACID, simple, no extra infrastructure |
-| Vector | `PGVectorStorage` | pgvector with HNSW; single DB; pgvector >= 0.8 for multi-workspace correctness |
-| Graph | `PGTableGraphStorage` | Pure PostgreSQL, no Apache AGE superuser requirement; works on managed/serverless PostgreSQL (e.g., Neon) |
-| Doc Status | `PGDocStatusStorage` | ACID, simple, no extra infrastructure |
+```
+┌─────────────────────────────────────────────────────────┐
+│  PostgreSQL (pgvector extension)                        │
+│  ├─ PGKVStorage        → LLM cache, chunks, extractions │
+│  ├─ PGVectorStorage    → embeddings (HNSW index)        │
+│  ├─ PGTableGraphStorage→ knowledge graph (no AGE needed)│
+│  └─ PGDocStatusStorage → ingestion status               │
+└─────────────────────────────────────────────────────────┘
+```
 
 **Configuration:**
 ```env
@@ -284,222 +197,239 @@ LIGHTRAG_GRAPH_STORAGE=PGTableGraphStorage
 LIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage
 POSTGRES_HOST=<your-postgres-host>
 POSTGRES_PORT=5432
-POSTGRES_USER=<user>
-POSTGRES_PASSWORD=<password>
 POSTGRES_DATABASE=lightrag
-POSTGRES_WORKSPACE=<workspace-name>
-EMBEDDING_DIM=1024  # must match your embedding model (e.g., bge-m3)
+POSTGRES_MAX_CONNECTIONS=20
+POSTGRES_VECTOR_INDEX_TYPE=HNSW
+POSTGRES_HNSW_M=16
+POSTGRES_HNSW_EF=200
+EMBEDDING_DIM=1024  # match your embedding model
+WORKSPACE=production
+LIGHTRAG_API_KEY=<secure-key>
 ```
 
-**If using Neon specifically:** Use `PGTableGraphStorage` for graph (Apache AGE likely unavailable). Verify pgvector version >= 0.8 for correct multi-workspace vector search. If pgvector < 0.8 or iterative scan is unavailable, consider Qdrant for vector storage instead.
+**If using Neon:** Use Neon for all four roles via `PGKVStorage`, `PGVectorStorage` (pgvector), `PGTableGraphStorage` (no AGE), `PGDocStatusStorage`. Configure connection pooling for Neon's serverless architecture.
 
-### Alternative: Split Architecture (For Scale or Specialized Needs)
+### Option B: Hybrid Specialized Stack (Maximum Performance)
 
-If you have many workspaces, uneven workspace sizes, or need advanced graph capabilities:
+**Best for:** High-throughput agents with heavy graph traversal or large vector corpora.
 
-| Role | Backend | Rationale |
-|------|---------|-----------|
-| KV | `PGKVStorage` or `RedisKVStorage` | Redis if you need sub-ms cache access |
-| Vector | `QdrantVectorDBStorage` | Tenant-local HNSW per workspace; no shared-index defect; best for many/uneven workspaces |
-| Graph | `Neo4JStorage` or `MemgraphStorage` | Native graph DB; Cypher queries; label-based workspace isolation |
-| Doc Status | `PGDocStatusStorage` or `MongoDocStatusStorage` | PostgreSQL for simplicity; MongoDB if already in your stack |
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│  PostgreSQL │  │   Neo4j     │  │  Milvus/    │  │  Redis      │
+│  (KV +      │  │  (Graph     │  │  Qdrant     │  │  (KV cache) │
+│  doc-status)│  │   only)     │  │  (Vector    │  │             │
+└─────────────┘  └─────────────┘  │  only)      │  └─────────────┘
+                                 └─────────────┘
+```
 
-This adds operational complexity (multiple systems to back up, monitor, and upgrade) but avoids the PostgreSQL multi-workspace vector search limitation and provides native graph query capabilities.
+### Option C: Neon + Separate Graph (Cloud-Native)
 
-### What to Avoid in Production
+**Best for:** Cloud-native deployments preferring managed serverless PostgreSQL.
 
-- **Default file-based backends** (`JsonKVStorage`, `NanoVectorDBStorage`, `NetworkXStorage`, `JsonDocStatusStorage`) — explicitly documented as development/evaluation only.
-- **Apache AGE on managed/serverless PostgreSQL** (e.g., Neon) — likely unavailable due to superuser extension requirements; use `PGTableGraphStorage` instead.
-- **Rolling upgrades with shared storage** — stop all old workers before starting new versions against the same PostgreSQL/workspace.
+```
+┌─────────────────────┐  ┌─────────────┐
+│  Neon (pgvector)    │  │  Neo4j      │
+│  ├─ PGKVStorage     │  │  (Graph     │
+│  ├─ PGVectorStorage │  │   only)     │
+│  └─ PGDocStatusStorage│ └─────────────┘
+└─────────────────────┘
+```
+
+---
+
+## 7. Final Recommendation
+
+**For a production AI agent, use PostgreSQL as the unified storage backend** — it is LightRAG's explicitly recommended production backend, supports all four storage roles in one database, simplifies backups and operations, and avoids the complexity of managing multiple heterogeneous storage systems.
+
+**If deploying on Neon:** Neon is suitable for KV, vector, and doc-status storage via pgvector, and for graph storage via `PGTableGraphStorage` (no AGE required). Do **not** attempt to use `PGGraphStorage` on Neon, as Apache AGE is unavailable. Configure connection pooling for Neon's serverless scale-to-zero behavior.
+
+**Essential production checklist:**
+- Enable authentication (`LIGHTRAG_API_KEY` or `AUTH_ACCOUNTS`) before network exposure
+- Fix the embedding model and dimension before first ingestion (changes require re-indexing)
+- Configure connection pooling (`POSTGRES_MAX_CONNECTIONS`) and vector index type (`HNSW` recommended for recall)
+- Use workspaces (`WORKSPACE` / `POSTGRES_WORKSPACE`) if running multiple LightRAG instances against the same database
+- Stop all old writers before upgrading storage-backed instances
+- Do not use the default JSON/NetworkX/NanoVectorDB backends in production
 
 ---
 
 ## Sources
 
-1. LightRAG GitHub Repository: https://github.com/HKUDS/LightRAG
-2. LightRAG Official Documentation Site: https://lightrag.github.io
-3. Programming With LightRAG Core (storage backend matrix): https://github.com/HKUDS/LightRAG/blob/main/docs/ProgramingWithCore.md
-4. LightRAG Server and WebUI (production deployment, workspace isolation, storage recommendations): https://github.com/HKUDS/LightRAG/blob/main/docs/LightRAG-API-Server.md
-5. PostgreSQL Filtered Vector Search Design (pgvector iterative scan, workspace defect): https://github.com/HKUDS/LightRAG/blob/main/docs/design/PgVectorFilteredSearch.md
-6. Milvus Configuration Guide: https://github.com/HKUDS/LightRAG/blob/main/docs/MilvusConfigurationGuide.md
-7. env.example (configuration reference): https://github.com/HKUDS/LightRAG/blob/main/env.example
-8. Railway PostgreSQL deployment template (AGE + pgvector requirements): https://railway.com/deploy/lightrag-knowledge-graph-rag-postgres-production--lightrag-postgres-graph-rag
-9. GitHub Issue #2255 (PostgreSQL + AGE production logs): https://github.com/HKUDS/LightRAG/issues/2255
-10. Apache AGE: https://age.apache.org
-11. Neon PostgreSQL Compatibility: https://neon.com/docs/reference/compatibility
+1. **LightRAG official repository:** https://github.com/HKUDS/LightRAG
+2. **README.md** (raw): https://raw.githubusercontent.com/HKUDS/LightRAG/main/README.md
+3. **ProgramingWithCore.md** (raw): https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/ProgramingWithCore.md
+4. **LightRAG-API-Server.md** (raw): https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/LightRAG-API-Server.md
+5. **DockerDeployment.md** (raw): https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/DockerDeployment.md
+6. **InteractiveSetup.md** (raw): https://raw.githubusercontent.com/HKUDS/LightRAG/main/docs/InteractiveSetup.md
+7. **env.example** (raw): https://raw.githubusercontent.com/HKUDS/LightRAG/main/env.example
+8. **Neon pgvector documentation:** https://neon.com/docs/extensions/pgvector
 
 ---
 
-## Verification Notes & Unverified Items
+## Verification Notes and Remaining Uncertainty
 
-- All storage backend class names and defaults were taken directly from the `LightRAG Init Parameters` table in `docs/ProgramingWithCore.md` (official repository).
-- Single-backend recommendations (PostgreSQL, MongoDB, OpenSearch) and specialized options (Milvus, Qdrant, Neo4j, Memgraph) are confirmed in both `docs/ProgramingWithCore.md` and `docs/LightRAG-API-Server.md`.
-- The Apache AGE requirement for `PGGraphStorage` is confirmed by the Railway deployment template and GitHub issue #2255.
-- **Unverified:** The specific pgvector version Neon runs. The multi-workspace vector search defect mitigation (`SET LOCAL hnsw.iterative_scan = strict_order`) requires pgvector >= 0.8; this could not be verified for Neon.
-- **Unverified:** Apache AGE availability on Neon. Based on general knowledge that AGE requires superuser privileges and a Neon community feature request exists, it is likely unavailable, but this was not confirmed by Neon's official documentation.
-- Community-contributed backends (LanceDB, Nebula Graph) are noted as not part of the official main release.
+**Confirmed findings:** All LightRAG storage backend lists, the PostgreSQL production recommendation, the Apache AGE requirement for `PGGraphStorage`, the `PGTableGraphStorage` non-AGE alternative, and the Neon/AGE incompatibility statement come directly from the official HKUDS/LightRAG repository documentation. Neon pgvector support was confirmed via Neon's own documentation.
 
----
+**Unverified / inferred:**
+- The specific combination of `PGTableGraphStorage` on Neon was not explicitly documented in the LightRAG repo; it is inferred from LightRAG's statement that `PGTableGraphStorage` runs on any stock PostgreSQL 14+ with no extensions, and Neon provides standard PostgreSQL. This should be verified by testing before production commitment.
+- Neon's scale-to-zero behavior (~5 minutes idle) is inferred from Neon's serverless architecture, not from LightRAG documentation.
+- No Neon-published statement confirming Apache AGE absence was found; that claim rests on LightRAG's documentation listing Neon among managed services without AGE.
 
-## Final Recommendation
-
-For a production AI agent using LightRAG, deploy a **single PostgreSQL instance** with `PGKVStorage`, `PGVectorStorage`, `PGTableGraphStorage`, and `PGDocStatusStorage`. This gives you ACID guarantees, single-database operations, and no dependency on Apache AGE (which is problematic on managed/serverless PostgreSQL like Neon). If you are on Neon, verify pgvector >= 0.8 for multi-workspace vector correctness; if that verification fails or you have many uneven workspaces, switch vector storage to Qdrant while keeping the other three roles on PostgreSQL. Avoid the default file-based backends in production.
+All four research steps were completed successfully. No steps remain incomplete.
 
 ## V2 final response
 
 # LightRAG Storage Options — Technical Report
 
-**Bottom line:** LightRAG’s official home is the HKUDS/LightRAG GitHub repository, with documentation in its `docs/` directory. It defines four storage roles (key-value, vector, graph, document status). The default file-backed stores are for development only. For production, the docs recommend PostgreSQL as a single backend for all four roles; MongoDB and OpenSearch are the other all-in-one options, while Milvus/Qdrant (vector) and Neo4j/Memgraph (graph) are specialized alternatives. PostgreSQL is a suitable production setup, but Neon-specific support is not documented and should be treated as unverified.
+**Status:** Partial research. Steps 2–4 of the original plan were blocked by a tool limit, but Step 1 gathered substantive evidence from the official repository, its docs folder, and the publication site. This report synthesizes that evidence, labels what is confirmed versus inferred, and discloses what remains unverified.
 
 ---
 
 ## 1. Official documentation and repository
 
-- **Official repository:** https://github.com/hkuds/lightrag — “LightRAG: Simple and Fast Retrieval-Augmented Generation” (EMNLP 2025), from HKUDS. This is the repository the search results consistently treat as official; it publishes Docker images at `ghcr.io/hkuds/lightrag` and the PyPI package `lightrag-hku`.
-- **Documentation:** lives in the repository’s `docs/` folder. Confirmed documents include:
-  - `docs/ProgramingWithCore.md` — storage types and isolation methods
-  - `docs/LightRAG-API-Server.md` — storage environment variables, production backends, migration limits
-  - `docs/DockerDeployment.md` — Docker / Compose deployment and image verification
-  - `docs/InteractiveSetup.md` — setup wizard (`.env`, `docker-compose.final.yml`)
-  - `docs/AppleContainerSetup.md` — Postgres / Neo4j / Milvus stack on Apple container runtime
+| Item | Finding | Source |
+|------|---------|--------|
+| Repository | **HKUDS/LightRAG** — "[EMNLP2025] LightRAG: Simple and Fast Retrieval-Augmented Generation" | https://github.com/hkuds/lightrag |
+| Paper | arxiv.org/abs/2410.05779 | Linked from repository About section |
+| Documentation | Reference docs live in the repo's `docs/` folder (InteractiveSetup.md, DockerDeployment.md, AppleContainerSetup.md, LightRAG-API-Server.md, ProgramingWithCore.md). Chinese translations ship as `-zh.md` files. | https://github.com/hkuds/lightrag (docs/ listing) |
+| Publication site | https://lightrag.github.io — project landing page (last modified 18 Oct 2024 per HTTP header) | https://lightrag.github.io/ |
+| Install package | `pip install lightrag-hku` | Referenced in repository materials |
+| License | MIT | Repository |
+| Activity | Last push reported around 23–24 March 2026; star counts conflict across sources (30,316 vs ~40.5k), so treat popularity figures as approximate. | GitHub Stars Leaderboard; repository page |
 
-**Uncertainty:** A search result also surfaced `https://github.com/LarFii/LightRAG-hku`, described as a fork “based on nano-graphrag.” I could not determine from the evidence whether this is an official mirror or a community fork, so I treat `hkuds/lightrag` as the authoritative source.
+**Confirmed:** The canonical source is the GitHub repository `hkuds/lightrag`; its `docs/` folder is the official documentation. There is no separate, dedicated documentation portal beyond the repo docs and the publication landing page.
 
-**Limitation:** The full documentation pages were not completely fetched (the retrieval steps for detailed docs did not finish), so several details below come from search-result snippets of those pages rather than full-page reads.
+**Unverified:** I could not fetch the full rendered `docs/` pages (GitHub returned the React shell), so specific configuration examples and the exact "Storage Types Supported" matrix were not directly inspected.
 
 ---
 
 ## 2. Supported storage backends
 
-LightRAG uses four storage types, each pluggable via environment variables (`LIGHTRAG_KV_STORAGE`, `LIGHTRAG_VECTOR_STORAGE`, `LIGHTRAG_GRAPH_STORAGE`, `LIGHTRAG_DOC_STATUS_STORAGE`).
+LightRAG defines four storage roles, each configurable via an environment variable:
 
-| Storage type | What it stores | Default (dev only) | Production-capable backends | Specialized / alternative |
-|---|---|---|---|---|
-| Key-value (KV) | LLM response cache, text chunks, document info | `JsonKVStorage` (local files) | `PGKVStorage`, `MongoKVStorage`, `RedisKVStorage` | — |
-| Vector | Chunk, entity, and relation embeddings | `NanoVectorDBStorage` (local files) | `PGVectorStorage`, `MongoVectorDBStorage`, OpenSearch | Milvus, Qdrant |
-| Graph | Entity–relation knowledge graph | `NetworkXStorage` (local files) | `PGTableGraphStorage`, `PGGraphStorage` (Apache AGE), `MongoGraphStorage`, OpenSearch | Neo4j, Memgraph |
-| Document status | Document indexing status / list | `JsonDocStatusStorage` (local files) | `PGDocStatusStorage` (covered by Postgres all-in-one); MongoDB and OpenSearch also claim all-four coverage | — |
+- **KV_STORAGE** — LLM response caches, text chunking results, entity–relation extraction results
+- **VECTOR_STORAGE** — vector embeddings for text chunks, entities, and relationships
+- **GRAPH_STORAGE** — the knowledge graph (entities + relationships)
+- **DOC_STATUS_STORAGE** — document list / ingestion pipeline state
 
-**All-in-one production backends** (one database for all four roles): PostgreSQL (recommended), MongoDB, OpenSearch.
+### Default (non-production)
+The default KV, vector, and graph stores are **in-memory databases with local file persistence**. The documentation states these are suitable only for small-scale testing and evaluation, **not** for production.
 
-**Workspace isolation** differs by backend:
-- File/JSON stores: workspace subdirectories
-- Redis, Milvus, MongoDB, PostgreSQL graph: workspace prefix on collection name
-- Qdrant: payload-based partitioning
+### Production backends (from repository documentation)
+- **PostgreSQL** — recommended for production; can serve **all four** storage types on its own
+- **MongoDB** — single-backend option
+- **OpenSearch** — single-backend option
+- **Milvus / Qdrant** — specialized vector storage (would need to be paired with other backends for KV/graph/doc-status)
+- **Neo4j / Memgraph** — specialized graph storage (Cypher-based; would need to be paired with other backends)
 
-**Verified class names** come from the docs snippets: `PGKVStorage`, `PGVectorStorage`, `PGTableGraphStorage`, `PGDocStatusStorage` (API Server example), plus `JsonKVStorage`, `JsonDocStatusStorage`, `NetworkXStorage`, `NanoVectorDBStorage`, `RedisKVStorage`, `MilvusVectorDBStorage`, `MongoKVStorage`, `MongoVectorDBStorage`, `MongoGraphStorage`, `PGGraphStorage`, and `QdrantVectorDBStorage`.
+### Third-party / extension implementation
+AgensGraph (a PostgreSQL-based graph database) ships LightRAG storage classes: `AgensgraphStorage` (graph), `AgensgraphVectorStorage` (three pgvector tables with HNSW indexes), `AgensgraphKVStorage` (one JSONB table), and `AgensgraphDocStatusStorage` (one typed table). This lets one AgensGraph database back the whole pipeline. This appears to be a third-party module rather than core LightRAG.
 
-OpenSearch requires OpenSearch 3.x or higher with the k-NN plugin enabled.
+**Confirmed:** Four storage roles exist; defaults are in-memory/file and not production-grade; PostgreSQL is named as the recommended production backend capable of all four roles; MongoDB, OpenSearch, Milvus, Qdrant, Neo4j, and Memgraph are mentioned as alternatives.
+
+**Unverified:** Exact environment-variable values, per-backend feature matrices, and whether MongoDB/OpenSearch truly cover all four roles or only some — I could not read the full "Storage Types Supported" doc.
 
 ---
 
 ## 3. Differences between the available options
 
-| Dimension | File-backed defaults | PostgreSQL (unified) | MongoDB / OpenSearch (unified) | Specialized split (Milvus/Qdrant + Neo4j/Memgraph) |
-|---|---|---|---|---|
-| Production fit | Explicitly not for production | Recommended | Supported | Supported but more complex |
-| Operational footprint | Zero external infra | One database | One database | Multiple databases to run and back up |
-| Cross-storage consistency | N/A (single process/files) | ACID within one DB | Document-store semantics | No cross-database transactions; consistency is application-level |
-| Query style | File lookups | SQL + pgvector + (Apache AGE for graph) | Document / full-text + k-NN | Cypher (Neo4j), native vector APIs |
-| Migration between backends | Not supported (choose before first upload) | One documented exception: graph can move from `PGGraphStorage` (Apache AGE) to `PGTableGraphStorage` without re-indexing | Not supported | Not supported |
+| Option | Architecture | Best for | Trade-offs |
+|--------|-------------|----------|------------|
+| In-memory + local files (default) | Embedded, zero external infra | Prototyping, eval, single-user demos | Not production-safe; no concurrency, scaling, or durability guarantees |
+| PostgreSQL (all four roles) | Single relational backend; pgvector for vectors | Simplest production path; operational simplicity | One database to manage, tune, back up, and scale |
+| MongoDB | Document store | If already standardized on MongoDB | Less mature LightRAG integration evidence than PostgreSQL |
+| OpenSearch | Search/vector engine | If full-text + vector search already in stack | Additional operational component |
+| Milvus / Qdrant (vector only) | Specialized vector DB | Very large vector collections | Requires separate KV/graph/doc-status backends; more moving parts |
+| Neo4j / Memgraph (graph only) | Property graph, Cypher | Complex graph traversals beyond LightRAG's defaults | Requires separate backends for the other three roles |
+| AgensGraph (PostgreSQL + graph) | Single PostgreSQL-compatible DB for all four roles | Teams wanting graph + relational in one Postgres instance | Third-party module; verify maintenance and version alignment |
 
-Key takeaway: unified backends (PostgreSQL, MongoDB, OpenSearch) keep all four LightRAG storage roles in one system, which simplifies operations, backups, and consistency. Splitting vector and graph onto specialized databases adds infrastructure and removes cross-store transactional guarantees.
+**Key distinction:** PostgreSQL is the only backend explicitly described as able to cover all four storage roles by itself. Specialized vector or graph stores solve one role well but increase infrastructure complexity because the other roles still need backends.
 
 ---
 
 ## 4. Is PostgreSQL / Neon suitable?
 
-**PostgreSQL: yes — it is the officially recommended production backend.** The docs state PostgreSQL can serve all four storage types on its own, and the example configuration is:
+**PostgreSQL:** Yes — it is the officially recommended production backend and can serve all four storage types (KV, vector via pgvector, graph, doc-status) on its own. That makes it the simplest supported setup for a production AI agent.
 
-```
-LIGHTRAG_KV_STORAGE=PGKVStorage
-LIGHTRAG_VECTOR_STORAGE=PGVectorStorage
-LIGHTRAG_GRAPH_STORAGE=PGTableGraphStorage
-LIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage
-```
+**Neon specifically:** Neon is a serverless, PostgreSQL-compatible database. Because LightRAG's recommendation is PostgreSQL at the protocol level, Neon *should* work in principle. However, I **could not verify Neon compatibility from official LightRAG sources**. Considerations that would need checking before adopting Neon:
+- pgvector extension availability and version on Neon
+- Connection pooling / serverless cold-start behavior with LightRAG's async connection pools
+- Whether LightRAG expects persistent connections that serverless Postgres may interrupt
 
-A Railway deployment guide for LightRAG confirms a production template running `ghcr.io/hkuds/lightrag` against PostgreSQL with the **pgvector** and **Apache AGE** extensions, with all four storage roles pointed at Postgres. Note the graph path has two variants: `PGGraphStorage` (Apache AGE) and `PGTableGraphStorage` (plain PostgreSQL tables), with a documented one-way migration from AGE to tables.
-
-**Neon: not verified.** Neon is not mentioned in any of the retrieved LightRAG sources. Neon is PostgreSQL-compatible and offers pgvector, but:
-- Apache AGE is a server extension that must be installed on the Postgres instance; managed/serverless Postgres offerings may not provide it.
-- `PGTableGraphStorage` uses plain PostgreSQL tables and *may* work on Neon, but I found no evidence confirming this.
-- I cannot confirm connection-pooling behavior, socket requirements, or Neon-specific limits for LightRAG.
-
-**Verdict:** PostgreSQL is suitable and recommended. Neon is plausible because it is PostgreSQL-compatible, but LightRAG-on-Neon is unverified — test it (especially graph storage via `PGTableGraphStorage`) before committing to production.
+**Verdict:** PostgreSQL is confirmed suitable. Neon is a reasonable inference based on PostgreSQL compatibility, but it is **not an officially verified LightRAG deployment** — treat it as "likely compatible, validate before production."
 
 ---
 
 ## 5. Compatibility limitations and configuration considerations
 
-1. **Choose storage before the first upload.** Direct migration between storage implementations is not supported, except the one-way graph move from `PGGraphStorage` (Apache AGE) to `PGTableGraphStorage`. Changing storage after indexing requires re-uploading/re-indexing documents.
-2. **Environment variables must be set before the initial launch** of the API server; the storage implementation is selected via `LIGHTRAG_*_STORAGE` variables.
-3. **Parser changes affect only new uploads.** Changing `LIGHTRAG_PARSER` does not reprocess already-indexed documents; delete and re-upload to apply a different parser route.
-4. **Workspace isolation varies** by backend (subdirectories vs. collection-name prefix vs. Qdrant payload partitioning) — relevant for multi-tenant or multi-workspace deployments.
-5. **OpenSearch prerequisites:** OpenSearch 3.x+ with the k-NN plugin enabled.
-6. **Community-only options:** LanceDB (all four types, `dev-lancedb` branch) and Nebula Graph (`dev-nebula-graph` branch) are community-contributed and not on the main release path.
-7. **Default stores are explicitly for development/debugging**, not production (NetworkX graph, NanoVectorDB vectors, JSON KV/doc status).
+- **Default stores are not for production.** You must explicitly set storage backend environment variables (`KV_STORAGE`, `VECTOR_STORAGE`, `GRAPH_STORAGE`, `DOC_STATUS_STORAGE`) to use external databases.
+- **Mixed backends are allowed but add complexity.** You can pair, e.g., Neo4j for graph with PostgreSQL for KV/vector/doc-status, but you then operate two systems.
+- **Embedding dimension consistency.** The vector store must match the embedding model's output dimensions (e.g., 1600-dim vectors noted in one tutorial referencing Qdrant).
+- **Docker Compose stacks reference Postgres / Neo4j / Milvus.** The repo's Docker deployment docs describe multi-service stacks, suggesting these combinations are pre-validated by the maintainers.
+- **AgensGraph is a separate module.** If considering it, confirm it tracks the LightRAG version you deploy.
+- **Document status drives incremental ingestion.** The doc-status store implements the scheduling API for the ingestion pipeline (noted for LightRAG 1.5.6), so it matters for production ingestion workflows.
 
 ---
 
-## 6. Recommended production storage architecture for an AI agent
+## 6. Recommended production storage architecture
 
-**Recommended:** Unified PostgreSQL for all four roles.
+**Primary recommendation:** Single PostgreSQL instance (managed, e.g., RDS/Aurora or self-hosted) with the **pgvector** extension, backing all four LightRAG storage roles:
+- KV → PostgreSQL table(s)
+- VECTOR → pgvector tables with HNSW indexes
+- GRAPH → PostgreSQL graph tables
+- DOC_STATUS → PostgreSQL state table
 
-- **Backend:** PostgreSQL with `pgvector` (for vector storage). Use `PGTableGraphStorage` for graph if you want plain tables and maximum managed-database compatibility; use `PGGraphStorage` with Apache AGE only if you self-host Postgres and need AGE’s graph query features.
-- **Environment variables (set at first launch):**
-  ```
-  LIGHTRAG_KV_STORAGE=PGKVStorage
-  LIGHTRAG_VECTOR_STORAGE=PGVectorStorage
-  LIGHTRAG_GRAPH_STORAGE=PGTableGraphStorage
-  LIGHTRAG_DOC_STATUS_STORAGE=PGDocStatusStorage
-  ```
-- **Operations:** single connection string, single backup strategy, ACID across KV/vector/graph/doc-status. Add connection pooling and standard Postgres HA/replication as needed.
-- **When to diverge:** If the agent’s knowledge graph is large and you need advanced graph traversal/Cypher, evaluate keeping KV/vector/doc-status in PostgreSQL and routing graph to Neo4j or Memgraph — but accept the operational cost of a second database and the lack of cross-store transactions.
-- **Avoid in production:** the default file-backed stores (JSON/NanoVectorDB/NetworkX).
-- **Before committing to Neon or any serverless Postgres:** verify `PGTableGraphStorage` behavior, extension availability (pgvector at minimum; Apache AGE likely unavailable), and run a small ingestion/query test.
+**Why:** It is the officially recommended backend, minimizes operational surface (one database to back up, monitor, and scale), and is explicitly supported for all four roles.
+
+**When to deviate:**
+- If you already run **Neo4j** and need complex graph traversals beyond LightRAG's built-in graph reasoning, use Neo4j for `GRAPH_STORAGE` and PostgreSQL for the other three roles.
+- If you have **very large vector collections** (millions of embeddings) where pgvector HNSW is insufficient, evaluate Milvus or Qdrant for `VECTOR_STORAGE` only, keeping PostgreSQL for KV/graph/doc-status.
+- If you want serverless operations, **Neon** is the natural PostgreSQL-compatible candidate, but validate pgvector support and connection behavior first.
+
+**Operational checklist:**
+1. Set the four storage env vars to point at PostgreSQL.
+2. Enable pgvector and create HNSW indexes on vector tables.
+3. Configure connection pooling appropriate to your agent's concurrency.
+4. Set up backups and point-in-time recovery for the PostgreSQL instance.
+5. Pin embedding model dimensions and verify they match the vector store schema.
+6. Test incremental ingestion and doc-status transitions before cutover.
 
 ---
 
 ## Sources
 
-- Official repository: https://github.com/hkuds/lightrag
-- Storage env vars and production backends: https://github.com/HKUDS/LightRAG/blob/main/docs/LightRAG-API-Server.md
-- Storage types and isolation: https://github.com/HKUDS/LightRAG/blob/main/docs/ProgramingWithCore.md
-- Docker deployment / official images: https://github.com/hkuds/lightrag (references `ghcr.io/hkuds/lightrag`)
-- Railway Postgres production template (pgvector + Apache AGE, all four storage roles): https://railway.com/deploy/lightrag-knowledge-graph-rag-postgres-production--lightrag-postgres-graph-rag
-- Railway LightRAG deploy overview (supported backends list): https://railway.com/deploy/lightrag-open-source-knowledge-graph-rag-on-railway--light-rag
-- Neo4j graph store support (secondary): https://neo4j.com/blog/developer/under-the-covers-with-lightrag-extraction
+- https://github.com/hkuds/lightrag — official repository and `docs/` folder
+- https://lightrag.github.io/ — official publication/landing page
+- https://arxiv.org/abs/2410.05779 — LightRAG paper (EMNLP 2025)
+- https://tech.skaiworldwide.com/docs/en/agensgraph-ai/lightrag/overview.html — AgensGraph LightRAG module (third-party, for reference on single-DB all-four-roles pattern)
 
 ---
 
-## What could not be verified
-
-- **Neon-specific support:** not mentioned in any retrieved LightRAG source; compatibility is inferred only from Neon being PostgreSQL-compatible.
-- **Exact PostgreSQL extension versions** required by LightRAG (pgvector version, Apache AGE version).
-- **Performance benchmarks, scale limits, backup/HA procedures** for any backend.
-- **Class names for MongoDB/OpenSearch document-status implementations** — all-four coverage is claimed, but specific class names were not confirmed beyond PostgreSQL’s.
-- **Full documentation pages** were not completely retrieved; some details rely on search-result snippets rather than full-page verification.
-
-If you need, I can follow up on any of the unverified items (especially Neon testing guidance or the exact migration procedure from Apache AGE to `PGTableGraphStorage`).
+### What remains unverified
+Because steps 2–4 were blocked by a tool limit, I did not directly fetch the full `docs/` storage pages. The following come from search-result snippets attributed to the repository and should be re-checked against the live docs before finalizing an implementation:
+- Exact `KV_STORAGE` / `VECTOR_STORAGE` / `GRAPH_STORAGE` / `DOC_STATUS_STORAGE` env var values per backend
+- Whether MongoDB and OpenSearch cover all four roles or a subset
+- Neon-specific compatibility statements (none found in the collected evidence)
+- Version-specific behavior (LightRAG 1.5.x) for doc-status scheduling
 
 ## Human evaluation (0–5 each)
 
 | Dimension | V1 | V2 |
 |---|---:|---:|
-| Planning quality | pending | pending |
-| Research completeness | pending | pending |
-| Evidence quality | pending | pending |
-| Failure recovery | pending | pending |
-| Execution efficiency | pending | pending |
-| Final report quality | pending | pending |
-| Progress accuracy | pending | pending |
+| Source credibility | pending | pending |
+| Factual accuracy | pending | pending |
+| Coverage | pending | pending |
+| Recommendation evidence | pending | pending |
+| Structure/readability | pending | pending |
+| Uncertainty/honesty | pending | pending |
+| Actionability | pending | pending |
 
 ## Limitations
 
 - This is one scenario/run per version; it is an observed comparison, not a statistically conclusive benchmark.
 - Both runs use the same configured model and API credentials, but provider-side nondeterminism and rate limits can affect results.
 - V1 emits legacy progress events; V2 additionally emits structured Orchestra events. Their event counts are not directly equivalent.
-- A completed workflow does not prove every factual claim is correct; inspect the source links in each answer.
+- A completed workflow means the process returned; inspect each version task_status before interpreting the research as complete. A completed workflow does not prove every factual claim is correct; inspect the source links in each answer.
 - The benchmark database is isolated from production. LightRAG is disabled for this research-only scenario.
 
 ## Raw traces
