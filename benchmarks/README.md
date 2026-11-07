@@ -32,7 +32,7 @@ On success, the workflow commits these files to `v2`:
 - `benchmarks/results/v1-run.json` — V1 raw progress trace and answer.
 - `benchmarks/results/v2-run.json` — V2 raw progress, structured Orchestra trace, and per-model-call telemetry.
 
-The raw traces are also uploaded as a GitHub Actions artifact, retained for 90 days. The V2 model-call trace records phase, reason, call number, elapsed time, provider token usage when returned, estimated prompt size, and context mode (bounded history, isolated step context, rolling step evidence, or full accumulated context). The comparison reports model-call count and median input/output/total tokens per call. V1 is marked as not instrumented rather than treating missing measurements as zero. The Markdown report leaves the seven 0–5 quality scores pending for human review; raw counts are not treated as quality scores.
+The raw traces are also uploaded as a GitHub Actions artifact, retained for 90 days. The V2 model-call trace records phase, reason, call number, step ID and turn index, requested tool-call count, elapsed time, provider token usage when returned, estimated prompt size, and context mode (bounded history, isolated step context, rolling step evidence, or full accumulated context). The comparison reports model-call count and median input/output/total tokens per call. V1 is marked as not instrumented rather than treating missing measurements as zero. The Markdown report leaves the seven 0–5 quality scores pending for human review; raw counts are not treated as quality scores.
 
 ## Interpretation
 
