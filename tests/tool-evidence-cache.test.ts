@@ -62,3 +62,35 @@ test("deduplicates equivalent calls within one model tool batch", async () => {
   assert.equal(result.results.length, 2);
   assert.equal(result.reusedCount, 1);
 });
+
+
+test("does not reuse a broad search for a materially more specific query", async () => {
+  const cache = new ToolEvidenceCache();
+  let executions = 0;
+  const broad = call("broad", "web_search", { query: "LightRAG storage options", max_results: 8 });
+  const specific = call("specific", "web_search", { query: "LightRAG storage options PostgreSQL Neon", max_results: 8 });
+  for (const item of [broad, specific]) {
+    await cache.execute([item], async (calls) => {
+      executions += calls.length;
+      return [{ role: "tool", tool_call_id: calls[0]!.id, content: JSON.stringify({ results: [calls[0]!.id] }) }];
+    });
+  }
+  assert.equal(executions, 2);
+});
+
+test("does not bypass tool schema validation for calls with unknown arguments", async () => {
+  const cache = new ToolEvidenceCache();
+  let executions = 0;
+  const malformed = call("malformed", "web_search", {
+    query: "LightRAG official documentation repository",
+    max_results: 8,
+    unexpected_scope: "production"
+  });
+  for (let i = 0; i < 2; i++) {
+    await cache.execute([malformed], async (calls) => {
+      executions += calls.length;
+      return [{ role: "tool", tool_call_id: calls[0]!.id, content: JSON.stringify({ results: [] }) }];
+    });
+  }
+  assert.equal(executions, 2);
+});
