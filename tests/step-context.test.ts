@@ -53,7 +53,7 @@ test("prerequisite evidence package is bounded", () => {
 
 
 test("rolling compaction bounds the next-turn prompt and preserves prior evidence", () => {
-  const stepStart = 2;
+  const stepStart = 3;
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: "Stable instructions" },
     { role: "user", content: "Original request" },
