@@ -79,3 +79,29 @@ test("rolling compaction bounds the next-turn prompt and preserves prior evidenc
   assert.ok(second.assistantNotes.includes("I found the official source."));
   assert.ok(second.assistantNotes.includes("The second source confirms the detail."));
 });
+
+
+test("recovery context includes the failed step's previous evidence", () => {
+  const recovery: ExecutionPlanStep = {
+    id: "recovery_locate",
+    task: "Finish the source lookup using prior evidence",
+    depends_on: ["locate"],
+    parallel_safe: true,
+    completion_criteria: ["Identify the official repository"]
+  };
+  const prior = {
+    ...outcome("locate", "Find official docs"),
+    status: "partial" as const,
+    answer: "The official repository was found; the documentation page fetch was incomplete."
+  };
+  const context = buildStepContext(
+    [{ role: "user", content: "Find LightRAG documentation" }] as never,
+    recovery,
+    plan,
+    [prior]
+  );
+  const serialized = JSON.stringify(context);
+  assert.match(serialized, /official repository was found/);
+  assert.match(serialized, /Source evidence for locate/);
+  assert.match(serialized, /Finish the source lookup using prior evidence/);
+});
