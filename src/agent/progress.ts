@@ -21,11 +21,23 @@ export type ProgressEvent =
   | { type: "memory_start" }
   | { type: "memory_complete" }
   | { type: "memory_error" }
-  | { type: "tool_start"; tool: string; args: Record<string, unknown> }
+  | { type: "tool_start"; tool: string; toolCallId?: string; args: Record<string, unknown> }
   | ToolProgressEvent
-  | { type: "tool_complete"; tool: string }
-  | { type: "tool_error"; tool: string }
+  | { type: "tool_complete"; tool: string; toolCallId?: string }
+  | { type: "tool_error"; tool: string; toolCallId?: string }
   | { type: "response_ready" };
+
+export interface OrchestraEvent {
+  requestId: string;
+  sequence: number;
+  emittedAt: string;
+  event: ProgressEvent;
+  correlation: {
+    stepIndex?: number;
+    toolName?: string;
+    toolCallId?: string;
+  };
+}
 
 export interface ProgressDisplay {
   text: string;
