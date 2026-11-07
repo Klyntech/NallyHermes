@@ -64,3 +64,18 @@ Do not trade away verification or silently truncate required evidence to meet a 
 ## Current status
 
 Step context isolation is implemented as the first behavior optimization. The next benchmark must verify reduced step input tokens, preserved research quality, and no increase in unnecessary tool calls. Planning and claim-driven verification have not yet been optimized.
+
+
+## Phase 1.2 — Evidence sufficiency and execution control
+
+Implemented in `docs/v2/evidence-sufficiency.md`:
+- The planner now requests explicit completion criteria for each plan step.
+- A request-scoped cache reuses successful read-only web searches, fetches, memory recalls, and file reads where calls are equivalent.
+- Two consecutive duplicate-only tool rounds stop rather than repeat the same research indefinitely.
+- Recovery receives the failed step's original outcome and prerequisite evidence; previously recovery had no dependency context.
+- Step outcomes distinguish completed, partial, failed, and blocked.
+- Benchmark output separates process/run completion from task completion and records structured outcome counts.
+
+The current LightRAG report's provisional quality score is **27/35**, below the required **32/35**. The assessment and shared rubric are in `benchmarks/results/quality-assessment-2026-11-07.md` and `benchmarks/quality-rubric.md`. Do not accept a latency improvement until factual accuracy and total quality pass the gate.
+
+The next validation must inspect cache reuse counts, model turns by step, recovery turns, task status, and the full answer. In particular, verify that recovery can finish from the prior evidence without repeating the same web searches.
