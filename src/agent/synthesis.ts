@@ -178,7 +178,7 @@ export function enforceCompletionDisclosure(
   pkg: SynthesisEvidencePackage
 ): string {
   if (pkg.execution.status === "complete") return answer;
-  if (/\b(partial|incomplete|not completed|could not be completed)\b/i.test(answer)) return answer;
+  if (/execution status:\s*partial|task status:\s*partial|report (?:is|remains) partial|execution (?:is|remains) incomplete/i.test(answer)) return answer;
   const unresolved = pkg.claims.filter((claim) => claim.status === "unresolved");
   const lines = [
     "## Execution status: PARTIAL",
