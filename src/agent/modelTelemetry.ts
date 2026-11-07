@@ -10,7 +10,8 @@ export type ModelCallPhase =
 export type ModelContextMode =
   | "bounded_history"
   | "full_accumulated"
-  | "step_context";
+  | "step_context_full"
+  | "step_context_delta";
 
 export interface ModelCallMetadata {
   phase: ModelCallPhase;
