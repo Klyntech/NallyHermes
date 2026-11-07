@@ -2,9 +2,7 @@
 
 **Assessed output:** V2 answer recorded in `benchmarks/results/v2-run.json` for V2 source `95ebcf046da6938b5a1d91a13237d450084adc8c`.
 
-<aside>
-This is a provisional single-reviewer assessment, not a blind or independent consensus score. The 32/35 acceptance gate is not met.
-</aside>
+> This is a provisional single-reviewer assessment, not a blind or independent consensus score. The 32/35 acceptance gate is not met.
 
 ## Score
 
