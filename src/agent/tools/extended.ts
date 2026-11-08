@@ -10,6 +10,7 @@ import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } fro
 import type { ToolProgressReporter } from "../progress.js";
 import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
 import { cancelWorkflow, createWorkflow, listWorkflows, pauseWorkflow } from "../workflows.js";
+import { composeReminderMessage } from "../reminderMessage.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -490,7 +491,7 @@ export function startScheduleWorker(sendMessage: (telegramId: string, text: stri
     if (running) return;
     running = true;
     try {
-      const due = await db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, telegramId: users.telegramId, userTimezone: users.timezone })
+      const due = await db.select({ id: scheduledJobs.id, task: scheduledJobs.task, runAt: scheduledJobs.runAt, recurrence: scheduledJobs.recurrence, timezone: scheduledJobs.timezone, telegramId: users.telegramId, firstName: users.firstName, userTimezone: users.timezone })
         .from(scheduledJobs).innerJoin(users, eq(scheduledJobs.userId, users.id))
         .where(and(eq(scheduledJobs.status, "pending"), lte(scheduledJobs.runAt, new Date()))).orderBy(asc(scheduledJobs.runAt)).limit(20);
       for (const job of due) {
@@ -498,7 +499,15 @@ export function startScheduleWorker(sendMessage: (telegramId: string, text: stri
           .where(and(eq(scheduledJobs.id, job.id), eq(scheduledJobs.status, "pending"))).returning({ id: scheduledJobs.id });
         if (!claimed.length) continue;
         try {
-          await sendMessage(job.telegramId, "⏰ Reminder: " + job.task);
+          const timezone = job.timezone ?? job.userTimezone;
+          const localTime = formatDateTimeInTimezone(job.runAt, timezone);
+          const message = await composeReminderMessage({
+            task: job.task,
+            localTime,
+            timezone,
+            firstName: job.firstName
+          });
+          await sendMessage(job.telegramId, message);
           if (job.recurrence) {
             const nextRun = nextOccurrence(job.runAt, job.recurrence as Recurrence, job.timezone ?? job.userTimezone);
             await db.update(scheduledJobs).set({ runAt: nextRun, status: "pending" }).where(eq(scheduledJobs.id, job.id));

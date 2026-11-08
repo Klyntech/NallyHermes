@@ -26,6 +26,7 @@ Nally combines a natural conversational interface with model-led planning, contr
 | Workspace | Read, write, edit, search, list, create folders and delete files |
 | Memory | Structured Neon records with LightRAG semantic and graph retrieval |
 | Scheduling | One-time and recurring reminders delivered proactively in Telegram |
+| Reminder language | Due reminders are phrased naturally by Nally, with a concise fallback if the model is unavailable |
 | Workflows | Durable recurring multi-step runs with tool allowlists, approval policy, retries and run history |
 | Connectors | Provider-neutral service boundary with explicit Calendar operations and fail-closed permissions |
 | Orchestration | Smart planning, dependencies, parallel read-only execution and recovery |
