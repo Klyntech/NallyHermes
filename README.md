@@ -26,6 +26,7 @@ Nally combines a natural conversational interface with model-led planning, contr
 | Workspace | Read, write, edit, search, list, create folders and delete files |
 | Memory | Structured Neon records with LightRAG semantic and graph retrieval |
 | Scheduling | One-time and recurring reminders delivered proactively in Telegram |
+| Workflows | Durable recurring multi-step runs with tool allowlists, approval policy, retries and run history |
 | Orchestration | Smart planning, dependencies, parallel read-only execution and recovery |
 | Time awareness | IANA timezone support and relative-date interpretation |
 | Telegram UX | Live progress editing, Markdown-to-HTML presentation and long-message splitting |
@@ -129,6 +130,12 @@ The executor validates arguments against strict schemas. Only read-only calls ma
 
 LightRAG is disabled by default. To enable it locally, configure the LightRAG variables, start the Python service on `127.0.0.1:9621`, and set `LIGHTRAG_ENABLED=true`.
 
+## V2 proactive workflows
+
+Workflows are opt-in recurring responsibilities, distinct from one-off reminders. Each workflow stores its trigger, bounded instructions, allowed tools, approval policy, Telegram output destination, retry policy and execution history. For example, a user can ask Nally to run every Monday at 8:00 AM to review open project tasks, summarize overdue items, search for relevant updates and send a concise report to Telegram.
+
+The initial V2 worker supports daily, weekly and monthly schedules and records completed or failed runs. It enforces the configured tool allowlist at the orchestra boundary. Daily briefing is implemented as a workflow pattern rather than an always-on feature, combining only configured sources such as pending reminders, saved context and permitted web updates. Calendar data and project task entities will be added through later V2 connectors; Nally must not imply those sources are available until configured.
+
 ### Development commands
 
 | Command | Purpose |
@@ -136,6 +143,7 @@ LightRAG is disabled by default. To enable it locally, configure the LightRAG va
 | `npm run dev` | Run the TypeScript application in watch mode |
 | `npm run typecheck` | Run TypeScript without emitting files |
 | `npm test` | Run automated regression tests |
+| `npm run test:integration` | Run the opt-in Neon integration test when `NALLY_DATABASE_INTEGRATION_URL` is configured |
 | `npm run build` | Compile TypeScript into `dist/` |
 | `npm run check` | Run typecheck, tests and production build |
 | `npm start` | Run the compiled application |

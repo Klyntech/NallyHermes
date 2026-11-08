@@ -6,6 +6,7 @@ import { users } from "./db/schema.js";
 import { appendConversationExchange, getOrCreateConversation, loadConversationHistory } from "./db/conversationStore.js";
 import { respond } from "./agent/orchestrator.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
+import { startWorkflowWorker } from "./agent/workflows.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
 import { benchmarkRerankers } from "./agent/lightRag.js";
 import { displayProgress } from "./agent/progress.js";
@@ -336,3 +337,22 @@ console.info(`Telegram webhook listening on port ${config.PORT}`);
 startScheduleWorker(async (telegramId, message) => {
   await bot.api.sendMessage(Number(telegramId), message);
 });
+
+startWorkflowWorker(
+  async (workflow) => {
+    const allowedTools = new Set(workflow.allowedTools);
+    const policy = [
+      "This is an approved recurring workflow run.",
+      `Workflow name: ${workflow.name}`,
+      `Approval policy: ${workflow.approvalPolicy}`,
+      `Only use these allowed tools: ${workflow.allowedTools.join(", ") || "none"}.`,
+      "Do not perform mutations unless the workflow approval policy explicitly allows them.",
+      "Produce a concise report of completed work, evidence, and any limitation.",
+      workflow.instructions
+    ].join("\n\n");
+    return respond([], policy, workflow.telegramId, undefined, allowedTools);
+  },
+  async (telegramId, message) => {
+    await bot.api.sendMessage(Number(telegramId), "Workflow report\n\n" + message);
+  }
+);

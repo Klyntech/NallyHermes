@@ -4,7 +4,8 @@ import {
   timestamp,
   uuid,
   jsonb,
-  index
+  index,
+  integer
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -55,3 +56,37 @@ export const scheduledJobs = pgTable("scheduled_jobs", {
   payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("scheduled_jobs_run_at_idx").on(table.runAt)]);
+
+export const workflows = pgTable("workflows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  instructions: text("instructions").notNull(),
+  trigger: text("trigger").notNull().default("schedule"),
+  runAt: timestamp("run_at", { withTimezone: true }).notNull(),
+  recurrence: text("recurrence").notNull(),
+  timezone: text("timezone").notNull(),
+  allowedTools: jsonb("allowed_tools").$type<string[]>().default([]).notNull(),
+  approvalPolicy: text("approval_policy").notNull().default("confirm_mutations"),
+  outputDestination: text("output_destination").notNull().default("telegram"),
+  retryPolicy: jsonb("retry_policy").$type<{ max_attempts: number; backoff_seconds: number }>().default({ max_attempts: 2, backoff_seconds: 60 }).notNull(),
+  status: text("status").notNull().default("active"),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("workflows_user_id_idx").on(table.userId),
+  index("workflows_due_idx").on(table.status, table.runAt)
+]);
+
+export const workflowRuns = pgTable("workflow_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workflowId: uuid("workflow_id").notNull().references(() => workflows.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("running"),
+  attempt: integer("attempt").notNull().default(1),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  output: text("output"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("workflow_runs_workflow_id_idx").on(table.workflowId)]);

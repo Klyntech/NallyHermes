@@ -52,7 +52,8 @@ async function runPlannedStep(
   maxToolRounds: number,
   readOnlyOnly: boolean,
   deadline: number,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  allowedTools?: ReadonlySet<string>
 ): Promise<StepOutcome> {
   messages.push({
     role: "system",
@@ -80,7 +81,9 @@ async function runPlannedStep(
       const response = await llm.chat.completions.create({
         model: config.NVIDIA_NIM_MODEL,
         messages,
-        tools: agentTools,
+        tools: allowedTools
+          ? agentTools.filter((tool) => tool.type === "function" && allowedTools.has(tool.function.name))
+          : agentTools,
         tool_choice: "auto",
         temperature: 0.4
       }, { timeout: remainingTime(deadline) });
@@ -120,7 +123,8 @@ async function runPlannedStep(
       const results = await executeToolCalls(
         functionCalls as ToolCallInput[],
         telegramId,
-        onProgress
+        onProgress,
+        allowedTools
       );
       const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
       let hadToolErrors = false;
@@ -234,7 +238,8 @@ async function runPlannedRequest(
   messages: ChatCompletionMessageParam[],
   steps: ExecutionPlanStep[],
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  allowedTools?: ReadonlySet<string>
 ): Promise<string> {
   const completed = new Set<string>();
   const outcomes: StepOutcome[] = [];
@@ -291,7 +296,8 @@ async function runPlannedRequest(
         perStepBudget,
         step.parallel_safe,
         deadline,
-        onProgress
+        onProgress,
+        allowedTools
       )
     ));
 
@@ -381,7 +387,8 @@ async function runPlannedRequest(
       recoveryBudget,
       true,
       deadline,
-      onProgress
+      onProgress,
+      allowedTools
     );
     totalToolRounds += recovered.toolRounds;
     if (recovered.status === "completed") {
@@ -424,7 +431,8 @@ export async function runAgent(
   history: ChatCompletionMessageParam[],
   userMessage: string,
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  workflowAllowedTools?: ReadonlySet<string>
 ): Promise<string> {
   const { messages } = await prepareRequest(history, userMessage, telegramId);
 
@@ -438,7 +446,7 @@ export async function runAgent(
 
   if (plan) {
     await onProgress?.({ type: "plan_created", stepCount: plan.steps.length });
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress);
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress, workflowAllowedTools);
     await onProgress?.({ type: "response_ready" });
     return answer;
   }
@@ -449,7 +457,9 @@ export async function runAgent(
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages,
-      tools: agentTools,
+      tools: workflowAllowedTools
+        ? agentTools.filter((tool) => tool.type === "function" && workflowAllowedTools.has(tool.function.name))
+        : agentTools,
       tool_choice: "auto",
       temperature: 0.4
     }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
@@ -478,7 +488,8 @@ export async function runAgent(
     const results = await executeToolCalls(
       functionCalls as ToolCallInput[],
       telegramId,
-      onProgress
+      onProgress,
+      workflowAllowedTools
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
     let hadToolErrors = false;

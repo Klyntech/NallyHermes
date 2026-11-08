@@ -9,6 +9,7 @@ import { config } from "../../config.js";
 import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } from "../lightRag.js";
 import type { ToolProgressReporter } from "../progress.js";
 import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
+import { cancelWorkflow, createWorkflow, listWorkflows, pauseWorkflow } from "../workflows.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -442,6 +443,45 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
     .where(and(eq(scheduledJobs.id, input.id), eq(scheduledJobs.userId, userId), eq(scheduledJobs.status, "pending")))
     .returning({ id: scheduledJobs.id });
   return { cancelled: cancelled.length > 0 };
+}
+
+type WorkflowInput = {
+  operation: "create" | "list" | "pause" | "cancel";
+  name?: string;
+  instructions?: string;
+  run_at?: string;
+  recurrence?: "daily" | "weekly" | "monthly";
+  timezone?: string;
+  allowed_tools?: string[];
+  approval_policy?: string;
+  output_destination?: "telegram";
+  id?: string;
+};
+
+export async function workflowTool(telegramId: string, input: WorkflowInput): Promise<unknown> {
+  if (input.operation === "list") return listWorkflows(telegramId);
+  if (!input.id && (input.operation === "pause" || input.operation === "cancel")) throw new Error("Provide a workflow ID.");
+  if (input.operation === "pause") return { paused: await pauseWorkflow(telegramId, input.id!) };
+  if (input.operation === "cancel") return { cancelled: await cancelWorkflow(telegramId, input.id!) };
+  if (!input.name || !input.instructions || !input.run_at || !input.recurrence) {
+    throw new Error("A workflow name, instructions, recurrence, and first run are required.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(input.run_at)) {
+    throw new Error("run_at must be ISO-8601 with an explicit Z or timezone offset.");
+  }
+  const runAt = new Date(input.run_at);
+  if (!Number.isFinite(runAt.getTime()) || runAt <= new Date()) throw new Error("The first workflow run must be in the future.");
+  const workflow = await createWorkflow(telegramId, {
+    name: input.name,
+    instructions: input.instructions,
+    runAt,
+    recurrence: input.recurrence,
+    timezone: input.timezone,
+    allowedTools: input.allowed_tools,
+    approvalPolicy: input.approval_policy,
+    outputDestination: input.output_destination
+  });
+  return { ...workflow, run_at: workflow.runAt.toISOString() };
 }
 
 export function startScheduleWorker(sendMessage: (telegramId: string, text: string) => Promise<unknown>): void {

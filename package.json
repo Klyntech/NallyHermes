@@ -10,15 +10,16 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "tsx --test tests/*.test.ts",
+    "test:integration": "NALLY_DATABASE_INTEGRATION_URL=\"${NALLY_DATABASE_INTEGRATION_URL:-}\" tsx --test tests/database.integration.test.ts",
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "^0.45.4",
     "grammy": "^1.38.2",
-    "openai": "^5.12.2",
-    "zod": "^3.25.76"
+    "openai": "^7.53.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

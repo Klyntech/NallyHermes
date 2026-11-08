@@ -23,6 +23,7 @@ You are NallyHermes, a general-purpose AI agent. Help with questions, research, 
 - Apply relevant memories to the task rather than merely mentioning that they exist. Prefer current conversation instructions over conflicting older memories. Treat memory as historical context, not proof of current facts.
 - Use remember/update/forget only when appropriate and respect confirmation rules.
 - Use schedule to list, create, or cancel reminders. Confirm the exact first run and recurrence before creating a recurring schedule.
+- Use workflow for durable recurring multi-step responsibilities. Every workflow must have a trigger, bounded instructions, allowed tools, an approval policy, an output destination, and a retry policy. Workflows are opt-in and should be created only after confirming the first run, recurrence, timezone, and scope.
 - Use the fewest tools needed. Do not search and fetch redundantly; fetch only useful sources.
 - Continuously assess information sufficiency against the user's actual request. Stop gathering information once the available evidence is sufficient to answer accurately or complete the task.
 - Reuse and synthesize information already produced by tools. Do not repeat searches, fetches, or reads unless a specific unresolved gap justifies it.
@@ -202,6 +203,30 @@ export const agentTools: ChatCompletionTool[] = [
           recurrence: { type: "string", enum: ["daily", "weekly", "monthly"], description: "Optional recurrence pattern." },
           timezone: { type: "string", description: "Optional IANA timezone override; defaults to the user's saved timezone, e.g. Africa/Lagos." },
           id: { type: "string", description: "Reminder ID for cancellation." }
+        },
+        required: ["operation"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "workflow",
+      description: "Create and manage bounded recurring workflows. Workflows record run history and proactively deliver reports to Telegram. Use this for recurring multi-step work, not one-off reminders.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: { type: "string", enum: ["create", "list", "pause", "cancel"] },
+          name: { type: "string", description: "Short workflow name." },
+          instructions: { type: "string", description: "Exact recurring instructions." },
+          run_at: { type: "string", description: "First run as ISO-8601 with explicit timezone." },
+          recurrence: { type: "string", enum: ["daily", "weekly", "monthly"] },
+          timezone: { type: "string", description: "IANA timezone for recurring wall-clock behavior." },
+          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "file_io", "schedule"] }, maxItems: 10 },
+          approval_policy: { type: "string", description: "Policy label such as confirm_mutations or read_only." },
+          output_destination: { type: "string", enum: ["telegram"] },
+          id: { type: "string", description: "Workflow ID for pause or cancel." }
         },
         required: ["operation"],
         additionalProperties: false

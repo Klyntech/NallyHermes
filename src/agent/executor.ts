@@ -2,7 +2,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { searchWeb } from "./tools/web.js";
-import { fetchUrl, fileIO, memoryTool, scheduleTool } from "./tools/extended.js";
+import { fetchUrl, fileIO, memoryTool, scheduleTool, workflowTool } from "./tools/extended.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 
 export interface ToolCallInput {
@@ -36,6 +36,18 @@ const schemas = {
     run_at: z.string().max(64).optional(),
     recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
     timezone: z.string().max(100).optional(),
+    id: z.string().max(100).optional()
+  }).strict(),
+  workflow: z.object({
+    operation: z.enum(["create", "list", "pause", "cancel"]),
+    name: z.string().trim().min(1).max(120).optional(),
+    instructions: z.string().trim().min(1).max(4000).optional(),
+    run_at: z.string().max(64).optional(),
+    recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
+    timezone: z.string().max(100).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule"])).max(10).optional(),
+    approval_policy: z.string().trim().min(1).max(100).optional(),
+    output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()
   }).strict()
 };
@@ -85,6 +97,9 @@ async function executeToolCallOnce(
         break;
       case "schedule":
         result = await scheduleTool(telegramId, args as Parameters<typeof scheduleTool>[1], reportToolProgress);
+        break;
+      case "workflow":
+        result = await workflowTool(telegramId, args as Parameters<typeof workflowTool>[1]);
         break;
       default:
         throw new Error("Unknown tool.");
@@ -146,6 +161,8 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
         return args.operation === "recall";
       case "schedule":
         return args.operation === "list";
+      case "workflow":
+        return args.operation === "list";
       default:
         return false;
     }
@@ -154,13 +171,18 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
   }
 }
 
+export function isAllowedCall(call: ToolCallInput, allowedTools?: ReadonlySet<string>): boolean {
+  return !allowedTools || allowedTools.has(call.function.name);
+}
+
 const MAX_PARALLEL_TOOL_CALLS = config.AGENT_MAX_PARALLEL_TOOL_CALLS;
 
 /** Preserve model call order while running only bounded, read-only batches concurrently. */
 export async function executeToolCalls(
   calls: ToolCallInput[],
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  allowedTools?: ReadonlySet<string>
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
   let progressQueue: Promise<void> = Promise.resolve();
   const reportProgress = onProgress
@@ -175,6 +197,15 @@ export async function executeToolCalls(
   const results: Extract<ChatCompletionMessageParam, { role: "tool" }>[] = [];
   let index = 0;
   while (index < calls.length) {
+    if (!isAllowedCall(calls[index]!, allowedTools)) {
+      results.push({
+        role: "tool",
+        tool_call_id: calls[index]!.id,
+        content: JSON.stringify({ error: "This tool is not allowed for the current workflow." })
+      });
+      index++;
+      continue;
+    }
     if (!isReadOnlyCall(calls[index]!)) {
       results.push(await executeToolCall(calls[index]!, telegramId, reportProgress));
       index++;
