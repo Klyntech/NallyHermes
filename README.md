@@ -4,7 +4,7 @@
 
 Nally combines a natural conversational interface with model-led planning, controlled tool execution, long-term memory and proactive scheduling. It is built around a custom TypeScript agent orchestra rather than a third-party agent framework.
 
-> **Release status: v1 Beta** — the core product is implemented and under release validation. Interfaces and configuration may still change.
+> **Release status: v2 Alpha** — V2 work is underway on the `Manus-Work-NallyHermes-v2` branch. Interfaces and configuration may still change.
 
 ## What Nally does
 
@@ -210,7 +210,7 @@ Memory is not loaded automatically on every message. Nally decides whether recal
 ## Privacy and security
 
 - Every user's memories and schedules are scoped to their Telegram identity.
-- Conversation history is kept in a bounded in-memory cache, separated by Telegram chat and participant. It is lost when the process restarts.
+- Conversation history is persisted in Neon, scoped by Telegram user and chat, with a bounded in-memory cache used as a hot-path fallback.
 - File paths are restricted to the user's workspace; symbolic-link escapes are rejected.
 - The LightRAG API binds to localhost and requires bearer authentication.
 - Telegram webhook requests are checked using the configured secret-token header.
@@ -229,9 +229,9 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
 
 ## Known beta limitations
 
-- Conversation history is currently process-local and resets on restart or redeploy.
+- V2 durable conversations currently persist the user/assistant transcript; summaries and explicit conversation-management commands are planned next.
 - File durability depends on mounting persistent storage and setting `FILE_WORKSPACE`.
-- The project does not yet include a committed npm lockfile; dependency installation is not fully reproducible.
+- V2 now includes a committed npm lockfile for reproducible dependency installation.
 - Automated tests currently cover Telegram presentation behavior; broader orchestration, memory and scheduling integration tests remain to be added.
 - A production release should include a selected open-source license and a completed dependency security review.
 

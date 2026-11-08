@@ -21,6 +21,7 @@ export async function ensureDatabase(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS conversations (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      telegram_chat_id text NOT NULL DEFAULT '',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
@@ -51,7 +52,9 @@ export async function ensureDatabase(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone text NOT NULL DEFAULT 'Africa/Lagos'",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS telegram_chat_id text NOT NULL DEFAULT ''",
     "CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations(user_id)",
+    "CREATE INDEX IF NOT EXISTS conversations_user_chat_idx ON conversations(user_id, telegram_chat_id)",
     "CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id)",
     "CREATE INDEX IF NOT EXISTS memories_user_id_idx ON memories(user_id)",
     "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS recurrence text",

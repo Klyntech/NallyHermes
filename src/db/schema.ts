@@ -19,9 +19,13 @@ export const users = pgTable("users", {
 export const conversations = pgTable("conversations", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  telegramChatId: text("telegram_chat_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
-}, (table) => [index("conversations_user_id_idx").on(table.userId)]);
+}, (table) => [
+  index("conversations_user_id_idx").on(table.userId),
+  index("conversations_user_chat_idx").on(table.userId, table.telegramChatId)
+]);
 
 export const messages = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),

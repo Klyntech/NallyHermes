@@ -2,6 +2,17 @@
 
 Notable changes to NallyHermes are recorded here.
 
+## [2.0.0-alpha.1] - 2026-11-08
+
+### Added
+- Started the V2 line on the `Manus-Work-NallyHermes-v2` branch.
+- Added a reproducible npm lockfile.
+- Added durable conversation persistence in Neon, scoped by Telegram user and chat.
+- Added startup migration and indexing for the Telegram chat conversation scope.
+
+### Changed
+- Telegram requests now load prior user/assistant history from Neon and persist each completed exchange.
+
 ## [1.0.0-beta.1] - 2026-11-06
 
 ### Added

@@ -3,6 +3,7 @@ import { Bot } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
+import { appendConversationExchange, getOrCreateConversation, loadConversationHistory } from "./db/conversationStore.js";
 import { respond } from "./agent/orchestrator.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
@@ -219,9 +220,12 @@ bot.on("message:text", async (ctx) => {
         set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
       });
 
-      const history = getHistory(historyKey);
+      const conversationId = await getOrCreateConversation(telegramId, String(ctx.chat.id));
+      const persistedHistory = await loadConversationHistory(conversationId);
+      const history = persistedHistory.length ? persistedHistory : getHistory(historyKey);
       const answer = await respond(history, ctx.message.text, telegramId, onProgress);
       await closeProgress();
+      await appendConversationExchange(conversationId, ctx.message.text, answer);
       history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
       saveHistory(historyKey, history);
       await editFormatted(
