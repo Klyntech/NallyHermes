@@ -27,6 +27,7 @@ Nally combines a natural conversational interface with model-led planning, contr
 | Memory | Structured Neon records with LightRAG semantic and graph retrieval |
 | Scheduling | One-time and recurring reminders delivered proactively in Telegram |
 | Workflows | Durable recurring multi-step runs with tool allowlists, approval policy, retries and run history |
+| Connectors | Provider-neutral service boundary with explicit Calendar operations and fail-closed permissions |
 | Orchestration | Smart planning, dependencies, parallel read-only execution and recovery |
 | Time awareness | IANA timezone support and relative-date interpretation |
 | Telegram UX | Live progress editing, Markdown-to-HTML presentation and long-message splitting |
@@ -135,6 +136,10 @@ LightRAG is disabled by default. To enable it locally, configure the LightRAG va
 Workflows are opt-in recurring responsibilities, distinct from one-off reminders. Each workflow stores its trigger, bounded instructions, allowed tools, approval policy, Telegram output destination, retry policy and execution history. For example, a user can ask Nally to run every Monday at 8:00 AM to review open project tasks, summarize overdue items, search for relevant updates and send a concise report to Telegram.
 
 The initial V2 worker supports daily, weekly and monthly schedules and records completed or failed runs. It enforces the configured tool allowlist at the orchestra boundary. Daily briefing is implemented as a workflow pattern rather than an always-on feature, combining only configured sources such as pending reminders, saved context and permitted web updates. Calendar data and project task entities will be added through later V2 connectors; Nally must not imply those sources are available until configured.
+
+### Calendar and service connectors
+
+V2 now has a provider-neutral connector contract for Calendar and future services such as GitHub, email and task systems. Calendar supports listing, creating, updating and cancelling events, but the current deployment has no Calendar provider credentials configured. Until a provider adapter is enabled for an account, the tool fails closed and reports that no external action was taken. This avoids pretending that a calendar is connected and lets Google Calendar, Microsoft Graph or CalDAV be added without changing workflow policy or orchestration.
 
 ### Development commands
 

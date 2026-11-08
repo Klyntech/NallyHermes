@@ -12,10 +12,13 @@ Notable changes to NallyHermes are recorded here.
 - Added durable recurring workflows with triggers, bounded instructions, allowed tools, approval policy, Telegram delivery, retry policy and run history.
 - Added opt-in Neon integration coverage for conversation isolation and workflow persistence.
 - Added orchestration tests for workflow tool policies and timezone-aware recurrence.
+- Added a provider-neutral connector contract for Calendar and future services.
+- Added strict Calendar list/create/update/cancel operations with fail-closed behavior when no provider is configured.
 
 ### Changed
 - Telegram requests now load prior user/assistant history from Neon and persist each completed exchange.
 - Workflow runs are executed through the bounded orchestra and cannot request tools outside their allowlist.
+- Calendar can be explicitly allowlisted by a workflow but is never treated as connected without provider credentials.
 
 ### Security
 - Upgraded `drizzle-orm`, `openai` and `zod` to patched versions; `npm audit --audit-level=high` reports zero vulnerabilities.

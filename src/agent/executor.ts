@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool, workflowTool } from "./tools/extended.js";
+import { calendarTool } from "./calendar.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 
 export interface ToolCallInput {
@@ -45,10 +46,24 @@ const schemas = {
     run_at: z.string().max(64).optional(),
     recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
     timezone: z.string().max(100).optional(),
-    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule"])).max(10).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule", "calendar"])).max(10).optional(),
     approval_policy: z.string().trim().min(1).max(100).optional(),
     output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()
+  }).strict(),
+  calendar: z.object({
+    operation: z.enum(["list", "create", "update", "cancel"]),
+    from: z.string().max(64).optional(),
+    to: z.string().max(64).optional(),
+    title: z.string().max(300).optional(),
+    start: z.string().max(64).optional(),
+    end: z.string().max(64).optional(),
+    timezone: z.string().max(100).optional(),
+    description: z.string().max(4000).optional(),
+    location: z.string().max(500).optional(),
+    attendees: z.array(z.string().max(320)).max(50).optional(),
+    calendar_id: z.string().max(200).optional(),
+    event_id: z.string().max(200).optional()
   }).strict()
 };
 
@@ -100,6 +115,9 @@ async function executeToolCallOnce(
         break;
       case "workflow":
         result = await workflowTool(telegramId, args as Parameters<typeof workflowTool>[1]);
+        break;
+      case "calendar":
+        result = await calendarTool(telegramId, args as unknown as Parameters<typeof calendarTool>[1]);
         break;
       default:
         throw new Error("Unknown tool.");
@@ -162,6 +180,8 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
       case "schedule":
         return args.operation === "list";
       case "workflow":
+        return args.operation === "list";
+      case "calendar":
         return args.operation === "list";
       default:
         return false;

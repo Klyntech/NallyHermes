@@ -26,6 +26,7 @@ Operate autonomously within the permissions, budgets, approval policies, and too
 - Use remember/update/forget only when appropriate and respect confirmation rules.
 - Use schedule to list, create, or cancel reminders. Confirm the exact first run and recurrence before creating a recurring schedule.
 - Use workflow for durable recurring multi-step responsibilities. Every workflow must have a trigger, bounded instructions, allowed tools, an approval policy, an output destination, and a retry policy. Workflows are opt-in and should be created only after confirming the first run, recurrence, timezone, and scope.
+- Use calendar only for calendar data and only when a Calendar connector is configured. Calendar reads may be autonomous; event creation, updates, and cancellation require the workflow approval policy or explicit user confirmation.
 - Use the fewest tools needed. Do not search and fetch redundantly; fetch only useful sources.
 - Continuously assess information sufficiency against the user's actual request. Stop gathering information once the available evidence is sufficient to answer accurately or complete the task.
 - Reuse and synthesize information already produced by tools. Do not repeat searches, fetches, or reads unless a specific unresolved gap justifies it.
@@ -225,10 +226,36 @@ export const agentTools: ChatCompletionTool[] = [
           run_at: { type: "string", description: "First run as ISO-8601 with explicit timezone." },
           recurrence: { type: "string", enum: ["daily", "weekly", "monthly"] },
           timezone: { type: "string", description: "IANA timezone for recurring wall-clock behavior." },
-          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "file_io", "schedule"] }, maxItems: 10 },
+          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "file_io", "schedule", "calendar"] }, maxItems: 10 },
           approval_policy: { type: "string", description: "Policy label such as confirm_mutations or read_only." },
           output_destination: { type: "string", enum: ["telegram"] },
           id: { type: "string", description: "Workflow ID for pause or cancel." }
+        },
+        required: ["operation"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "calendar",
+      description: "Use the connected calendar when configured. List events or create, update, and cancel events. Reads are safe; mutations require the applicable approval policy and must never be claimed complete without provider confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: { type: "string", enum: ["list", "create", "update", "cancel"] },
+          from: { type: "string", description: "ISO-8601 start of the range for listing events." },
+          to: { type: "string", description: "ISO-8601 end of the range for listing events." },
+          title: { type: "string", description: "Event title." },
+          start: { type: "string", description: "ISO-8601 event start." },
+          end: { type: "string", description: "ISO-8601 event end." },
+          timezone: { type: "string", description: "IANA timezone for the event." },
+          description: { type: "string" },
+          location: { type: "string" },
+          attendees: { type: "array", items: { type: "string" }, maxItems: 50 },
+          calendar_id: { type: "string" },
+          event_id: { type: "string" }
         },
         required: ["operation"],
         additionalProperties: false
