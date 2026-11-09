@@ -52,7 +52,8 @@ async function runPlannedStep(
   maxToolRounds: number,
   readOnlyOnly: boolean,
   deadline: number,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  signal?: AbortSignal
 ): Promise<StepOutcome> {
   messages.push({
     role: "system",
@@ -84,7 +85,7 @@ async function runPlannedStep(
         tools: agentTools,
         tool_choice: "auto",
         temperature: 0.4
-      }, { timeout: remainingTime(deadline) });
+      }, { timeout: remainingTime(deadline), signal });
       const message = response.choices[0]?.message;
       if (!message) {
         failureReason = "The model returned an empty response.";
@@ -320,6 +321,7 @@ async function runPlannedRequest(
       });
     }
 
+    throwIfAborted(options.signal);
     const batchOutcomes = await Promise.all(batch.map((step) =>
       runPlannedStep(
         [...messages],
@@ -328,7 +330,8 @@ async function runPlannedRequest(
         perStepBudget,
         step.parallel_safe,
         deadline,
-        onProgress
+        onProgress,
+        options.signal
       )
     ));
 
@@ -418,7 +421,8 @@ async function runPlannedRequest(
       recoveryBudget,
       true,
       deadline,
-      onProgress
+      onProgress,
+      options.signal
     );
     totalToolRounds += recovered.toolRounds;
     if (recovered.status === "completed") {
@@ -471,11 +475,13 @@ export async function runAgent(
   await onProgress?.({ type: "planning" });
   let plan: ExecutionPlan | null = null;
   try {
-    plan = await createExecutionPlan(llm, history, userMessage);
+    plan = await createExecutionPlan(llm, history, userMessage, options.signal);
   } catch (error) {
+    throwIfAborted(options.signal);
     console.warn("Smart planning unavailable; using direct execution:", error);
   }
 
+  throwIfAborted(options.signal);
   if (plan) {
     await onProgress?.({ type: "plan_created", stepCount: plan.steps.length });
     const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress, options);
