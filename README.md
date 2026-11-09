@@ -29,6 +29,7 @@ Nally combines a natural conversational interface with model-led planning, contr
 | Reminder language | Due reminders are phrased naturally by Nally, with a concise fallback if the model is unavailable |
 | Workflows | Durable recurring multi-step runs with tool allowlists, approval policy, retries and run history |
 | Connectors | Provider-neutral service boundary with explicit Calendar operations and fail-closed permissions |
+| Presentation | [NallyHermes V2 Strategy and Architecture Deck](./NallyHermes_V2_—_Personal_AI_Operating_System.pdf) |
 | Orchestration | Smart planning, dependencies, parallel read-only execution and recovery |
 | Time awareness | IANA timezone support and relative-date interpretation |
 | Telegram UX | Live progress editing, Markdown-to-HTML presentation and long-message splitting |
@@ -138,9 +139,13 @@ Workflows are opt-in recurring responsibilities, distinct from one-off reminders
 
 The initial V2 worker supports daily, weekly and monthly schedules and records completed or failed runs. It enforces the configured tool allowlist at the orchestra boundary. Daily briefing is implemented as a workflow pattern rather than an always-on feature, combining only configured sources such as pending reminders, saved context and permitted web updates. Calendar data and project task entities will be added through later V2 connectors; Nally must not imply those sources are available until configured.
 
-### Calendar and service connectors
+### Calendar and service mesh
 
-V2 now has a provider-neutral connector contract for Calendar and future services such as GitHub, email and task systems. Calendar supports listing, creating, updating and cancelling events, but the current deployment has no Calendar provider credentials configured. Until a provider adapter is enabled for an account, the tool fails closed and reports that no external action was taken. This avoids pretending that a calendar is connected and lets Google Calendar, Microsoft Graph or CalDAV be added without changing workflow policy or orchestration.
+V2 includes a provider-neutral connector layer for Calendar, GitHub, email, and task systems. 
+
+- **Google Calendar Adapter:** The first available adapter uses Google OAuth with a per-Telegram-user allowlist.
+- **Conflict Prevention:** Nally checks for overlapping calendar events before saving a reminder. If a conflict is found, it requires confirmation rather than silently scheduling.
+- **Fail-closed:** If Calendar is not enabled or the user is not in the `GOOGLE_CALENDAR_TELEGRAM_IDS` allowlist, no external action is taken.
 
 ### Development commands
 

@@ -11,6 +11,7 @@ import type { ToolProgressReporter } from "../progress.js";
 import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
 import { cancelWorkflow, createWorkflow, listWorkflows, pauseWorkflow } from "../workflows.js";
 import { composeReminderMessage } from "../reminderMessage.js";
+import { calendarTool } from "../calendar.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -401,6 +402,21 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
     assertTimestampMatchesTimezone(input.run_at, runAt, timezone);
     if (input.recurrence && !["daily", "weekly", "monthly"].includes(input.recurrence)) {
       throw new Error("Recurrence must be daily, weekly, or monthly.");
+    }
+
+    const calendarWindow = await calendarTool(telegramId, {
+      operation: "list",
+      from: new Date(runAt.getTime() - 30 * 60_000).toISOString(),
+      to: new Date(runAt.getTime() + 30 * 60_000).toISOString(),
+      timezone
+    });
+    if (Array.isArray(calendarWindow) && calendarWindow.length > 0) {
+      return {
+        scheduled: false,
+        requires_confirmation: true,
+        reason: "A calendar event overlaps the requested reminder time.",
+        calendar_conflicts: calendarWindow
+      };
     }
 
     await onProgress?.({ type: "tool_progress", tool: "schedule", stage: "schedule_saving" });

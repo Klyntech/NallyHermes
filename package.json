@@ -17,6 +17,7 @@
     "@neondatabase/serverless": "^1.0.1",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.45.4",
+    "googleapis": "^189.0.0",
     "grammy": "^1.38.2",
     "openai": "^7.53.0",
     "zod": "^4.6.7"
