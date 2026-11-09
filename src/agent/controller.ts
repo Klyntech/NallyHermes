@@ -253,7 +253,6 @@ async function synthesizeReport(
     }
   ];
   try {
-    const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS };
     const answer = await streamFinalAnswer(
       reportMessages,
       options,
@@ -261,8 +260,10 @@ async function synthesizeReport(
     );
     if (answer) return answer;
   } catch (error) {
+    throwIfAborted(options.signal);
     console.warn("Final execution report synthesis failed:", error);
   }
+  throwIfAborted(options.signal);
   return fallbackReport(outcomes, totalSteps, reason);
 }
 
