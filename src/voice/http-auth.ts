@@ -48,7 +48,12 @@ function telegramFields(value: unknown): Record<string, string> | null {
   if (entries.length < 3 || entries.length > TELEGRAM_FIELDS.size) return null;
   const result: Record<string, string> = {};
   for (const [key, field] of entries) {
-    if (!TELEGRAM_FIELDS.has(key) || typeof field !== "string" || field.length > 4096) return null;
+    if (!TELEGRAM_FIELDS.has(key)) return null;
+    if ((key === "id" || key === "auth_date") && typeof field === "number" && Number.isSafeInteger(field)) {
+      result[key] = String(field);
+      continue;
+    }
+    if (typeof field !== "string" || field.length > 4096) return null;
     result[key] = field;
   }
   return result;
