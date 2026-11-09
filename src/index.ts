@@ -363,7 +363,9 @@ const server = createServer((req, res) => {
   });
 });
 
-server.on("upgrade", voiceGateway.handleUpgrade);\n\nawait new Promise<void>((resolve, reject) => {
+server.on("upgrade", voiceGateway.handleUpgrade);
+
+await new Promise<void>((resolve, reject) => {
   server.once("error", reject);
   server.listen(config.PORT, "0.0.0.0", resolve);
 });
