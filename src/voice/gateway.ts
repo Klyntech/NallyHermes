@@ -16,6 +16,7 @@ export interface VoiceGatewayOptions {
   allowedOrigins: ReadonlySet<string>;
   onAudioFrame?(principal: VoicePrincipal, session: VoiceSession, frame: Buffer): void | Promise<void>;
   onControlEvent?(principal: VoicePrincipal, session: VoiceSession, event: ReturnType<typeof parseVoiceClientEvent>): void | Promise<void>;
+  onSessionClose?(principal: VoicePrincipal, session: VoiceSession): void;
   maxSessions?: number;
   maxSessionsPerUser?: number;
   maxAudioFrameBytes?: number;
