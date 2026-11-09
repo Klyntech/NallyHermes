@@ -144,3 +144,19 @@ Do not set performance targets as achieved until measured on the deployed path. 
 - Recording a complete audio file and processing it after the user finishes.
 - A second independent agent with duplicated tools or memory.
 - Claiming low latency or low cost without measurements.
+
+
+## Voice Beta v1 provider implementation
+
+The first provider pairing is Deepgram streaming STT and ElevenLabs streaming PCM TTS. Configure these Render environment variables:
+
+- `DEEPGRAM_API_KEY`
+- `ELEVENLABS_API_KEY`
+- `ELEVENLABS_VOICE_ID`
+- optional `ELEVENLABS_MODEL_ID` (defaults to `eleven_turbo_v2_5`)
+
+The browser's 16 kHz mono PCM16 frames are validated and forwarded to a per-session Deepgram Live WebSocket. Interim transcripts are emitted to the browser; Deepgram speech-start events establish turn boundaries and interrupt active output; speech-final transcripts are sent to the existing Nally Orchestra `respond` entry point. The resulting answer is synthesized by ElevenLabs using its streaming PCM endpoint and returned as generation-fenced 16 kHz audio frames.
+
+Important v1 limitation: the existing Orchestra controller is request/response and tool-aware, so this integration preserves its existing planning, tools, memory and verification rather than bypassing it with a separate raw LLM call. Consequently, the LLM/Orchestra answer is currently awaited as a complete result before text and TTS streaming begin. ElevenLabs audio itself streams incrementally. A follow-up controller refactor is required to emit model text deltas while preserving tool-call rounds and safe cancellation. The current AbortSignal fences/cancels TTS and stale output, but cannot yet abort in-flight Orchestra model/tool operations. Do not describe this milestone as end-to-end token-streaming or fully cancellable tool execution.
+
+The provider keys are optional at process startup so Telegram remains available without voice credentials. Starting a voice audio stream without the required provider keys fails closed with a session error; provider secrets are never sent to the browser.
