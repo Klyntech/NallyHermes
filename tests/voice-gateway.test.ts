@@ -92,3 +92,58 @@ test("gateway rejects untrusted browser origins before authentication", async ()
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+
+test("gateway sends only audio from the active response generation", async () => {
+  let liveSession: import("../src/voice/session.js").VoiceSession | undefined;
+  const gateway = new VoiceWebSocketGateway({
+    authenticate: async () => ({ userId: "user-voice" }),
+    allowedOrigins: new Set(["https://voice.example.test"]),
+    onControlEvent: (_principal, session) => { liveSession = session; }
+  });
+  const server = createServer();
+  server.on("upgrade", gateway.handleUpgrade);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address() as AddressInfo;
+  const client = new WebSocket(`ws://127.0.0.1:${address.port}/voice`, {
+    headers: { Origin: "https://voice.example.test" }
+  });
+
+  try {
+    await once(client, "open");
+    const readyPromise = once(client, "message");
+    client.send(JSON.stringify({ v: 1, type: "session.start", sessionId: "client" }));
+    const [readyData] = await readyPromise;
+    const { sessionId } = JSON.parse(readyData.toString()) as { sessionId: string };
+    const audioStartPromise = new Promise<void>((resolve) => {
+      const poll = () => liveSession ? resolve() : setTimeout(poll, 0);
+      poll();
+    });
+    client.send(JSON.stringify({ v: 1, type: "audio.start", sessionId }));
+    await audioStartPromise;
+    assert.ok(liveSession);
+    const turnId = liveSession.beginTurn();
+    const lease = liveSession.beginResponse(turnId);
+    assert.equal(gateway.sendEvent(sessionId, {
+      v: 1, type: "assistant.response_start", sessionId, turnId, generationId: lease.generationId
+    }), true);
+
+    const outputPromise = once(client, "message");
+    assert.equal(gateway.sendAudioFrame(sessionId, turnId, lease.generationId, Buffer.from([9, 8, 7])), true);
+    const [output, isBinary] = await outputPromise;
+    assert.equal(isBinary, true);
+    assert.deepEqual(Buffer.from(output as Buffer), Buffer.from([9, 8, 7]));
+
+    liveSession.interrupt("barge_in");
+    assert.equal(gateway.sendAudioFrame(sessionId, turnId, lease.generationId, Buffer.from([1, 2, 3])), false);
+    assert.equal(gateway.sendEvent(sessionId, {
+      v: 1, type: "assistant.interrupted", sessionId, turnId,
+      generationId: lease.generationId, reason: "barge_in"
+    }), true);
+  } finally {
+    if (client.readyState === WebSocket.OPEN) client.close();
+    await gateway.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
