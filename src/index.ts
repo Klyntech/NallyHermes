@@ -296,7 +296,8 @@ const staticAssets = new Map<string, { file: string; contentType: string }>([
   ["/", { file: "index.html", contentType: "text/html; charset=utf-8" }],
   ["/styles.css", { file: "styles.css", contentType: "text/css; charset=utf-8" }],
   ["/voice-client.js", { file: "voice-client.js", contentType: "text/javascript; charset=utf-8" }],
-  ["/audio-worklet.js", { file: "audio-worklet.js", contentType: "text/javascript; charset=utf-8" }]
+  ["/audio-worklet.js", { file: "audio-worklet.js", contentType: "text/javascript; charset=utf-8" }],
+  ["/voice-audio-protocol.js", { file: "voice-audio-protocol.js", contentType: "text/javascript; charset=utf-8" }]
 ]);
 
 const server = createServer((req, res) => {
