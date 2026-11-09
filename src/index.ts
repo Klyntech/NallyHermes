@@ -62,34 +62,6 @@ async function serializeConversation<T>(key: string, operation: () => Promise<T>
 
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
-const publicOrigin = new URL(config.WEBHOOK_URL).origin;
-const voiceAuthHandler = createVoiceAuthHandler({
-  botToken: config.TELEGRAM_BOT_TOKEN,
-  botUsername: bot.botInfo.username,
-  origin: publicOrigin,
-  persistIdentity: async (identity) => {
-    await db.insert(users).values({
-      telegramId: identity.userId,
-      username: identity.username ?? null,
-      firstName: identity.firstName ?? null,
-      timezone: getDefaultTimezone()
-    }).onConflictDoUpdate({
-      target: users.telegramId,
-      set: { username: identity.username ?? null, firstName: identity.firstName ?? null }
-    });
-  }
-});
-
-const voiceGateway = new VoiceWebSocketGateway({
-  allowedOrigins: new Set([publicOrigin]),
-  authenticate: async (request) => {
-    const identity = verifyVoiceSessionCookie(request.headers.cookie, {
-      botToken: config.TELEGRAM_BOT_TOKEN
-    });
-    return identity ? { userId: identity.userId } : null;
-  }
-});
-
 const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
 
 bot.command("start", async (ctx) => {
@@ -283,6 +255,34 @@ bot.catch((error) => console.error("Telegram bot error:", error));
 console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
 await bot.init();
+
+const publicOrigin = new URL(config.WEBHOOK_URL).origin;
+const voiceAuthHandler = createVoiceAuthHandler({
+  botToken: config.TELEGRAM_BOT_TOKEN,
+  botUsername: bot.botInfo.username,
+  origin: publicOrigin,
+  persistIdentity: async (identity) => {
+    await db.insert(users).values({
+      telegramId: identity.userId,
+      username: identity.username ?? null,
+      firstName: identity.firstName ?? null,
+      timezone: getDefaultTimezone()
+    }).onConflictDoUpdate({
+      target: users.telegramId,
+      set: { username: identity.username ?? null, firstName: identity.firstName ?? null }
+    });
+  }
+});
+
+const voiceGateway = new VoiceWebSocketGateway({
+  allowedOrigins: new Set([publicOrigin]),
+  authenticate: async (request) => {
+    const identity = verifyVoiceSessionCookie(request.headers.cookie, {
+      botToken: config.TELEGRAM_BOT_TOKEN
+    });
+    return identity ? { userId: identity.userId } : null;
+  }
+});
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
   { command: "help", description: "See what NallyHermes can do" },
