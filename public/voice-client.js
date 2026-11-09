@@ -1,3 +1,4 @@
+import { encodePcm16Frame, decodePcm16Frame } from "/voice-audio-protocol.js";
 const $ = (id) => document.getElementById(id);
 const loginPanel = $("login-panel");
 const voicePanel = $("voice-panel");
@@ -22,7 +23,6 @@ let interruptionSent = false;
 let scheduler;
 let disposed = false;
 
-import { encodePcm16Frame, decodePcm16Frame } from "/voice-audio-protocol.js";
 
 function setConnection(label, online = false) {
   connectionPill.textContent = label;
