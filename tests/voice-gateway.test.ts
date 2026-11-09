@@ -31,7 +31,7 @@ test("gateway authenticates, scopes a session, forwards audio and closes cleanly
   try {
     await once(client, "open");
     const readyPromise = once(client, "message");
-    client.send(JSON.stringify({ v: 1, type: "session.start", sessionId }));
+    client.send(JSON.stringify({ v: 1, type: "session.start", sessionId: "client-request" }));
     const [readyData] = await readyPromise;
     const readyEvent = JSON.parse(readyData.toString()) as { v: number; type: string; sessionId: string };
     assert.equal(readyEvent.v, 1);
@@ -47,7 +47,7 @@ test("gateway authenticates, scopes a session, forwards audio and closes cleanly
     assert.deepEqual(receivedAudio[0], audio);
 
     const closedPromise = once(client, "message");
-    client.send(JSON.stringify({ v: 1, type: "session.stop", sessionId: "browser-session-1" }));
+    client.send(JSON.stringify({ v: 1, type: "session.stop", sessionId }));
     const [closedData] = await closedPromise;
     assert.deepEqual(JSON.parse(closedData.toString()), {
       v: 1, type: "session.closed", sessionId
