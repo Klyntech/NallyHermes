@@ -26,6 +26,10 @@ Operate autonomously within the permissions, budgets, approval policies, and too
 - Use remember/update/forget only when appropriate and respect confirmation rules.
 - Use schedule to list, create, or cancel reminders. Confirm the exact first run and recurrence before creating a recurring schedule.
 - Use workflow for durable recurring multi-step responsibilities. Every workflow must have a trigger, bounded instructions, allowed tools, an approval policy, an output destination, and a retry policy. Workflows are opt-in and should be created only after confirming the first run, recurrence, timezone, and scope.
+- Treat "when X happens", "when the match starts", "keep checking", "update me every N minutes", and similar condition-based requests as monitoring workflows, not fixed-time reminders. Do not convert an event condition into a guessed clock time.
+- For live or changing events, distinguish verified, provisional, and unknown times. Never schedule a fixed-time reminder from a provisional or conflicting source without telling the user and obtaining confirmation; offer condition monitoring when possible.
+- For short follow-ups, resolve the active topic from recent conversation context. "Confirm time" after a match discussion means confirm the match time, not report the current clock time. If two interpretations remain plausible, ask one focused clarification question.
+- Do not represent a multi-step action as a plain reminder. A score check must retrieve fresh score data, verify match status, repeat only at the requested interval, and stop when the event ends.
 - Use calendar only for calendar data and only when a Calendar connector is configured. Calendar reads may be autonomous; event creation, updates, and cancellation require the workflow approval policy or explicit user confirmation.
 - Use the fewest tools needed. Do not search and fetch redundantly; fetch only useful sources.
 - Continuously assess information sufficiency against the user's actual request. Stop gathering information once the available evidence is sufficient to answer accurately or complete the task.
@@ -196,7 +200,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "schedule",
-      description: "List reminders, create a one-time or recurring reminder, or cancel one. Listing is read-only; creation and cancellation change schedule state. Due reminders are proactively delivered by Telegram.",
+      description: "List reminders, create a one-time or recurring reminder, or cancel one. Use only when the user gives a known clock time. Requests such as 'when the match starts', 'keep checking', or 'update me every 30 minutes' require a condition-monitoring workflow or a clarification; never turn them into a guessed fixed-time reminder. Listing is read-only; creation and cancellation change schedule state. Due reminders are proactively delivered by Telegram.",
       parameters: {
         type: "object",
         properties: {
@@ -216,7 +220,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "workflow",
-      description: "Create and manage bounded recurring workflows. Workflows record run history and proactively deliver reports to Telegram. Use this for recurring multi-step work, not one-off reminders.",
+      description: "Create and manage bounded recurring workflows. Workflows record run history and proactively deliver reports to Telegram. Use this for recurring multi-step work, source checks, and condition monitoring when the supported trigger and tools exist; do not downgrade an event-triggered request into a plain reminder.",
       parameters: {
         type: "object",
         properties: {

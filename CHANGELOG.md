@@ -15,6 +15,9 @@ Notable changes to NallyHermes are recorded here.
 - Added a provider-neutral connector contract for Calendar and future services.
 - Added strict Calendar list/create/update/cancel operations with fail-closed behavior when no provider is configured.
 - Added LLM-generated natural-language wording for due reminders, with a safe concise fallback when model composition is unavailable.
+- Added active-topic follow-up guidance so short confirmations such as `Confirm time` resolve against the current event instead of the current clock.
+- Added explicit routing guidance to keep event-triggered requests separate from fixed-time reminders.
+- Sanitized internal reminder instructions before user-facing composition.
 
 ### Changed
 - Telegram requests now load prior user/assistant history from Neon and persist each completed exchange.

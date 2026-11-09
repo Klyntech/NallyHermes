@@ -147,6 +147,10 @@ V2 includes a provider-neutral connector layer for Calendar, GitHub, email, and 
 - **Conflict Prevention:** Nally checks for overlapping calendar events before saving a reminder. If a conflict is found, it requires confirmation rather than silently scheduling.
 - **Fail-closed:** If Calendar is not enabled or the user is not in the `GOOGLE_CALENDAR_TELEGRAM_IDS` allowlist, no external action is taken.
 
+### Conversation and reminder safeguards
+
+V2 now anchors short follow-ups such as `Confirm time`, `Yes`, `Update me`, and `Cancel it` to the active conversation topic instead of treating them as unrelated requests. Nally also distinguishes known clock-time reminders from event-triggered requests such as “when the match starts” and “keep checking”; it must not silently convert uncertain event times into fixed reminders. Reminder delivery strips internal orchestration phrases before composing user-facing language. Full condition-monitoring workflows for live sports and other changing web conditions remain the next implementation milestone.
+
 ### Development commands
 
 | Command | Purpose |
