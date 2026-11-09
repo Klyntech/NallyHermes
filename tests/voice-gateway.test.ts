@@ -125,9 +125,13 @@ test("gateway sends only audio from the active response generation", async () =>
     assert.ok(liveSession);
     const turnId = liveSession.beginTurn();
     const lease = liveSession.beginResponse(turnId);
+    const responseStartPromise = once(client, "message");
     assert.equal(gateway.sendEvent(sessionId, {
       v: 1, type: "assistant.response_start", sessionId, turnId, generationId: lease.generationId
     }), true);
+    const [responseStartData, responseStartIsBinary] = await responseStartPromise;
+    assert.equal(responseStartIsBinary, false);
+    assert.equal(JSON.parse(responseStartData.toString()).type, "assistant.response_start");
 
     const outputPromise = once(client, "message");
     assert.equal(gateway.sendAudioFrame(sessionId, turnId, lease.generationId, Buffer.from([9, 8, 7])), true);
