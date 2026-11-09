@@ -83,6 +83,8 @@ export class VoiceWebSocketGateway {
   }
 
   private async authorizeUpgrade(request: IncomingMessage): Promise<VoicePrincipal | null> {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname !== "/voice") return null;
     const origin = request.headers.origin;
     if (typeof origin !== "string" || !this.options.allowedOrigins.has(origin)) return null;
     const principal = await this.options.authenticate(request);
