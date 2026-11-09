@@ -22,9 +22,7 @@ let interruptionSent = false;
 let scheduler;
 let disposed = false;
 
-const FRAME_HEADER_BYTES = 16;
-const FRAME_MAGIC = [0x4e, 0x4c, 0x59, 0x41]; // NLYA
-const CODEC_PCM16_16KHZ_MONO = 1;
+import { encodePcm16Frame, decodePcm16Frame } from "/voice-audio-protocol.js";
 
 function setConnection(label, online = false) {
   connectionPill.textContent = label;
@@ -39,21 +37,6 @@ function post(event) {
     socket.send(JSON.stringify({ v: 1, sessionId, ...event }));
   }
 }
-function encodeAudioFrame(pcmBuffer) {
-  const frame = new ArrayBuffer(FRAME_HEADER_BYTES + pcmBuffer.byteLength);
-  const bytes = new Uint8Array(frame);
-  bytes.set(FRAME_MAGIC, 0);
-  bytes[4] = 1;
-  bytes[5] = CODEC_PCM16_16KHZ_MONO;
-  bytes[6] = 0;
-  bytes[7] = 0;
-  const view = new DataView(frame);
-  view.setUint32(8, 0, false);
-  view.setUint32(12, 0, false);
-  bytes.set(new Uint8Array(pcmBuffer), FRAME_HEADER_BYTES);
-  return frame;
-}
-
 class PlaybackScheduler {
   constructor(context) {
     this.context = context;
@@ -68,17 +51,10 @@ class PlaybackScheduler {
     this.generationId = generationId;
   }
   enqueue(frame) {
-    if (frame.byteLength <= FRAME_HEADER_BYTES) return;
-    const bytes = new Uint8Array(frame);
-    if (!FRAME_MAGIC.every((value, index) => bytes[index] === value)) return;
-    if (bytes[4] !== 1 || bytes[5] !== CODEC_PCM16_16KHZ_MONO) return;
-    const view = new DataView(frame);
-    const turnId = view.getUint32(8, false);
-    const generationId = view.getUint32(12, false);
-    if (turnId !== this.turnId || generationId !== this.generationId) return;
-    const sampleCount = (frame.byteLength - FRAME_HEADER_BYTES) / 2;
-    if (!Number.isInteger(sampleCount) || sampleCount < 1) return;
-    const pcm = new Int16Array(frame, FRAME_HEADER_BYTES, sampleCount);
+    const decoded = decodePcm16Frame(frame);
+    if (!decoded || decoded.turnId !== this.turnId || decoded.generationId !== this.generationId) return;
+    const pcm = decoded.samples;
+    const sampleCount = pcm.length;
     const audio = this.context.createBuffer(1, sampleCount, 16000);
     const channel = audio.getChannelData(0);
     for (let i = 0; i < sampleCount; i++) channel[i] = pcm[i] / 32768;
@@ -255,7 +231,7 @@ async function startAudioCapture() {
   });
   micWorklet.port.onmessage = (event) => {
     if (event.data?.type !== "audio" || socket?.readyState !== WebSocket.OPEN) return;
-    const frame = encodeAudioFrame(event.data.pcm);
+    const frame = encodePcm16Frame(event.data.pcm, 0, 0);
     if (socket.bufferedAmount < 256 * 1024) socket.send(frame);
     const isSpeech = event.data.rms > 0.025;
     if (isSpeech && activeGenerationId > 0 && !interruptionSent) {
