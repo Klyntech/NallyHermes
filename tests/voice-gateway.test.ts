@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { createServer, type AddressInfo } from "node:net";
+import { createServer, type AddressInfo } from "node:http";
 import test from "node:test";
 import { WebSocket } from "ws";
 import { VoiceWebSocketGateway } from "../src/voice/gateway.js";
 
 test("gateway authenticates, scopes a session, forwards audio and closes cleanly", async () => {
   const receivedAudio: Buffer[] = [];
+  let resolveAudio!: () => void;
+  const audioReceived = new Promise<void>((resolve) => { resolveAudio = resolve; });
   const gateway = new VoiceWebSocketGateway({
     authenticate: async () => ({ userId: "user-1" }),
     allowedOrigins: new Set(["https://voice.example.test"]),
-    onAudioFrame: (_principal, _session, frame) => { receivedAudio.push(frame); }
+    onAudioFrame: (_principal, _session, frame) => {
+      receivedAudio.push(frame);
+      resolveAudio();
+    }
   });
   const server = createServer();
   server.on("upgrade", gateway.handleUpgrade);
@@ -34,16 +39,7 @@ test("gateway authenticates, scopes a session, forwards audio and closes cleanly
 
     const audio = Buffer.from([1, 2, 3, 4]);
     client.send(audio);
-    await new Promise<void>((resolve) => {
-      const deadline = setTimeout(resolve, 100);
-      const check = () => {
-        if (receivedAudio.length > 0) {
-          clearTimeout(deadline);
-          resolve();
-        } else setTimeout(check, 1);
-      };
-      check();
-    });
+    await audioReceived;
     assert.equal(receivedAudio.length, 1);
     assert.deepEqual(receivedAudio[0], audio);
 
@@ -82,8 +78,10 @@ test("gateway rejects untrusted browser origins before authentication", async ()
   });
 
   try {
-    await once(client, "error");
-    await once(client, "close");
+    await new Promise<void>((resolve) => {
+      client.once("close", () => resolve());
+      client.once("error", () => undefined);
+    });
     assert.equal(authenticationCalls, 0);
     assert.equal(gateway.activeSessions, 0);
   } finally {
