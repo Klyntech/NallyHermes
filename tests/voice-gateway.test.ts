@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { createServer, type AddressInfo } from "node:http";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { WebSocket } from "ws";
 import { VoiceWebSocketGateway } from "../src/voice/gateway.js";
