@@ -207,9 +207,6 @@ function handleServerEvent(event) {
       break;
     case "input.transcript.partial":
     case "input.transcript.final":
-      if (event.type === "input.transcript.final") {
-        assistantText.textContent = event.text;
-      }
       break;
   }
 }
@@ -272,6 +269,7 @@ function stopAudioCapture() {
 }
 
 async function startVoice() {
+  disposed = false;
   startButton.disabled = true;
   setStatus("Connecting", "Opening a secure voice session…");
   try {
@@ -281,6 +279,7 @@ async function startVoice() {
     setStatus("Listening", "Speak naturally. You can talk while Nally is speaking.");
     stopButton.disabled = false;
   } catch (error) {
+    disposed = true;
     stopAudioCapture();
     socket?.close();
     startButton.disabled = false;
@@ -299,7 +298,6 @@ function stopVoice() {
   activeTurnId = 0;
   activeGenerationId = 0;
   interruptionSent = false;
-  disposed = false;
   startButton.disabled = false;
   stopButton.disabled = true;
   setConnection("Signed in", true);
