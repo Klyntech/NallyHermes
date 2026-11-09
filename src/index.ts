@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import { Bot } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
@@ -291,7 +292,33 @@ await bot.api.setMyCommands([
   { command: "rerankbench", description: "Benchmark NVIDIA reranker latency" }
 ]);
 
+const staticAssets = new Map<string, { file: string; contentType: string }>([
+  ["/", { file: "index.html", contentType: "text/html; charset=utf-8" }],
+  ["/styles.css", { file: "styles.css", contentType: "text/css; charset=utf-8" }],
+  ["/voice-client.js", { file: "voice-client.js", contentType: "text/javascript; charset=utf-8" }],
+  ["/audio-worklet.js", { file: "audio-worklet.js", contentType: "text/javascript; charset=utf-8" }]
+]);
+
 const server = createServer((req, res) => {
+  if (req.method === "GET") {
+    const pathname = new URL(req.url ?? "/", publicOrigin).pathname;
+    const asset = staticAssets.get(pathname);
+    if (asset) {
+      void readFile(new URL(`../public/${asset.file}`, import.meta.url)).then((content) => {
+        res.writeHead(200, {
+          "content-type": asset.contentType,
+          "cache-control": "no-cache",
+          "x-content-type-options": "nosniff"
+        });
+        res.end(content);
+      }).catch((error) => {
+        console.error("Voice web asset could not be served:", error);
+        res.writeHead(500);
+        res.end("Web client unavailable");
+      });
+      return;
+    }
+  }
   if (req.url?.startsWith("/auth/")) {
     void voiceAuthHandler(req, res).then((handled) => {
       if (!handled && !res.headersSent) {
