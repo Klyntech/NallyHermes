@@ -73,7 +73,7 @@ async function runPlannedStep(
   let failureReason = "The step stopped before the model produced a final result.";
   try {
     for (let round = 0; round <= maxToolRounds; round++) {
-      if (options.signal?.aborted) throw options.signal.reason ?? new Error("Agent response interrupted.");
+      if (signal?.aborted) throw signal.reason ?? new Error("Agent response interrupted.");
     if (Date.now() >= deadline) {
         failureReason = "The overall planned-execution time budget was reached.";
         break;
