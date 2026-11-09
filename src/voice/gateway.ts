@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -149,7 +150,7 @@ export class VoiceWebSocketGateway {
       }
 
       try {
-        state.session = this.registry.create(event.sessionId);
+        state.session = this.registry.create(randomUUID());
       } catch {
         this.send(webSocket, {
           v: 1, type: "session.error", sessionId: event.sessionId,
