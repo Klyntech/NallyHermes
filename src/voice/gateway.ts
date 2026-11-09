@@ -207,7 +207,19 @@ export class VoiceWebSocketGateway {
       return;
     }
 
-    await this.options.onControlEvent?.(state.principal, session, event);
+    try {
+      await this.options.onControlEvent?.(state.principal, session, event);
+    } catch (error) {
+      // Provider startup failures (for example missing Deepgram credentials)
+      // are session errors, not WebSocket protocol violations.
+      this.send(webSocket, {
+        v: 1,
+        type: "session.error",
+        sessionId: session.id,
+        code: event.type === "audio.start" ? "VOICE_PROVIDER_UNAVAILABLE" : "VOICE_CONTROL_FAILED",
+        message: error instanceof Error ? error.message.slice(0, 300) : "Voice service could not start."
+      });
+    }
   }
 
   private closeConnection(state: ConnectionState): void {
