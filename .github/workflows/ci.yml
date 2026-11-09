@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "feat/**"
+      - "ChatGPT-*"
   pull_request:
     branches:
       - main
