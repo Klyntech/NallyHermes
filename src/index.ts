@@ -288,7 +288,16 @@ const voiceGateway = new VoiceWebSocketGateway({
       botToken: config.TELEGRAM_BOT_TOKEN
     });
     return identity ? { userId: identity.userId } : null;
-  }
+  },
+  onAudioFrame: (_principal, session, frame) => voiceRuntime.acceptAudio(session, frame),
+  onControlEvent: async (principal, session, event) => {
+    if (event.type === "audio.start") {
+      await voiceRuntime.startAudio(session, principal.userId);
+    } else {
+      await voiceRuntime.handleControl(session, principal.userId, event.type);
+    }
+  },
+  onSessionClose: (_principal, session) => voiceRuntime.closeSession(session.id)
 });
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
