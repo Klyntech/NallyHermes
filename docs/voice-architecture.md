@@ -77,9 +77,9 @@ Server -> client control events:
 - `assistant.interrupted`
 - `usage.update`
 
-Every response-related event includes `turnId` and `generationId`. The client must ignore output events from an obsolete generation. The exact binary frame header and codec will be finalized with the first provider/client implementation.
+Every response-related event includes `turnId` and `generationId`. The client must ignore output events from an obsolete generation. Binary audio frames now use a fixed 16-byte header followed by PCM16 little-endian mono samples at 16 kHz. Header fields are: bytes 0–3 ASCII `NLYA`; byte 4 protocol version (`1`); byte 5 codec (`1` = PCM16/16 kHz/mono); byte 6 flags (`0` in v1); byte 7 reserved (`0`); bytes 8–11 unsigned big-endian turn ID; bytes 12–15 unsigned big-endian generation ID. Client microphone frames use turn/generation `0`; server output frames must carry the active response identifiers. Frames with stale identifiers are rejected by the gateway before transmission.
 
-## Provider contracts
+## Browser client foundation\n\nThe same-origin browser client is served from `/` and includes Telegram Login Widget authentication, a persistent `getUserMedia` microphone stream, an AudioWorklet that resamples to 16 kHz and emits 20 ms PCM16 frames, a binary WebSocket transport, and a Web Audio playback scheduler. The scheduler accepts only frames matching the active turn/generation and flushes queued sources on interruption. Local RMS-based barge-in detection sends `turn.cancel` while keeping microphone capture active.\n\nThe gateway now exposes generation-fenced `sendAudioFrame` and `sendEvent` methods for the future realtime pipeline. This is transport/client infrastructure, not yet a complete speech conversation: STT/VAD endpointing, streaming LLM/Orchestra integration, TTS, and runtime wiring remain separate milestones. The current microphone stream reaches the gateway, but no provider is attached yet, so a beta user should not expect spoken replies at this stage.\n\n## Provider contracts
 
 Define narrow interfaces for:
 - streaming speech recognition: accept audio frames, emit partial/final transcript events, support cancellation;
