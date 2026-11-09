@@ -43,5 +43,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check browser JavaScript syntax
+        run: node --check public/voice-client.js && node --check public/audio-worklet.js && node --check public/voice-audio-protocol.js
+
       - name: Check Python syntax
         run: python -m compileall -q memory-service
