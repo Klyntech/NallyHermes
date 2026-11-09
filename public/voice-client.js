@@ -119,7 +119,6 @@ function telegramLoginWidget() {
       script.setAttribute("data-telegram-login", botUsername);
       script.setAttribute("data-size", "large");
       script.setAttribute("data-radius", "10");
-      script.setAttribute("data-request-access", "write");
       script.setAttribute("data-onauth", "onTelegramAuth(user)");
       $("telegram-login").replaceChildren(script);
     })
