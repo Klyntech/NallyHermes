@@ -18,7 +18,7 @@ function signedLogin(now: number): Record<string, string> {
   return { ...fields, hash };
 }
 
-async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void> {
+async function withServer(run: (baseUrl: string) => Promise<void>, expectedPersisted = 1): Promise<void> {
   let persisted = 0;
   const handler = createVoiceAuthHandler({
     botToken,
@@ -45,7 +45,7 @@ async function withServer(run: (baseUrl: string) => Promise<void>): Promise<void
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
-  assert.equal(persisted, 1);
+  assert.equal(persisted, expectedPersisted);
 }
 
 test("Telegram web auth issues a session cookie, validates session and logs out", async () => {
@@ -98,5 +98,5 @@ test("Telegram web auth rejects invalid signatures and cross-origin login", asyn
       body: JSON.stringify(fields)
     });
     assert.equal(invalid.status, 401);
-  });
+  }, 0);
 });
