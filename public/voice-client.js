@@ -205,7 +205,13 @@ function handleServerEvent(event) {
       setStatus("Listening", "Nally is processing your voice.");
       break;
     case "input.transcript.partial":
+      setStatus("Listening", event.text || "");
+      break;
     case "input.transcript.final":
+      if (event.text) {
+        if (assistantText.textContent === "Your conversation will appear here.") assistantText.textContent = "";
+        assistantText.textContent += `\\nYou: ${event.text}\\n`;
+      }
       break;
   }
 }
