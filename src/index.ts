@@ -276,12 +276,13 @@ const voiceAuthHandler = createVoiceAuthHandler({
   }
 });
 
+let voiceGateway!: VoiceWebSocketGateway;
 const voiceRuntime = new NallyVoiceRuntime({
   sendEvent: (sessionId, event) => voiceGateway.sendEvent(sessionId, event),
   sendAudioFrame: (sessionId, turnId, generationId, frame) =>
     voiceGateway.sendAudioFrame(sessionId, turnId, generationId, frame)
 });
-const voiceGateway = new VoiceWebSocketGateway({
+voiceGateway = new VoiceWebSocketGateway({
   allowedOrigins: new Set([publicOrigin]),
   authenticate: async (request) => {
     const identity = verifyVoiceSessionCookie(request.headers.cookie, {
