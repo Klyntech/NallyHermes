@@ -26,8 +26,10 @@ function extractJson(value: string): unknown {
 export async function createExecutionPlan(
   llm: OpenAI,
   history: ChatCompletionMessageParam[],
-  userMessage: string
+  userMessage: string,
+  signal?: AbortSignal
 ): Promise<ExecutionPlan | null> {
+  if (signal?.aborted) throw signal.reason ?? new Error("Planning interrupted.");
   const response = await llm.chat.completions.create({
     model: config.NVIDIA_NIM_MODEL,
     messages: [
@@ -46,7 +48,7 @@ export async function createExecutionPlan(
       { role: "user", content: userMessage }
     ],
     temperature: 0.1
-  }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
+  }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
 
   const raw = response.choices[0]?.message?.content;
   if (!raw) return null;
