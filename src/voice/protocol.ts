@@ -77,5 +77,7 @@ export function parseVoiceClientEvent(input: unknown): VoiceClientEvent {
         generationId: value.generationId,
         playedThroughMs: value.playedThroughMs
       };
+    default:
+      throw new Error("Unsupported voice client event type");
   }
 }
