@@ -15,6 +15,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { createVoiceAuthHandler } from "./voice/http-auth.js";
 import { verifyVoiceSessionCookie } from "./voice/telegram-auth.js";
 import { VoiceWebSocketGateway } from "./voice/gateway.js";
+import { NallyVoiceRuntime } from "./voice/runtime.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<string, ChatCompletionMessageParam[]>();
