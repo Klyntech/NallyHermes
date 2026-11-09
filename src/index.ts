@@ -11,6 +11,9 @@ import { displayProgress } from "./agent/progress.js";
 import { getDefaultTimezone, getUserTimezone, setUserTimezone } from "./agent/clock.js";
 import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
+import { createVoiceAuthHandler } from "./voice/http-auth.js";
+import { verifyVoiceSessionCookie } from "./voice/telegram-auth.js";
+import { VoiceWebSocketGateway } from "./voice/gateway.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<string, ChatCompletionMessageParam[]>();
@@ -58,6 +61,34 @@ async function serializeConversation<T>(key: string, operation: () => Promise<T>
 }
 
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
+
+const publicOrigin = new URL(config.WEBHOOK_URL).origin;
+const voiceAuthHandler = createVoiceAuthHandler({
+  botToken: config.TELEGRAM_BOT_TOKEN,
+  botUsername: bot.botInfo.username,
+  origin: publicOrigin,
+  persistIdentity: async (identity) => {
+    await db.insert(users).values({
+      telegramId: identity.userId,
+      username: identity.username ?? null,
+      firstName: identity.firstName ?? null,
+      timezone: getDefaultTimezone()
+    }).onConflictDoUpdate({
+      target: users.telegramId,
+      set: { username: identity.username ?? null, firstName: identity.firstName ?? null }
+    });
+  }
+});
+
+const voiceGateway = new VoiceWebSocketGateway({
+  allowedOrigins: new Set([publicOrigin]),
+  authenticate: async (request) => {
+    const identity = verifyVoiceSessionCookie(request.headers.cookie, {
+      botToken: config.TELEGRAM_BOT_TOKEN
+    });
+    return identity ? { userId: identity.userId } : null;
+  }
+});
 
 const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
 
@@ -261,6 +292,21 @@ await bot.api.setMyCommands([
 ]);
 
 const server = createServer((req, res) => {
+  if (req.url?.startsWith("/auth/")) {
+    void voiceAuthHandler(req, res).then((handled) => {
+      if (!handled && !res.headersSent) {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+    }).catch((error) => {
+      console.error("Voice authentication route failed:", error);
+      if (!res.headersSent) {
+        res.writeHead(500);
+        res.end("Authentication service unavailable");
+      }
+    });
+    return;
+  }
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("OK");
@@ -317,7 +363,7 @@ const server = createServer((req, res) => {
   });
 });
 
-await new Promise<void>((resolve, reject) => {
+server.on("upgrade", voiceGateway.handleUpgrade);\n\nawait new Promise<void>((resolve, reject) => {
   server.once("error", reject);
   server.listen(config.PORT, "0.0.0.0", resolve);
 });
