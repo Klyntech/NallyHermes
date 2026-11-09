@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10131b">
+  <title>Nally Voice</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Nally Voice home"><span class="brand-mark">N</span><span>Nally<span class="brand-muted"> Voice</span></span></a>
+      <span id="connection-pill" class="pill">Not connected</span>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">NALLY HERMES · VOICE BETA</p>
+      <h1>Talk naturally.<br><span>Interrupt anytime.</span></h1>
+      <p class="intro">A live voice conversation with Nally. Your microphone stays active while Nally speaks, so you can jump in whenever you need to.</p>
+    </section>
+
+    <section id="login-panel" class="panel auth-panel">
+      <div class="panel-icon" aria-hidden="true">↗</div>
+      <div>
+        <h2>Sign in with Telegram</h2>
+        <p>Use your Telegram account to securely open a voice session.</p>
+      </div>
+      <div id="telegram-login" class="telegram-slot"><span class="muted">Loading secure sign-in…</span></div>
+      <p id="auth-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="voice-panel" class="panel voice-panel" hidden>
+      <div class="orb-wrap">
+        <div id="voice-orb" class="voice-orb"><span></span></div>
+      </div>
+      <p id="voice-status" class="voice-status" aria-live="polite">Ready when you are</p>
+      <p id="voice-hint" class="voice-hint">Start a session to enable your microphone.</p>
+      <div class="controls">
+        <button id="start-button" class="primary-button" type="button">Start voice session</button>
+        <button id="stop-button" class="secondary-button" type="button" disabled>End session</button>
+      </div>
+      <div class="live-caption" aria-live="polite">
+        <span class="caption-label">NALLY</span>
+        <p id="assistant-text">Your conversation will appear here.</p>
+      </div>
+      <div class="footer-actions">
+        <span id="audio-state" class="muted">Microphone off</span>
+        <button id="logout-button" class="text-button" type="button">Sign out</button>
+      </div>
+    </section>
+
+    <footer><span>Private session · Encrypted in transit</span><span>Voice runtime v1</span></footer>
+  </main>
+  <script type="module" src="/voice-client.js"></script>
+</body>
+</html>
