@@ -72,7 +72,8 @@ async function runPlannedStep(
   let failureReason = "The step stopped before the model produced a final result.";
   try {
     for (let round = 0; round <= maxToolRounds; round++) {
-      if (Date.now() >= deadline) {
+      if (options.signal?.aborted) throw options.signal.reason ?? new Error("Agent response interrupted.");
+    if (Date.now() >= deadline) {
         failureReason = "The overall planned-execution time budget was reached.";
         break;
       }
@@ -181,12 +182,47 @@ function fallbackReport(outcomes: StepOutcome[], totalSteps: number, reason: str
   return lines.join("\n");
 }
 
+export interface AgentStreamOptions {
+  signal?: AbortSignal;
+  onTextDelta?: (delta: string) => void | Promise<void>;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new Error("Agent response interrupted.");
+}
+
+async function streamFinalAnswer(
+  messages: ChatCompletionMessageParam[],
+  options: AgentStreamOptions = {},
+  timeout = config.AGENT_MODEL_TIMEOUT_MS
+): Promise<string> {
+  throwIfAborted(options.signal);
+  const stream = await llm.chat.completions.create({
+    model: config.NVIDIA_NIM_MODEL,
+    messages,
+    temperature: 0.4,
+    stream: true
+  }, { timeout, signal: options.signal });
+  let answer = "";
+  for await (const part of stream) {
+    throwIfAborted(options.signal);
+    const delta = part.choices[0]?.delta?.content;
+    if (typeof delta === "string" && delta) {
+      answer += delta;
+      await options.onTextDelta?.(delta);
+    }
+  }
+  throwIfAborted(options.signal);
+  return finalResponse(answer);
+}
+
 async function synthesizeReport(
   messages: ChatCompletionMessageParam[],
   outcomes: StepOutcome[],
   totalSteps: number,
   reason: string,
-  deadline?: number
+  deadline?: number,
+  options: AgentStreamOptions = {}
 ): Promise<string> {
   const reportData = {
     execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
@@ -217,13 +253,12 @@ async function synthesizeReport(
   ];
   try {
     const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS };
-    const final = await llm.chat.completions.create({
-      model: config.NVIDIA_NIM_MODEL,
-      messages: reportMessages,
-      temperature: 0.4
-    }, options);
-    const answer = final.choices[0]?.message?.content;
-    if (answer?.trim()) return finalResponse(answer);
+    const answer = await streamFinalAnswer(
+      reportMessages,
+      options,
+      deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS
+    );
+    if (answer) return answer;
   } catch (error) {
     console.warn("Final execution report synthesis failed:", error);
   }
@@ -234,8 +269,10 @@ async function runPlannedRequest(
   messages: ChatCompletionMessageParam[],
   steps: ExecutionPlanStep[],
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  options: AgentStreamOptions = {}
 ): Promise<string> {
+  throwIfAborted(options.signal);
   const completed = new Set<string>();
   const outcomes: StepOutcome[] = [];
   const pending = new Set(steps.map((step) => step.id));
@@ -413,7 +450,8 @@ async function runPlannedRequest(
   }
 
   await onProgress?.({ type: "verifying" });
-  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
+  throwIfAborted(options.signal);
+  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline, options);
 }
 
 /**
@@ -424,8 +462,10 @@ export async function runAgent(
   history: ChatCompletionMessageParam[],
   userMessage: string,
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  options: AgentStreamOptions = {}
 ): Promise<string> {
+  throwIfAborted(options.signal);
   const { messages } = await prepareRequest(history, userMessage, telegramId);
 
   await onProgress?.({ type: "planning" });
@@ -438,7 +478,7 @@ export async function runAgent(
 
   if (plan) {
     await onProgress?.({ type: "plan_created", stepCount: plan.steps.length });
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress);
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress, options);
     await onProgress?.({ type: "response_ready" });
     return answer;
   }
@@ -446,13 +486,14 @@ export async function runAgent(
   let stopReason = "The direct tool-round budget was reached.";
   for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
     await onProgress?.({ type: "thinking", phase: "model" });
+    throwIfAborted(options.signal);
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages,
       tools: agentTools,
       tool_choice: "auto",
       temperature: 0.4
-    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
+    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal: options.signal });
     const message = response.choices[0]?.message;
     if (!message) {
       stopReason = "The model returned an empty response.";
@@ -462,8 +503,10 @@ export async function runAgent(
 
     const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
+      // Re-run the user-facing synthesis without tools so text can stream safely.
+      const streamed = await streamFinalAnswer(messages, options);
       await onProgress?.({ type: "response_ready" });
-      return finalResponse(evaluation.answer);
+      return streamed || finalResponse(evaluation.answer);
     }
     if (evaluation.kind === "limit_reached") {
       stopReason = "The direct tool-round budget was reached before the model completed its answer.";
@@ -507,7 +550,8 @@ export async function runAgent(
   }
 
   await onProgress?.({ type: "verifying" });
-  const answer = await synthesizeReport(messages, [], 0, stopReason);
+  throwIfAborted(options.signal);
+  const answer = await synthesizeReport(messages, [], 0, stopReason, undefined, options);
   await onProgress?.({ type: "response_ready" });
   return answer;
 }
