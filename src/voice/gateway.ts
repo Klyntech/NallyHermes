@@ -193,7 +193,13 @@ export class VoiceWebSocketGateway {
     }
 
     if (event.type === "turn.cancel") {
-      if (event.turnId === session.currentTurnId) session.interrupt("client_cancel");
+      if (event.turnId === session.currentTurnId) {
+        const interrupted = session.interrupt("client_cancel");
+        if (interrupted) this.send(webSocket, {
+          v: 1, type: "assistant.interrupted", sessionId: session.id,
+          turnId: interrupted.turnId, generationId: interrupted.generationId, reason: "client_cancel"
+        });
+      }
     } else if (event.type === "session.stop") {
       this.send(webSocket, { v: 1, type: "session.closed", sessionId: session.id });
       this.closeConnection(state);
