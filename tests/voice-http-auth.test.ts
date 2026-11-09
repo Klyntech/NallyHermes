@@ -54,10 +54,11 @@ test("Telegram web auth issues a session cookie, validates session and logs out"
     assert.equal(config.status, 200);
     assert.deepEqual(await config.json(), { botUsername: "nally_test_bot" });
 
+    const loginFields = signedLogin(Math.floor(Date.now() / 1000));
     const login = await fetch(`${baseUrl}/auth/telegram`, {
       method: "POST",
       headers: { origin, "content-type": "application/json" },
-      body: JSON.stringify(signedLogin(Math.floor(Date.now() / 1000)))
+      body: JSON.stringify({ ...loginFields, id: Number(loginFields.id), auth_date: Number(loginFields.auth_date) })
     });
     assert.equal(login.status, 204);
     const setCookie = login.headers.get("set-cookie");
