@@ -35,6 +35,7 @@ export class VoiceWebSocketGateway {
   private readonly server: WebSocketServer;
   private readonly registry: VoiceSessionRegistry;
   private readonly userSessionCounts = new Map<string, number>();
+  private readonly socketsBySession = new Map<string, WebSocket>();
   private readonly maxSessionsPerUser: number;
   private readonly maxAudioFrameBytes: number;
 
@@ -76,6 +77,25 @@ export class VoiceWebSocketGateway {
 
   get activeSessions(): number {
     return this.registry.size;
+  }
+
+  /** Send a control event to the owner of a live session. */
+  sendEvent(sessionId: string, event: VoiceServerEvent): boolean {
+    const session = this.registry.get(sessionId);
+    const socket = this.socketsBySession.get(sessionId);
+    if (!session || event.sessionId !== sessionId || !socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(event));
+    return true;
+  }
+
+  /** Send only audio belonging to the currently active response generation. */
+  sendAudioFrame(sessionId: string, turnId: number, generationId: number, frame: Buffer): boolean {
+    const session = this.registry.get(sessionId);
+    const socket = this.socketsBySession.get(sessionId);
+    if (!session || !session.acceptsOutput(turnId, generationId) || !socket ||
+        socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 1024 * 1024) return false;
+    socket.send(frame, { binary: true });
+    return true;
   }
 
   async close(): Promise<void> {
@@ -151,6 +171,7 @@ export class VoiceWebSocketGateway {
 
       try {
         state.session = this.registry.create(randomUUID());
+        this.socketsBySession.set(state.session.id, webSocket);
       } catch {
         this.send(webSocket, {
           v: 1, type: "session.error", sessionId: event.sessionId,
@@ -187,6 +208,7 @@ export class VoiceWebSocketGateway {
     state.closed = true;
     if (!state.session) return;
 
+    this.socketsBySession.delete(state.session.id);
     this.registry.close(state.session.id);
     const count = this.userSessionCounts.get(state.principal.userId) ?? 0;
     if (count <= 1) this.userSessionCounts.delete(state.principal.userId);
