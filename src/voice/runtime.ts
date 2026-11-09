@@ -123,51 +123,83 @@ export class NallyVoiceRuntime {
     let lease: ReturnType<VoiceSession["beginResponse"]> | undefined;
     try {
       lease = session.beginResponse(turnId);
+      const generationId = lease.generationId;
       this.transport.sendEvent(session.id, {
         v: 1, type: "assistant.response_start", sessionId: session.id,
-        turnId, generationId: lease.generationId
+        turnId, generationId
       });
-      const answer = await respond(pipeline.history, transcript, userId);
-      if (!session.acceptsOutput(turnId, lease.generationId)) return;
+
+      let sentenceBuffer = "";
+      let ttsQueue: Promise<void> = Promise.resolve();
+      let ttsFailed: unknown;
+      const enqueueSpeech = (text: string): void => {
+        const segment = text.trim();
+        if (!segment) return;
+        ttsQueue = ttsQueue.then(async () => {
+          if (!session.acceptsOutput(turnId, generationId)) return;
+          for await (const chunk of streamElevenLabsPcm(segment, {
+            apiKey: config.ELEVENLABS_API_KEY ?? "",
+            voiceId: config.ELEVENLABS_VOICE_ID ?? "",
+            modelId: config.ELEVENLABS_MODEL_ID
+          }, lease!.signal)) {
+            if (!session.acceptsOutput(turnId, generationId)) return;
+            const pcm = chunk.length % 2 === 0 ? chunk : chunk.subarray(0, chunk.length - 1);
+            if (!pcm.length) continue;
+            const frame = audioFrame(turnId, generationId, pcm);
+            this.transport.sendAudioFrame(session.id, turnId, generationId, frame);
+          }
+        }).catch((error: unknown) => {
+          ttsFailed = error;
+        });
+      };
+
+      const answer = await respond(
+        pipeline.history,
+        transcript,
+        userId,
+        undefined,
+        {
+          signal: lease.signal,
+          onTextDelta: (delta: string) => {
+            if (!session.acceptsOutput(turnId, generationId)) return;
+            this.transport.sendEvent(session.id, {
+              v: 1, type: "assistant.text.delta", sessionId: session.id,
+              turnId, generationId, delta
+            });
+            sentenceBuffer += delta;
+            // Flush at sentence boundaries; cap long unpunctuated output for latency.
+            while (true) {
+              const boundary = sentenceBuffer.search(/[.!?;:](?:["')\\]]*)\\s+/);
+              const forced = boundary < 0 && sentenceBuffer.length >= 180
+                ? sentenceBuffer.lastIndexOf(" ", 180)
+                : -1;
+              const cut = boundary >= 0 ? boundary + 1 : forced;
+              if (cut <= 0) break;
+              const segment = sentenceBuffer.slice(0, cut);
+              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+              enqueueSpeech(segment);
+            }
+          }
+        }
+      );
+
+      if (!session.acceptsOutput(turnId, generationId)) return;
+      if (sentenceBuffer.trim()) enqueueSpeech(sentenceBuffer);
+      sentenceBuffer = "";
+      await ttsQueue;
+      if (!session.acceptsOutput(turnId, generationId)) return;
+      if (ttsFailed) throw ttsFailed;
+
       pipeline.history.push(
         { role: "user", content: transcript },
         { role: "assistant", content: answer }
       );
       pipeline.history = pipeline.history.slice(-24);
       this.transport.sendEvent(session.id, {
-        v: 1, type: "assistant.text.delta", sessionId: session.id,
-        turnId, generationId: lease.generationId, delta: answer
-      });
-
-      let sentAudio = false;
-      let pending = Buffer.alloc(0);
-      for await (const chunk of streamElevenLabsPcm(answer, {
-        apiKey: config.ELEVENLABS_API_KEY ?? "",
-        voiceId: config.ELEVENLABS_VOICE_ID ?? "",
-        modelId: config.ELEVENLABS_MODEL_ID
-      }, lease.signal)) {
-        if (!session.acceptsOutput(turnId, lease.generationId)) return;
-        pending = Buffer.concat([pending, chunk]);
-        // Emit ~40 ms chunks to reduce WebSocket overhead while keeping playback responsive.
-        while (pending.length >= 1280) {
-          const pcm = pending.subarray(0, 1280);
-          pending = pending.subarray(1280);
-          if (this.transport.sendAudioFrame(session.id, turnId, lease.generationId, audioFrame(turnId, lease.generationId, pcm))) {
-            sentAudio = true;
-          }
-        }
-      }
-      if (pending.length >= 2 && session.acceptsOutput(turnId, lease.generationId)) {
-        this.transport.sendAudioFrame(session.id, turnId, lease.generationId, audioFrame(turnId, lease.generationId, pending));
-        sentAudio = true;
-      }
-      if (!session.acceptsOutput(turnId, lease.generationId)) return;
-      this.transport.sendEvent(session.id, {
         v: 1, type: "assistant.response_end", sessionId: session.id,
-        turnId, generationId: lease.generationId
+        turnId, generationId
       });
-      session.finishResponse(turnId, lease.generationId);
-      void sentAudio;
+      session.finishResponse(turnId, generationId);
     } catch (error) {
       if (lease && session.acceptsOutput(turnId, lease.generationId)) {
         this.transport.sendEvent(session.id, {
@@ -177,7 +209,8 @@ export class NallyVoiceRuntime {
         });
         session.finishResponse(turnId, lease.generationId);
       }
-      console.error("Voice response pipeline failed:", error);
+      if (!lease?.signal.aborted) console.error("Voice response pipeline failed:", error);
     }
   }
+}
 }
