@@ -210,6 +210,7 @@ export class VoiceWebSocketGateway {
     if (!state.session) return;
 
     this.socketsBySession.delete(state.session.id);
+    this.options.onSessionClose?.(state.principal, state.session);
     this.registry.close(state.session.id);
     const count = this.userSessionCounts.get(state.principal.userId) ?? 0;
     if (count <= 1) this.userSessionCounts.delete(state.principal.userId);
