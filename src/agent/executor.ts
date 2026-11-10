@@ -5,6 +5,7 @@ import { searchWeb } from "./tools/web.js";
 import { fetchUrl, fileIO, memoryTool, scheduleTool, workflowTool } from "./tools/extended.js";
 import { calendarTool } from "./calendar.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
+import { classifyFailure } from "./failure.js";
 
 export interface ToolCallInput {
   id: string;
@@ -127,8 +128,9 @@ async function executeToolCallOnce(
     return { role: "tool", tool_call_id: call.id, content: JSON.stringify(result) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Tool execution failed";
+    const failure = classifyFailure(reason);
     await onProgress?.({ type: "tool_error", tool: call.function.name });
-    return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: reason }) };
+    return { role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: reason, failure_kind: failure.kind, retryable: failure.retryable, safe_alternative: failure.safeAlternative }) };
   }
 }
 

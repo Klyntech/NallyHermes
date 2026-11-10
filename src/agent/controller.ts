@@ -7,6 +7,7 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
+import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, type ExecutionState } from "./orchestra.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -434,26 +435,55 @@ export async function runAgent(
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   workflowAllowedTools?: ReadonlySet<string>
 ): Promise<string> {
-  const { messages } = await prepareRequest(history, userMessage, telegramId);
+  const route = routeRequest(userMessage);
+  const state = createExecutionState(
+    { text: userMessage, telegramId, channel: "telegram" },
+    route,
+    {
+      maxModelRounds: config.AGENT_MAX_MODEL_ROUNDS,
+      maxToolRounds: config.AGENT_MAX_PLAN_TOOL_ROUNDS,
+      maxParallelCalls: config.AGENT_MAX_PARALLEL_TOOL_CALLS,
+      deadlineAt: Date.now() + config.AGENT_PLAN_TIMEOUT_MS
+    }
+  );
+  state.status = "running";
+  const reportProgress = async (event: ProgressEvent): Promise<void> => {
+    if (event.type === "tool_start") state.toolCalls++;
+    if (event.type === "tool_error") state.failures++;
+    await onProgress?.(event);
+  };
 
-  await onProgress?.({ type: "planning" });
+  beginPhase(state, "context");
+  const { messages } = await prepareRequest(history, userMessage, telegramId);
+  endPhase(state, "context");
+
+  await reportProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
-  try {
-    plan = await createExecutionPlan(llm, history, userMessage);
-  } catch (error) {
-    console.warn("Smart planning unavailable; using direct execution:", error);
+  if (route.usePlanner) {
+    beginPhase(state, "planning");
+    try {
+      plan = await createExecutionPlan(llm, history, userMessage);
+    } catch (error) {
+      console.warn("Smart planning unavailable; using direct execution:", error);
+    }
+    endPhase(state, "planning");
   }
 
   if (plan) {
-    await onProgress?.({ type: "plan_created", stepCount: plan.steps.length });
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, onProgress, workflowAllowedTools);
-    await onProgress?.({ type: "response_ready" });
+    await reportProgress({ type: "plan_created", stepCount: plan.steps.length });
+    beginPhase(state, "execution");
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, reportProgress, workflowAllowedTools);
+    endPhase(state, "execution");
+    completeExecution(state, "completed");
+    console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
+    await reportProgress({ type: "response_ready" });
     return answer;
   }
 
+  beginPhase(state, "execution");
   let stopReason = "The direct tool-round budget was reached.";
   for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
-    await onProgress?.({ type: "thinking", phase: "model" });
+    await reportProgress({ type: "thinking", phase: "model" });
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages,
@@ -472,7 +502,10 @@ export async function runAgent(
 
     const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
-      await onProgress?.({ type: "response_ready" });
+      endPhase(state, "execution");
+      completeExecution(state, "completed");
+      console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
+      await reportProgress({ type: "response_ready" });
       return finalResponse(evaluation.answer);
     }
     if (evaluation.kind === "limit_reached") {
@@ -488,7 +521,7 @@ export async function runAgent(
     const results = await executeToolCalls(
       functionCalls as ToolCallInput[],
       telegramId,
-      onProgress,
+      reportProgress,
       workflowAllowedTools
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
@@ -509,7 +542,7 @@ export async function runAgent(
       }
     }
     if (hadToolErrors) {
-      await onProgress?.({ type: "recovery_adjusting" });
+      await reportProgress({ type: "recovery_adjusting" });
       messages.push({
         role: "system",
         content: "One or more tool calls failed. Diagnose the returned error. Continue only if the missing information is necessary; if so, try a materially different safe approach. Do not repeat the same call unless the error is transient. Do not repeat mutations. If the existing evidence is already sufficient, finish with it and disclose any relevant limitation."
@@ -517,8 +550,13 @@ export async function runAgent(
     }
   }
 
-  await onProgress?.({ type: "verifying" });
+  endPhase(state, "execution");
+  beginPhase(state, "response");
+  await reportProgress({ type: "verifying" });
   const answer = await synthesizeReport(messages, [], 0, stopReason);
-  await onProgress?.({ type: "response_ready" });
+  endPhase(state, "response");
+  completeExecution(state, "completed");
+  console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
+  await reportProgress({ type: "response_ready" });
   return answer;
 }

@@ -153,6 +153,10 @@ V2 now anchors short follow-ups such as `Confirm time`, `Yes`, `Update me`, and 
 
 Nally's conversational voice is intentionally concise and context-aware. It does not volunteer AI-training explanations or capability lists, and it acknowledges ordinary reactions naturally before offering help. Technical identity and limitation details are given briefly only when asked directly.
 
+### Hand-built orchestra
+
+NallyHermes does not use an agent-orchestration framework. V2 now includes the next layer of the custom orchestra: deterministic request routing, first-class execution state, phase latency summaries, typed tool-failure categories, condition-monitoring state transitions, and voice-ready request/response boundaries. The router skips smart planning for ordinary conversation, follow-ups, and single actions, while retaining bounded planning for multi-step and monitoring requests. Each execution emits a structured `orchestra.execution` summary for later latency analysis.
+
 ### Development commands
 
 | Command | Purpose |
