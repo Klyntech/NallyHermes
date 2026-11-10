@@ -20,6 +20,7 @@ Notable changes to NallyHermes are recorded here.
 - Sanitized internal reminder instructions before user-facing composition.
 - Tuned Nally's default voice to avoid unsolicited AI disclaimers, capability tours, and support-script phrasing; added context-aware emotional responses and concise result-first examples.
 - Started the hand-built orchestra improvement track with adaptive routing, execution state, phase telemetry, typed failures, event-monitoring primitives, and voice-ready interface types—without adding an external framework.
+- Started Academic Companion milestones 1–5 with durable academic profile, PDF/document ingestion, extracted-text storage, timetable and assessment persistence, a dark minimal `/ingestion` web console, and a today/next dashboard foundation.
 
 ### Changed
 - Telegram requests now load prior user/assistant history from Neon and persist each completed exchange.

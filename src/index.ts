@@ -13,6 +13,7 @@ import { displayProgress } from "./agent/progress.js";
 import { getDefaultTimezone, getUserTimezone, setUserTimezone } from "./agent/clock.js";
 import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
+import { handleIngestionRequest } from "./ingestion/web.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<string, ChatCompletionMessageParam[]>();
@@ -266,6 +267,16 @@ await bot.api.setMyCommands([
 ]);
 
 const server = createServer((req, res) => {
+  const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+  if (pathname === "/manus-routes.json" && req.method === "GET") {
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    res.end(JSON.stringify({ routes: [{ path: "/ingestion", title: "Nally Academic Companion" }] }));
+    return;
+  }
+  if (pathname === "/ingestion" || pathname.startsWith("/ingestion/")) {
+    void handleIngestionRequest(req, res, pathname);
+    return;
+  }
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("OK");

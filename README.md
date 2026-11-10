@@ -157,6 +157,14 @@ Nally's conversational voice is intentionally concise and context-aware. It does
 
 NallyHermes does not use an agent-orchestration framework. V2 now includes the next layer of the custom orchestra: deterministic request routing, first-class execution state, phase latency summaries, typed tool-failure categories, condition-monitoring state transitions, and voice-ready request/response boundaries. The router skips smart planning for ordinary conversation, follow-ups, and single actions, while retaining bounded planning for multi-step and monitoring requests. Each execution emits a structured `orchestra.execution` summary for later latency analysis.
 
+### Academic Companion web ingestion
+
+Milestones 1–5 begin at the protected `/ingestion` web endpoint. It is a dark, minimal academic desk for the owner to save an academic profile, ingest PDFs, add timetable blocks, record assessments and deadlines, and see a compact today/next snapshot. The route does not add a web framework: it is served by the existing Node HTTP server.
+
+Configure `ACADEMIC_TELEGRAM_ID` with the existing Telegram user ID and set a random `INGESTION_TOKEN` of at least 24 characters. Open `/ingestion`, enter the token when prompted through the URL or browser session, and use the console to add profile context and PDF material. PDF files are stored in the owner’s isolated workspace and text is extracted with the host `pdftotext` utility when available. A failed extraction is recorded as a failed extraction rather than presented as searchable content.
+
+The current ingestion layer stores source metadata and extracted text for the next grounded-study milestone: document retrieval with page/source citations, case briefs, statute explanations, IRAC work, and timetable-aware daily briefings.
+
 ### Development commands
 
 | Command | Purpose |

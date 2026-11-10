@@ -17,6 +17,61 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
+export const academicProfiles = pgTable("academic_profiles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  programme: text("programme").notNull().default("Law"),
+  institution: text("institution"),
+  semester: text("semester"),
+  jurisdiction: text("jurisdiction"),
+  courses: jsonb("courses").$type<string[]>().default([]).notNull(),
+  studyPreferences: text("study_preferences"),
+  availability: jsonb("availability").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("academic_profiles_user_id_idx").on(table.userId)]);
+
+export const academicDocuments = pgTable("academic_documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  course: text("course"),
+  sourceType: text("source_type").notNull().default("document"),
+  originalName: text("original_name").notNull(),
+  filePath: text("file_path").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  extractedText: text("extracted_text"),
+  status: text("status").notNull().default("stored"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("academic_documents_user_id_idx").on(table.userId), index("academic_documents_course_idx").on(table.userId, table.course)]);
+
+export const timetableEntries = pgTable("timetable_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  course: text("course").notNull(),
+  dayOfWeek: integer("day_of_week").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  room: text("room"),
+  lecturer: text("lecturer"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("timetable_entries_user_id_idx").on(table.userId), index("timetable_entries_schedule_idx").on(table.userId, table.dayOfWeek, table.startTime)]);
+
+export const assessments = pgTable("assessments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  course: text("course").notNull(),
+  title: text("title").notNull(),
+  type: text("type").notNull().default("deadline"),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull().default("open"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("assessments_user_id_idx").on(table.userId), index("assessments_due_idx").on(table.userId, table.dueAt)]);
+
 export const conversations = pgTable("conversations", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
