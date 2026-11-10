@@ -18,6 +18,7 @@ Notable changes to NallyHermes are recorded here.
 - Added active-topic follow-up guidance so short confirmations such as `Confirm time` resolve against the current event instead of the current clock.
 - Added explicit routing guidance to keep event-triggered requests separate from fixed-time reminders.
 - Sanitized internal reminder instructions before user-facing composition.
+- Tuned Nally's default voice to avoid unsolicited AI disclaimers, capability tours, and support-script phrasing; added context-aware emotional responses and concise result-first examples.
 
 ### Changed
 - Telegram requests now load prior user/assistant history from Neon and persist each completed exchange.

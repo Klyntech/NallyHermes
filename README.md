@@ -151,6 +151,8 @@ V2 includes a provider-neutral connector layer for Calendar, GitHub, email, and 
 
 V2 now anchors short follow-ups such as `Confirm time`, `Yes`, `Update me`, and `Cancel it` to the active conversation topic instead of treating them as unrelated requests. Nally also distinguishes known clock-time reminders from event-triggered requests such as “when the match starts” and “keep checking”; it must not silently convert uncertain event times into fixed reminders. Reminder delivery strips internal orchestration phrases before composing user-facing language. Full condition-monitoring workflows for live sports and other changing web conditions remain the next implementation milestone.
 
+Nally's conversational voice is intentionally concise and context-aware. It does not volunteer AI-training explanations or capability lists, and it acknowledges ordinary reactions naturally before offering help. Technical identity and limitation details are given briefly only when asked directly.
+
 ### Development commands
 
 | Command | Purpose |
