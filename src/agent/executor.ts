@@ -6,6 +6,7 @@ import { fetchUrl, fileIO, memoryTool, scheduleTool, workflowTool } from "./tool
 import { calendarTool } from "./calendar.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { classifyFailure } from "./failure.js";
+import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from "../connectors/github.js";
 
 export interface ToolCallInput {
   id: string;
@@ -47,7 +48,7 @@ const schemas = {
     run_at: z.string().max(64).optional(),
     recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
     timezone: z.string().max(100).optional(),
-    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule", "calendar"])).max(10).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule", "calendar", "github"])).max(10).optional(),
     approval_policy: z.string().trim().min(1).max(100).optional(),
     output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()
@@ -65,6 +66,12 @@ const schemas = {
     attendees: z.array(z.string().max(320)).max(50).optional(),
     calendar_id: z.string().max(200).optional(),
     event_id: z.string().max(200).optional()
+  }).strict(),
+  github: z.object({
+    operation: z.enum(["list_operations", "get_operation", "call_operation"]),
+    name: z.string().trim().max(100).optional(),
+    arguments: z.record(z.string(), z.unknown()).optional(),
+    approved: z.boolean().optional()
   }).strict()
 };
 
@@ -120,6 +127,14 @@ async function executeToolCallOnce(
       case "calendar":
         result = await calendarTool(telegramId, args as unknown as Parameters<typeof calendarTool>[1]);
         break;
+      case "github": {
+        const githubArgs = args as { operation: "list_operations" | "get_operation" | "call_operation"; name?: string; arguments?: Record<string, unknown>; approved?: boolean };
+        if (githubArgs.operation === "list_operations") result = listGitHubOperations();
+        else if (!githubArgs.name) throw new Error("GitHub operation name is required.");
+        else if (githubArgs.operation === "get_operation") result = getGitHubOperation(githubArgs.name);
+        else result = await callGitHubOperation(githubArgs.name, githubArgs.arguments ?? {}, githubArgs.approved === true);
+        break;
+      }
       default:
         throw new Error("Unknown tool.");
     }
@@ -185,6 +200,8 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
         return args.operation === "list";
       case "calendar":
         return args.operation === "list";
+      case "github":
+        return args.operation === "list_operations" || args.operation === "get_operation";
       default:
         return false;
     }

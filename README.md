@@ -147,6 +147,12 @@ V2 includes a provider-neutral connector layer for Calendar, GitHub, email, and 
 - **Conflict Prevention:** Nally checks for overlapping calendar events before saving a reminder. If a conflict is found, it requires confirmation rather than silently scheduling.
 - **Fail-closed:** If Calendar is not enabled or the user is not in the `GOOGLE_CALENDAR_TELEGRAM_IDS` allowlist, no external action is taken.
 
+### GitHub tool architecture
+
+GitHub is being built as one dispatcher tool named `github`, not as 46 permanently exposed tools. Nally can discover the compact operation catalog, inspect one operation schema, and then call that operation on demand. This keeps unrelated GitHub schemas out of every model turn. The connector authenticates with a GitHub Personal Access Token supplied only through `GITHUB_TOKEN`; it never accepts a PAT from chat or the web ingestion form.
+
+GitHub access is fail-closed behind `GITHUB_ALLOWED_REPOS`, for example `Klyntech/NallyHermes`. The initial catalog covers repository metadata, issues, pull requests, repository files, commits, and issue creation. Reads can run when configured. Writes require both `GITHUB_ALLOW_WRITES=true` and an explicit approval field, and mutations are never replayed automatically.
+
 ### Conversation and reminder safeguards
 
 V2 now anchors short follow-ups such as `Confirm time`, `Yes`, `Update me`, and `Cancel it` to the active conversation topic instead of treating them as unrelated requests. Nally also distinguishes known clock-time reminders from event-triggered requests such as “when the match starts” and “keep checking”; it must not silently convert uncertain event times into fixed reminders. Reminder delivery strips internal orchestration phrases before composing user-facing language. Full condition-monitoring workflows for live sports and other changing web conditions remain the next implementation milestone.
@@ -201,6 +207,12 @@ See [`.env.example`](.env.example) for the complete template.
 | `LIGHTRAG_EMBEDDING_MODEL` | If enabled | Defaults to `nvidia/nemotron-3-embed-1b` |
 | `LIGHTRAG_EMBEDDING_DIM` | If enabled | Defaults to `2048`; must match the model output |
 | `LIGHTRAG_WORKING_DIR` | No | Defaults to `./lightrag_data` |
+| `GITHUB_TOKEN` | For GitHub | GitHub Personal Access Token stored only in the deployment environment |
+| `GITHUB_ALLOWED_REPOS` | For GitHub | Comma-separated `owner/repo` allowlist; GitHub fails closed when empty |
+| `GITHUB_ALLOW_WRITES` | No | Enables the separate write gate; defaults to `false` |
+| `GITHUB_TIMEOUT_MS` | No | GitHub request timeout; defaults to 30 seconds |
+| `ACADEMIC_TELEGRAM_ID` | For web ingestion | Existing Telegram user ID that owns the academic workspace |
+| `INGESTION_TOKEN` | For web ingestion | Separate token protecting `/ingestion`; never reuse the GitHub PAT |
 | `AGENT_*` | No | Bounded planning, tool, retry, parallelism and timeout budgets; individual model calls default to 120 seconds |
 | `NODE_ENV` | No | Runtime environment |
 | `LOG_LEVEL` | No | Logging configuration |
