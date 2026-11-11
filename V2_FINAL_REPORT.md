@@ -4,7 +4,7 @@
 
 V2 is complete and V2.1 is the academic retrieval increment on the `Manus-Work-NallyHermes-v2` branch. The release keeps the custom NallyHermes orchestra and adds companion persistence, Telegram-native academic ingestion, LightRAG-backed document indexing, token-authenticated GitHub operations, Calendar-aware scheduling, and stricter workflow execution boundaries.
 
-Latest release commit: `34debe0` — Finish NallyHermes V2 consolidation.
+Latest release commit: `0b1332a` — Release V2.1 with LightRAG academic ingestion.
 
 ## Academic Companion
 
