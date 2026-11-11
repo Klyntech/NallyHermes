@@ -101,14 +101,20 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
   const userId = await getUserId(telegramId);
   if (!input.name.trim() || input.name.length > 120) throw new Error("Workflow name must be 1–120 characters.");
   if (!input.instructions.trim() || input.instructions.length > 4000) throw new Error("Workflow instructions must be 1–4000 characters.");
-  if (!Number.isFinite(input.runAt.getTime()) || input.runAt <= new Date()) throw new Error("The first workflow run must be in the future.");
+  if (!Number.isFinite(input.runAt.getTime()) || input.runAt <= new Date() || input.runAt.getTime() > Date.now() + 365 * 86400_000) throw new Error("The first workflow run must be in the future and within one year.");
   const timezone = input.timezone ?? await getUserTimezone(telegramId);
   if (!isValidTimezone(timezone)) throw new Error("Invalid IANA timezone.");
+  const supportedTools = new Set(["web_search", "fetch", "memory", "file_io", "schedule", "calendar", "github"]);
+  const allowedTools = [...new Set((input.allowedTools ?? ["web_search", "fetch", "memory"]).slice(0, 10))];
+  if (allowedTools.some((tool) => !supportedTools.has(tool))) throw new Error("Workflow contains an unsupported tool.");
+  const approvalPolicy = input.approvalPolicy ?? "confirm_mutations";
+  if (!["read_only", "confirm_mutations"].includes(approvalPolicy)) throw new Error("Approval policy must be read_only or confirm_mutations.");
+  if (approvalPolicy === "read_only" && allowedTools.some((tool) => ["file_io", "schedule", "calendar", "github"].includes(tool))) throw new Error("A read_only workflow cannot include mutation-capable tools.");
+  if ((input.outputDestination ?? "telegram") !== "telegram") throw new Error("Only Telegram delivery is supported in V2.");
   const retryPolicy = {
     max_attempts: Math.min(5, Math.max(1, input.retryPolicy?.max_attempts ?? 2)),
     backoff_seconds: Math.min(86_400, Math.max(15, input.retryPolicy?.backoff_seconds ?? 60))
   };
-  const allowedTools = [...new Set((input.allowedTools ?? ["web_search", "fetch", "memory"]).slice(0, 10))];
   const [row] = await db.insert(workflows).values({
     userId,
     name: input.name.trim(),
@@ -117,7 +123,7 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
     recurrence: input.recurrence,
     timezone,
     allowedTools,
-    approvalPolicy: input.approvalPolicy ?? "confirm_mutations",
+    approvalPolicy,
     outputDestination: input.outputDestination ?? "telegram",
     retryPolicy
   }).returning();

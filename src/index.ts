@@ -13,7 +13,7 @@ import { displayProgress } from "./agent/progress.js";
 import { getDefaultTimezone, getUserTimezone, setUserTimezone } from "./agent/clock.js";
 import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
-import { handleIngestionRequest } from "./ingestion/web.js";
+import { ingestAcademicDocument } from "./academic/ingestion.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<string, ChatCompletionMessageParam[]>();
@@ -70,6 +70,10 @@ bot.command("start", async (ctx) => {
 
 bot.command("help", async (ctx) => {
   await replyFormatted((text, options) => ctx.reply(text, options), helpText);
+});
+
+bot.command("ingest", async (ctx) => {
+  await ctx.reply("Send me a PDF as a document. Use the caption `Course: Tort | Title: Negligence lecture 3` to label it, or I’ll use the filename.");
 });
 
 bot.command("timezone", async (ctx) => {
@@ -148,6 +152,33 @@ bot.command("rerankbench", async (ctx) => {
   } catch (error) {
     console.error("Reranker benchmark failed:", error);
     await ctx.reply("Benchmark failed. Check Render logs and NIM configuration.");
+  }
+});
+
+bot.on("message:document", async (ctx) => {
+  if (!ctx.from) return;
+  const document = ctx.message.document;
+  if (document.mime_type !== "application/pdf" && !document.file_name?.toLowerCase().endsWith(".pdf")) {
+    await ctx.reply("I can ingest PDF documents for the academic library right now. Send a PDF as a document.");
+    return;
+  }
+  try {
+    const telegramId = String(ctx.from.id);
+    await db.insert(users).values({ telegramId, username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null, timezone: getDefaultTimezone() }).onConflictDoUpdate({ target: users.telegramId, set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null } });
+    const file = await ctx.api.getFile(document.file_id);
+    if (!file.file_path) throw new Error("Telegram did not return a downloadable file path.");
+    const response = await fetch(`https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`, { signal: AbortSignal.timeout(60_000) });
+    if (!response.ok) throw new Error(`Telegram file download failed with HTTP ${response.status}.`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > config.INGESTION_MAX_UPLOAD_BYTES) throw new Error(`That PDF is larger than the ${Math.round(config.INGESTION_MAX_UPLOAD_BYTES / 1_000_000)} MB ingestion limit.`);
+    const caption = ctx.message.caption?.trim() ?? "";
+    const course = caption.match(/course\s*:\s*([^|\n]+)/i)?.[1]?.trim();
+    const title = caption.match(/title\s*:\s*([^|\n]+)/i)?.[1]?.trim() || document.file_name?.replace(/\.pdf$/i, "") || "Academic PDF";
+    const saved = await ingestAcademicDocument(telegramId, { title, course, sourceType: "telegram_pdf", fileName: document.file_name ?? "academic-document.pdf", mimeType: document.mime_type ?? "application/pdf", base64: bytes.toString("base64") });
+    await ctx.reply(`Ingested “${title}”. Status: ${saved.status}${course ? ` · ${course}` : ""}.`);
+  } catch (error) {
+    console.error("Telegram academic ingestion failed:", error);
+    await ctx.reply(error instanceof Error ? `I couldn't ingest that PDF: ${error.message}` : "I couldn't ingest that PDF.");
   }
 });
 
@@ -271,10 +302,6 @@ const server = createServer((req, res) => {
   if (pathname === "/manus-routes.json" && req.method === "GET") {
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end(JSON.stringify({ routes: [{ path: "/ingestion", title: "Nally Academic Companion" }] }));
-    return;
-  }
-  if (pathname === "/ingestion" || pathname.startsWith("/ingestion/")) {
-    void handleIngestionRequest(req, res, pathname);
     return;
   }
   if (req.method === "GET" && req.url === "/health") {

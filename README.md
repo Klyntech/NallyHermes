@@ -4,7 +4,7 @@
 
 Nally combines a natural conversational interface with model-led planning, controlled tool execution, long-term memory and proactive scheduling. It is built around a custom TypeScript agent orchestra rather than a third-party agent framework.
 
-> **Release status: v2 Alpha** — V2 work is underway on the `Manus-Work-NallyHermes-v2` branch. Interfaces and configuration may still change.
+> **Release status: v2 consolidated** — The V2 feature scope is complete on the `Manus-Work-NallyHermes-v2` branch. Voice remains intentionally deferred to a later release.
 
 ## What Nally does
 
@@ -151,7 +151,7 @@ V2 includes a provider-neutral connector layer for Calendar, GitHub, email, and 
 
 GitHub is being built as one dispatcher tool named `github`, not as 46 permanently exposed tools. Nally can discover the compact operation catalog, inspect one operation schema, and then call that operation on demand. This keeps unrelated GitHub schemas out of every model turn. The connector authenticates with a GitHub Personal Access Token supplied only through `GITHUB_TOKEN`; it never accepts a PAT from chat or the web ingestion form.
 
-GitHub access is fail-closed behind `GITHUB_ALLOWED_REPOS`, for example `Klyntech/NallyHermes`. The initial catalog covers repository metadata, issues, pull requests, repository files, commits, and issue creation. Reads can run when configured. Writes require both `GITHUB_ALLOW_WRITES=true` and an explicit approval field, and mutations are never replayed automatically.
+GitHub access is open to all repositories by default through `GITHUB_ALLOW_ALL_REPOS=true`; `GITHUB_ALLOWED_REPOS` remains available when a deployment needs a restrictive mode. The dispatcher catalog covers repositories, issues, pull requests, files, commits, branches, tags, releases, Actions, checks, deployments, collaborators, users, organizations, gists, comments, reviews, and common approved writes. Delete operations are intentionally absent and rejected by policy. Writes require both `GITHUB_ALLOW_WRITES=true` and an explicit approval field, and mutations are never replayed automatically.
 
 ### Conversation and reminder safeguards
 
@@ -159,15 +159,17 @@ V2 now anchors short follow-ups such as `Confirm time`, `Yes`, `Update me`, and 
 
 Nally's conversational voice is intentionally concise and context-aware. It does not volunteer AI-training explanations or capability lists, and it acknowledges ordinary reactions naturally before offering help. Technical identity and limitation details are given briefly only when asked directly.
 
+See the [V2 final report](./V2_FINAL_REPORT.md) for the consolidated feature, security, configuration, and validation summary.
+
 ### Hand-built orchestra
 
 NallyHermes does not use an agent-orchestration framework. V2 now includes the next layer of the custom orchestra: deterministic request routing, first-class execution state, phase latency summaries, typed tool-failure categories, condition-monitoring state transitions, and voice-ready request/response boundaries. The router skips smart planning for ordinary conversation, follow-ups, and single actions, while retaining bounded planning for multi-step and monitoring requests. Each execution emits a structured `orchestra.execution` summary for later latency analysis.
 
-### Academic Companion web ingestion
+### Academic Companion Telegram ingestion
 
-Milestones 1–5 begin at the protected `/ingestion` web endpoint. It is a dark, minimal academic desk for the owner to save an academic profile, ingest PDFs, add timetable blocks, record assessments and deadlines, and see a compact today/next snapshot. The route does not add a web framework: it is served by the existing Node HTTP server.
+Academic ingestion is Telegram-native. Send Nally a PDF as a document, optionally captioned `Course: Tort | Title: Negligence lecture 3`. Nally stores it in the user’s isolated workspace, extracts text with `pdftotext` when available, and records the source metadata in Neon. `/ingest` explains the format in Telegram.
 
-Configure `ACADEMIC_TELEGRAM_ID` with the existing Telegram user ID and set a random `INGESTION_TOKEN` of at least 24 characters. Open `/ingestion`, enter the token when prompted through the URL or browser session, and use the console to add profile context and PDF material. PDF files are stored in the owner’s isolated workspace and text is extracted with the host `pdftotext` utility when available. A failed extraction is recorded as a failed extraction rather than presented as searchable content.
+The academic profile, timetable, and assessment records remain durable Neon data and can be populated through Nally’s normal Telegram conversation and future academic commands. A failed extraction is recorded as a failed extraction rather than presented as searchable content.
 
 The current ingestion layer stores source metadata and extracted text for the next grounded-study milestone: document retrieval with page/source citations, case briefs, statute explanations, IRAC work, and timetable-aware daily briefings.
 
@@ -208,11 +210,11 @@ See [`.env.example`](.env.example) for the complete template.
 | `LIGHTRAG_EMBEDDING_DIM` | If enabled | Defaults to `2048`; must match the model output |
 | `LIGHTRAG_WORKING_DIR` | No | Defaults to `./lightrag_data` |
 | `GITHUB_TOKEN` | For GitHub | GitHub Personal Access Token stored only in the deployment environment |
-| `GITHUB_ALLOWED_REPOS` | For GitHub | Comma-separated `owner/repo` allowlist; GitHub fails closed when empty |
-| `GITHUB_ALLOW_WRITES` | No | Enables the separate write gate; defaults to `false` |
+| `GITHUB_ALLOW_ALL_REPOS` | No | Defaults to `true`; set `false` to enforce `GITHUB_ALLOWED_REPOS` |
+| `GITHUB_ALLOWED_REPOS` | Restrictive GitHub mode | Comma-separated `owner/repo` allowlist |
+| `GITHUB_ALLOW_WRITES` | No | Enables the separate write gate; defaults to `false` in production secrets; delete remains denied |
 | `GITHUB_TIMEOUT_MS` | No | GitHub request timeout; defaults to 30 seconds |
-| `ACADEMIC_TELEGRAM_ID` | For web ingestion | Existing Telegram user ID that owns the academic workspace |
-| `INGESTION_TOKEN` | For web ingestion | Separate token protecting `/ingestion`; never reuse the GitHub PAT |
+| `INGESTION_MAX_UPLOAD_BYTES` | No | Telegram PDF ingestion limit; defaults to 10 MB |
 | `AGENT_*` | No | Bounded planning, tool, retry, parallelism and timeout budgets; individual model calls default to 120 seconds |
 | `NODE_ENV` | No | Runtime environment |
 | `LOG_LEVEL` | No | Logging configuration |
@@ -247,6 +249,7 @@ The default workspace is inside the application directory. Container filesystems
 | `/timezone Africa/Lagos` | Change the saved timezone |
 | `/memorycheck` | Run an isolated LightRAG write/read/delete diagnostic |
 | `/rerankbench` | Run the NVIDIA reranker diagnostic benchmark |
+| `/ingest` | Explain how to send an academic PDF to Nally |
 
 The memory diagnostic uses a temporary tagged document and removes it after the check. It does not intentionally modify saved memories.
 

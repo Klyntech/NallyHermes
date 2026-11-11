@@ -33,6 +33,12 @@ function required(input: CalendarInput, fields: string[]): void {
   }
 }
 
+function validDate(value: string, label: string): Date {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error(`Calendar ${label} must be a valid ISO-8601 timestamp.`);
+  return date;
+}
+
 export async function calendarTool(telegramId: string, input: CalendarInput): Promise<unknown> {
   const context = await userContext(telegramId);
   const connector = await connectorRegistry.getCalendar(context);
@@ -41,10 +47,16 @@ export async function calendarTool(telegramId: string, input: CalendarInput): Pr
   switch (input.operation) {
     case "list": {
       required(input, ["from", "to"]);
+      const from = validDate(input.from!, "from");
+      const to = validDate(input.to!, "to");
+      if (to <= from || to.getTime() - from.getTime() > 366 * 86400_000) throw new Error("Calendar ranges must be positive and no longer than one year.");
       return connector.listEvents(context, { from: input.from!, to: input.to!, calendarId: input.calendar_id });
     }
     case "create": {
       required(input, ["title", "start", "end", "timezone"]);
+      const start = validDate(input.start!, "start");
+      const end = validDate(input.end!, "end");
+      if (end <= start || end.getTime() - start.getTime() > 366 * 86400_000) throw new Error("Calendar events must have a positive duration no longer than one year.");
       const createInput: CalendarCreateInput = {
         title: input.title!, start: input.start!, end: input.end!, timezone: input.timezone!,
         description: input.description, location: input.location, attendees: input.attendees, calendarId: input.calendar_id

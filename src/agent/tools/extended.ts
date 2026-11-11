@@ -386,8 +386,11 @@ function nextOccurrence(previous: Date, recurrence: Recurrence, timezone: string
 export async function scheduleTool(telegramId: string, input: ScheduleInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
   if (input.operation === "create") {
-    if (!input.task?.trim() || input.task.length > 1000 || !input.run_at) {
+    if (!input.task?.trim() || input.task.trim().length > 1000 || Buffer.byteLength(input.task.trim(), "utf8") > 4000 || !input.run_at) {
       throw new Error("A task and ISO-8601 date/time are required.");
+    }
+    if (/\bwhen\b.+\b(starts?|begins?|ends?|changes?)\b|\bkeep checking\b|\bevery\s+\d+\s*(minutes?|hours?)\b/i.test(input.task) && !input.recurrence) {
+      throw new Error("This is an event-monitoring request, not a fixed reminder. Use a workflow instead of guessing a clock time.");
     }
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(input.run_at)) {
       throw new Error("run_at must be ISO-8601 with an explicit Z or timezone offset.");
@@ -403,6 +406,7 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
     if (input.recurrence && !["daily", "weekly", "monthly"].includes(input.recurrence)) {
       throw new Error("Recurrence must be daily, weekly, or monthly.");
     }
+    if (input.recurrence && input.recurrence === "daily" && runAt.getTime() > Date.now() + 365 * 86400_000) throw new Error("Recurring schedules must begin within one year.");
 
     const calendarWindow = await calendarTool(telegramId, {
       operation: "list",
@@ -455,7 +459,7 @@ export async function scheduleTool(telegramId: string, input: ScheduleInput, onP
     }));
   }
 
-  if (!input.id) throw new Error("Provide the scheduled job ID to cancel.");
+  if (!input.id || !/^[0-9a-f-]{20,100}$/i.test(input.id)) throw new Error("Provide a valid scheduled job ID to cancel.");
   const cancelled = await db.update(scheduledJobs).set({ status: "cancelled" })
     .where(and(eq(scheduledJobs.id, input.id), eq(scheduledJobs.userId, userId), eq(scheduledJobs.status, "pending")))
     .returning({ id: scheduledJobs.id });

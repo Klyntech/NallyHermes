@@ -1,98 +1,40 @@
 import { config } from "../config.js";
 
-export type GitHubOperationName =
-  | "get_repository"
-  | "list_issues"
-  | "get_issue"
-  | "list_pull_requests"
-  | "get_file"
-  | "list_commits"
-  | "create_issue";
+export interface GitHubOperationDescription { name: string; description: string; readOnly: boolean; inputSchema: Record<string, unknown>; }
+type Method = "GET" | "POST" | "PATCH" | "PUT";
+type Spec = GitHubOperationDescription & { method: Method; path: (a: Record<string, unknown>) => string; body?: (a: Record<string, unknown>) => unknown };
 
-export interface GitHubOperationDescription {
-  name: GitHubOperationName;
-  description: string;
-  readOnly: boolean;
-  inputSchema: Record<string, unknown>;
-}
+const repo = (a: Record<string, unknown>): string => {
+  const owner = String(a.owner ?? "").trim(); const name = String(a.repo ?? "").trim();
+  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(name)) throw new Error("GitHub owner and repo are required.");
+  if (!config.GITHUB_ALLOW_ALL_REPOS && !new Set(config.GITHUB_ALLOWED_REPOS.split(",").map(x => x.trim().toLowerCase()).filter(Boolean)).has(`${owner}/${name}`.toLowerCase())) throw new Error("This repository is not in Nally's GitHub allowlist.");
+  return `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+};
+const n = (a: Record<string, unknown>, key: string): number => { const v = Number(a[key]); if (!Number.isInteger(v) || v < 1) throw new Error(`${key} must be a positive integer.`); return v; };
+const safePath = (a: Record<string, unknown>): string => { const p = String(a.path ?? "").replace(/^\/+/, ""); if (!p || p.includes("..")) throw new Error("A safe repository path is required."); return p.split("/").map(encodeURIComponent).join("/"); };
+const pick = (a: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter(k => a[k] !== undefined).map(k => [k, a[k]]));
+const q = (a: Record<string, unknown>): string => { const s = new URLSearchParams(); for (const k of ["state", "per_page", "ref", "sha", "path", "page", "sort", "direction"]) if (a[k] !== undefined) s.set(k, String(a[k])); return s.toString() ? `?${s}` : ""; };
+const rs = (path: (a: Record<string, unknown>) => string, description: string, name: string): Spec => ({ name, description, readOnly: true, method: "GET", path, inputSchema: { type: "object", additionalProperties: true } });
+const ws = (name: string, description: string, method: Method, path: (a: Record<string, unknown>) => string, body: (a: Record<string, unknown>) => unknown): Spec => ({ name, description, readOnly: false, method, path, body, inputSchema: { type: "object", additionalProperties: true } });
 
-const operations: GitHubOperationDescription[] = [
-  { name: "get_repository", description: "Read repository metadata.", readOnly: true, inputSchema: { type: "object", required: ["owner", "repo"], properties: { owner: { type: "string" }, repo: { type: "string" } }, additionalProperties: false } },
-  { name: "list_issues", description: "List repository issues.", readOnly: true, inputSchema: { type: "object", required: ["owner", "repo"], properties: { owner: { type: "string" }, repo: { type: "string" }, state: { type: "string", enum: ["open", "closed", "all"] }, per_page: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
-  { name: "get_issue", description: "Read one repository issue.", readOnly: true, inputSchema: { type: "object", required: ["owner", "repo", "issue_number"], properties: { owner: { type: "string" }, repo: { type: "string" }, issue_number: { type: "integer", minimum: 1 } }, additionalProperties: false } },
-  { name: "list_pull_requests", description: "List repository pull requests.", readOnly: true, inputSchema: { type: "object", required: ["owner", "repo"], properties: { owner: { type: "string" }, repo: { type: "string" }, state: { type: "string", enum: ["open", "closed", "all"] }, per_page: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
-  { name: "get_file", description: "Read a file or directory from a repository at a ref.", readOnly: true, inputSchema: { type: "object", required: ["owner", "repo", "path"], properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" }, ref: { type: "string" } }, additionalProperties: false } },
-  { name: "list_commits", description: "List commits in a repository or path.", readOnly: true, inputSchema: { type: "object", required: ["owner", "repo"], properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" }, sha: { type: "string" }, per_page: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false } },
-  { name: "create_issue", description: "Create a repository issue; requires explicit approval and write access to be enabled.", readOnly: false, inputSchema: { type: "object", required: ["owner", "repo", "title"], properties: { owner: { type: "string" }, repo: { type: "string" }, title: { type: "string", minLength: 1, maxLength: 256 }, body: { type: "string", maxLength: 65536 }, labels: { type: "array", items: { type: "string" }, maxItems: 20 } }, additionalProperties: false } }
+const operations: Spec[] = [
+  rs(a => `/repos/${repo(a)}`, "Read repository metadata.", "get_repository"),
+  rs(a => `/repos/${repo(a)}/issues`, "List repository issues.", "list_issues"), rs(a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}`, "Read one issue.", "get_issue"),
+  rs(a => `/repos/${repo(a)}/pulls`, "List pull requests.", "list_pull_requests"), rs(a => `/repos/${repo(a)}/pulls/${n(a,"pull_number")}`, "Read one pull request.", "get_pull_request"),
+  rs(a => `/repos/${repo(a)}/commits`, "List commits.", "list_commits"), rs(a => `/repos/${repo(a)}/commits/${encodeURIComponent(String(a.sha))}`, "Read a commit.", "get_commit"),
+  rs(a => `/repos/${repo(a)}/branches`, "List branches.", "list_branches"), rs(a => `/repos/${repo(a)}/branches/${encodeURIComponent(String(a.branch))}`, "Read a branch.", "get_branch"), rs(a => `/repos/${repo(a)}/tags`, "List tags.", "list_tags"),
+  rs(a => `/repos/${repo(a)}/releases`, "List releases.", "list_releases"), rs(a => `/repos/${repo(a)}/releases/${n(a,"release_id")}`, "Read a release.", "get_release"),
+  rs(a => `/repos/${repo(a)}/actions/workflows`, "List Actions workflows.", "list_workflows"), rs(a => `/repos/${repo(a)}/actions/runs`, "List workflow runs.", "list_workflow_runs"), rs(a => `/repos/${repo(a)}/contents/${safePath(a)}`, "Read repository contents.", "get_file"),
+  rs(a => `/repos/${repo(a)}/compare/${encodeURIComponent(String(a.base))}...${encodeURIComponent(String(a.head))}`, "Compare commits.", "compare_commits"), rs(a => `/repos/${repo(a)}/collaborators`, "List collaborators.", "list_collaborators"), rs(a => `/repos/${repo(a)}/assignees`, "List assignees.", "list_assignees"), rs(a => `/repos/${repo(a)}/labels`, "List labels.", "list_labels"),
+  rs(a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}/comments`, "List issue comments.", "list_issue_comments"), rs(a => `/repos/${repo(a)}/pulls/${n(a,"pull_number")}/comments`, "List pull request comments.", "list_pr_comments"), rs(a => `/repos/${repo(a)}/pulls/${n(a,"pull_number")}/reviews`, "List pull request reviews.", "list_reviews"),
+  rs(a => `/repos/${repo(a)}/commits/${encodeURIComponent(String(a.ref))}/check-runs`, "List check runs.", "list_check_runs"), rs(a => `/repos/${repo(a)}/commits/${encodeURIComponent(String(a.ref))}/status`, "Read commit status.", "get_commit_status"), rs(a => `/repos/${repo(a)}/deployments`, "List deployments.", "list_deployments"), rs(a => `/repos/${repo(a)}/forks`, "List forks.", "list_forks"), rs(a => `/repos/${repo(a)}/stargazers`, "List stargazers.", "list_stargazers"), rs(a => `/repos/${repo(a)}/subscribers`, "List watchers.", "list_watchers"),
+  rs(_a => "/user", "Read the authenticated user.", "get_authenticated_user"), rs(a => `/users/${encodeURIComponent(String(a.username))}`, "Read a public user.", "get_user"), rs(a => `/users/${encodeURIComponent(String(a.username))}/repos`, "List a user's repositories.", "list_user_repositories"), rs(a => `/orgs/${encodeURIComponent(String(a.org))}/repos`, "List organization repositories.", "list_org_repositories"), rs(a => `/users/${encodeURIComponent(String(a.username))}/gists`, "List user gists.", "list_gists"), rs(a => `/gists/${encodeURIComponent(String(a.gist_id))}`, "Read a gist.", "get_gist"),
+  ws("create_issue", "Create an issue; explicit approval required.", "POST", a => `/repos/${repo(a)}/issues`, a => pick(a,["title","body","labels"])), ws("update_issue", "Update an issue; explicit approval required.", "PATCH", a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}`, a => pick(a,["title","body","state","labels","assignees"])), ws("create_issue_comment", "Comment on an issue; explicit approval required.", "POST", a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}/comments`, a => ({ body: String(a.body) })), ws("create_pull_request", "Create a pull request; explicit approval required.", "POST", a => `/repos/${repo(a)}/pulls`, a => pick(a,["title","body","head","base","draft"])), ws("create_gist", "Create a gist; explicit approval required.", "POST", _a => "/gists", a => pick(a,["description","public","files"])), ws("update_file", "Create or update a file; explicit approval required.", "PUT", a => `/repos/${repo(a)}/contents/${safePath(a)}`, a => pick(a,["message","content","sha","branch"])), ws("create_branch", "Create a branch; explicit approval required.", "POST", a => `/repos/${repo(a)}/git/refs`, a => ({ ref: `refs/heads/${String(a.branch)}`, sha: String(a.sha) })), ws("create_release", "Create a release; explicit approval required.", "POST", a => `/repos/${repo(a)}/releases`, a => pick(a,["tag_name","name","body","draft","prerelease","target_commitish"])), ws("merge_pull_request", "Merge a pull request; explicit approval required.", "PUT", a => `/repos/${repo(a)}/pulls/${n(a,"pull_number")}/merge`, a => pick(a,["commit_title","commit_message","merge_method"]))
 ];
 
-function allowedRepositories(): Set<string> {
-  return new Set(config.GITHUB_ALLOWED_REPOS.split(",").map((repo) => repo.trim().toLowerCase()).filter(Boolean));
-}
-
-function assertRepo(args: Record<string, unknown>): { owner: string; repo: string } {
-  const owner = String(args.owner ?? "").trim();
-  const repo = String(args.repo ?? "").trim();
-  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) throw new Error("GitHub owner and repo are required.");
-  if (!allowedRepositories().has(`${owner}/${repo}`.toLowerCase())) throw new Error("This repository is not in Nally's GitHub allowlist.");
-  return { owner, repo };
-}
-
-function operation(name: string): GitHubOperationDescription {
-  const found = operations.find((item) => item.name === name);
-  if (!found) throw new Error(`Unknown GitHub operation: ${name}`);
-  return found;
-}
-
-function assertConfigured(): string {
-  if (!config.GITHUB_TOKEN) throw new Error("GitHub is not configured. Add GITHUB_TOKEN and GITHUB_ALLOWED_REPOS.");
-  if (!allowedRepositories().size) throw new Error("GitHub is fail-closed until GITHUB_ALLOWED_REPOS is configured.");
-  return config.GITHUB_TOKEN;
-}
-
-function queryString(args: Record<string, unknown>, keys: string[]): string {
-  const query = new URLSearchParams();
-  for (const key of keys) if (args[key] !== undefined && args[key] !== "") query.set(key, String(args[key]));
-  const value = query.toString();
-  return value ? `?${value}` : "";
-}
-
-async function githubFetch(token: string, path: string, init: RequestInit = {}): Promise<unknown> {
-  const response = await fetch(`https://api.github.com${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "NallyHermes-GitHub-Connector",
-      ...(init.headers ?? {})
-    },
-    signal: AbortSignal.timeout(config.GITHUB_TIMEOUT_MS)
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = body && typeof body === "object" && "message" in body ? String((body as { message?: unknown }).message) : `GitHub API returned ${response.status}`;
-    throw new Error(message.slice(0, 500));
-  }
-  return body;
-}
-
-export function listGitHubOperations(): GitHubOperationDescription[] { return operations.map((item) => ({ ...item, inputSchema: structuredClone(item.inputSchema) })); }
-export function getGitHubOperation(name: string): GitHubOperationDescription { return { ...operation(name), inputSchema: structuredClone(operation(name).inputSchema) }; }
-
-export async function callGitHubOperation(name: string, args: Record<string, unknown>, approved = false): Promise<unknown> {
-  const token = assertConfigured();
-  const definition = operation(name);
-  if (!definition.readOnly && (!config.GITHUB_ALLOW_WRITES || !approved)) throw new Error("GitHub write operations require GITHUB_ALLOW_WRITES=true and explicit approval.");
-  const { owner, repo } = assertRepo(args);
-  const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  switch (name) {
-    case "get_repository": return githubFetch(token, base);
-    case "list_issues": return githubFetch(token, `${base}/issues${queryString(args, ["state", "per_page"])}`);
-    case "get_issue": return githubFetch(token, `${base}/issues/${Number(args.issue_number)}`);
-    case "list_pull_requests": return githubFetch(token, `${base}/pulls${queryString(args, ["state", "per_page"])}`);
-    case "get_file": return githubFetch(token, `${base}/contents/${String(args.path).split("/").map(encodeURIComponent).join("/")}${queryString(args, ["ref"])}`);
-    case "list_commits": return githubFetch(token, `${base}/commits${queryString(args, ["path", "sha", "per_page"])}`);
-    case "create_issue": return githubFetch(token, `${base}/issues`, { method: "POST", body: JSON.stringify({ title: String(args.title), body: args.body ? String(args.body) : undefined, labels: Array.isArray(args.labels) ? args.labels.map(String) : undefined }), headers: { "content-type": "application/json" } });
-  }
-}
+function definition(name: string): Spec { if (name.toLowerCase().includes("delete")) throw new Error("GitHub delete operations are denied by Nally's policy."); const found = operations.find(x => x.name === name); if (!found) throw new Error(`Unknown GitHub operation: ${name}`); return found; }
+function token(): string { if (!config.GITHUB_TOKEN) throw new Error("GitHub is not configured. Add GITHUB_TOKEN."); return config.GITHUB_TOKEN; }
+async function request(t: string, method: Method, path: string, body?: unknown): Promise<unknown> { const r = await fetch(`https://api.github.com${path}`, { method, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${t}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "NallyHermes-GitHub-Connector", ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(config.GITHUB_TIMEOUT_MS) }); const result = await r.json().catch(() => null); if (!r.ok) throw new Error(result && typeof result === "object" && "message" in result ? String((result as {message: unknown}).message).slice(0,500) : `GitHub API returned ${r.status}`); return result; }
+export function listGitHubOperations(): GitHubOperationDescription[] { return operations.map(({name,description,readOnly,inputSchema}) => ({name,description,readOnly,inputSchema:structuredClone(inputSchema)})); }
+export function getGitHubOperation(name: string): GitHubOperationDescription { const x = definition(name); return { name:x.name, description:x.description, readOnly:x.readOnly, inputSchema:structuredClone(x.inputSchema) }; }
+export async function callGitHubOperation(name: string, args: Record<string, unknown>, approved = false): Promise<unknown> { const x = definition(name); if (!x.readOnly && (!config.GITHUB_ALLOW_WRITES || !approved)) throw new Error("GitHub write operations require GITHUB_ALLOW_WRITES=true and explicit approval."); const path = x.path(args) + (x.method === "GET" ? q(args) : ""); return request(token(), x.method, path, x.body?.(args)); }
