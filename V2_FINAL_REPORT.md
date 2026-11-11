@@ -4,7 +4,7 @@
 
 V2 is complete on the `Manus-Work-NallyHermes-v2` branch. The release keeps the custom NallyHermes orchestra and adds companion persistence, Telegram-native academic ingestion, token-authenticated GitHub operations, Calendar-aware scheduling, and stricter workflow execution boundaries.
 
-Latest release commit: `V2 consolidation`.
+Latest release commit: `34debe0` — Finish NallyHermes V2 consolidation.
 
 ## Academic Companion
 
