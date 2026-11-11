@@ -3,7 +3,8 @@ import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
-import { addAcademicDocument } from "./store.js";
+import { indexAcademicDocument } from "../agent/lightRag.js";
+import { addAcademicDocument, updateAcademicDocumentStatus } from "./store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,7 +46,7 @@ export async function ingestAcademicDocument(telegramId: string, input: { title:
     status = "stored";
   }
 
-  return addAcademicDocument(telegramId, {
+  const document = await addAcademicDocument(telegramId, {
     title: input.title,
     course: input.course,
     sourceType: input.sourceType ?? "document",
@@ -57,4 +58,13 @@ export async function ingestAcademicDocument(telegramId: string, input: { title:
     status,
     error
   });
+  if (!extractedText || status === "stored_extraction_failed" || !config.LIGHTRAG_ENABLED) return document;
+  try {
+    const indexed = await indexAcademicDocument(telegramId, document.id, input.title, input.course, extractedText, filePath);
+    if (indexed) return (await updateAcademicDocumentStatus(telegramId, document.id, "indexed")) ?? document;
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message.slice(0, 1000) : "LightRAG indexing failed.";
+    return (await updateAcademicDocumentStatus(telegramId, document.id, "extracted_index_failed", detail)) ?? document;
+  }
+  return document;
 }

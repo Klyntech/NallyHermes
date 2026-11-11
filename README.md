@@ -171,7 +171,9 @@ Academic ingestion is Telegram-native. Send Nally a PDF as a document, optionall
 
 The academic profile, timetable, and assessment records remain durable Neon data and can be populated through Nally’s normal Telegram conversation and future academic commands. A failed extraction is recorded as a failed extraction rather than presented as searchable content.
 
-The current ingestion layer stores source metadata and extracted text for the next grounded-study milestone: document retrieval with page/source citations, case briefs, statute explanations, IRAC work, and timetable-aware daily briefings.
+In V2.1, extracted academic text is also sent through the existing authenticated LightRAG service at `/v1/academic/insert`. It uses the same per-Telegram-user LightRAG workspace as semantic memory retrieval, so academic material participates in hybrid retrieval and NVIDIA reranking without introducing a second search system. Neon remains the source of truth for document metadata and extracted text. Documents are marked `indexed` only after LightRAG confirms insertion; indexing failures are recorded explicitly as `extracted_index_failed`.
+
+The next grounded-study milestone is document retrieval with page/source citations, case briefs, statute explanations, IRAC work, and timetable-aware daily briefings.
 
 ### Development commands
 

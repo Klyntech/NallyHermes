@@ -191,6 +191,14 @@ class InsertRequest(BaseModel):
     memory_id: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=4000)
 
+class AcademicDocumentRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=25)
+    document_id: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=240)
+    course: str | None = Field(default=None, max_length=160)
+    source_type: str = Field(default="academic_document", max_length=80)
+    content: str = Field(min_length=1, max_length=2_000_000)
+    file_path: str = Field(min_length=1, max_length=500)
 
 class QueryRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=25)
@@ -358,6 +366,19 @@ async def insert_memory(payload: InsertRequest, authorization: str | None = Head
         file_paths=[f"memory:{payload.memory_id}"],
     )
     return {"success": True, "memory_id": payload.memory_id}
+
+
+@app.post("/v1/academic/insert")
+async def insert_academic_document(payload: AcademicDocumentRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    rag = await get_rag(payload.user_id)
+    source = " | ".join(filter(None, [f"title: {payload.title}", f"course: {payload.course}" if payload.course else None, f"source_type: {payload.source_type}"]))
+    await rag.ainsert(
+        f"{source}\n\n{payload.content}",
+        ids=[payload.document_id],
+        file_paths=[payload.file_path],
+    )
+    return {"success": True, "document_id": payload.document_id}
 
 
 @app.post("/v1/memory/delete")

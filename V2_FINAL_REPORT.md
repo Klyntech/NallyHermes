@@ -1,8 +1,8 @@
-# NallyHermes V2 Final Report
+# NallyHermes V2 / V2.1 Final Report
 
 ## Release status
 
-V2 is complete on the `Manus-Work-NallyHermes-v2` branch. The release keeps the custom NallyHermes orchestra and adds companion persistence, Telegram-native academic ingestion, token-authenticated GitHub operations, Calendar-aware scheduling, and stricter workflow execution boundaries.
+V2 is complete and V2.1 is the academic retrieval increment on the `Manus-Work-NallyHermes-v2` branch. The release keeps the custom NallyHermes orchestra and adds companion persistence, Telegram-native academic ingestion, LightRAG-backed document indexing, token-authenticated GitHub operations, Calendar-aware scheduling, and stricter workflow execution boundaries.
 
 Latest release commit: `34debe0` — Finish NallyHermes V2 consolidation.
 
@@ -13,6 +13,8 @@ Academic ingestion now happens through Telegram instead of a separate web endpoi
 `Course: Tort | Title: Negligence lecture 3`
 
 Nally creates the user academic record when needed, downloads the Telegram document, stores it under the isolated user workspace, extracts PDF text with `pdftotext`, and records source metadata plus extraction status in Neon. The `/ingest` command explains the format.
+
+In V2.1, successful extracted text is sent to the existing authenticated LightRAG service through `/v1/academic/insert`. The document is indexed into the same per-Telegram-user LightRAG workspace used by semantic memory retrieval, with the Neon academic document ID as its source identity. Neon remains the source of truth for metadata and extracted text. Documents are marked `indexed` only after LightRAG confirms insertion; failures are recorded as `extracted_index_failed`.
 
 Durable academic tables cover profiles, documents, timetable entries, and assessments. Extracted text is now available as the source layer for the next grounded study features.
 

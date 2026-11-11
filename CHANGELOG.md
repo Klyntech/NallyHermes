@@ -2,6 +2,16 @@
 
 Notable changes to NallyHermes are recorded here.
 
+## [2.1.0] - 2026-11-11
+
+### Added
+- Connected Telegram PDF academic ingestion to the existing LightRAG pipeline through an authenticated `/v1/academic/insert` endpoint.
+- Indexed extracted academic text into the same per-Telegram-user LightRAG workspace used for semantic memory retrieval, with the Neon academic document ID as the source identity.
+- Recorded `indexed` and `extracted_index_failed` statuses so the system never presents a failed semantic index as searchable content.
+
+### Changed
+- Neon remains the source of truth for academic document metadata and extracted text; LightRAG provides semantic retrieval and reranking over the document content.
+
 ## [2.0.0-alpha.1] - 2026-11-08
 
 ### Added

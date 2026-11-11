@@ -92,6 +92,12 @@ export async function addAcademicDocument(telegramId: string, input: { title: st
   return document;
 }
 
+export async function updateAcademicDocumentStatus(telegramId: string, documentId: string, status: string, error?: string) {
+  const userId = await getUserId(telegramId);
+  const [document] = await db.update(academicDocuments).set({ status, error: error?.slice(0, 1000) || null }).where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId))).returning();
+  return document;
+}
+
 export async function getAcademicSnapshot(telegramId: string) {
   const userId = await getUserId(telegramId);
   const now = new Date();

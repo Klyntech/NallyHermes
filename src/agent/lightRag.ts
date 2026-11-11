@@ -55,6 +55,27 @@ export async function retrieveMemory(
   return result.answer ?? result.response ?? "";
 }
 
+export async function indexAcademicDocument(
+  telegramId: string,
+  documentId: string,
+  title: string,
+  course: string | undefined,
+  content: string,
+  filePath: string
+): Promise<boolean> {
+  if (!config.LIGHTRAG_ENABLED) return false;
+  const result = await request<{ success: boolean }>("/v1/academic/insert", {
+    user_id: telegramId,
+    document_id: documentId,
+    title: title.slice(0, 240),
+    course: course?.slice(0, 160),
+    source_type: "telegram_pdf",
+    content: content.slice(0, 2_000_000),
+    file_path: filePath.slice(0, 500)
+  });
+  return result.success;
+}
+
 export async function deleteMemory(telegramId: string, memoryId: string): Promise<void> {
   if (!config.LIGHTRAG_ENABLED) return;
   await request<{ success: boolean }>("/v1/memory/delete", {
