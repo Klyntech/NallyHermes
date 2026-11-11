@@ -2,6 +2,12 @@
 
 Notable changes to NallyHermes are recorded here.
 
+## [2.2.0-alpha.1] - 2026-11-11
+
+### Planned
+- Opened the V2.2 capability track for the improved custom orchestra, coding mode, general assistant abilities, law-student companion, active memory application, and the `notion`, `gmail`, and `nallputer` connectors.
+- Added the [V2.2 roadmap](./V2.2_ROADMAP.md), including connector security boundaries, typed memory, entity continuity, and phased release criteria.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added

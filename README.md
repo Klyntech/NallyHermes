@@ -4,7 +4,7 @@
 
 Nally combines a natural conversational interface with model-led planning, controlled tool execution, long-term memory and proactive scheduling. It is built around a custom TypeScript agent orchestra rather than a third-party agent framework.
 
-> **Release status: v2 consolidated** — The V2 feature scope is complete on the `Manus-Work-NallyHermes-v2` branch. Voice remains intentionally deferred to a later release.
+> **Release status: v2.2 alpha planning** — V2.1 is released; the V2.2 capability track is underway on the `Manus-Work-NallyHermes-v2.2` branch. Voice remains intentionally deferred to a later release.
 
 ## What Nally does
 
@@ -160,6 +160,8 @@ V2 now anchors short follow-ups such as `Confirm time`, `Yes`, `Update me`, and 
 Nally's conversational voice is intentionally concise and context-aware. It does not volunteer AI-training explanations or capability lists, and it acknowledges ordinary reactions naturally before offering help. Technical identity and limitation details are given briefly only when asked directly.
 
 See the [V2 final report](./V2_FINAL_REPORT.md) for the consolidated feature, security, configuration, and validation summary.
+
+See the [V2.2 roadmap](./V2.2_ROADMAP.md) for the next orchestra, connector, coding, assistant, memory, and Student Companion milestones.
 
 ### Hand-built orchestra
 
