@@ -41,6 +41,9 @@ NIM_BASE_URL = os.getenv("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.co
 LLM_MODEL = os.environ["LIGHTRAG_LLM_MODEL"]
 EMBEDDING_MODEL = os.getenv("LIGHTRAG_EMBEDDING_MODEL", "nvidia/nemotron-3-embed-1b")
 EMBEDDING_DIM = int(os.getenv("LIGHTRAG_EMBEDDING_DIM", "2048"))
+# pgvector's regular vector HNSW index supports at most 2,000 dimensions;
+# halfvec HNSW supports up to 4,000 and preserves the 2,048-dim model output.
+os.environ.setdefault("POSTGRES_VECTOR_INDEX_TYPE", "HNSW_HALFVEC")
 RERANK_TARGETS = [
     {
         "model": "nvidia/Nemotron-3.5-Rerank-8B-BF16",
@@ -371,6 +374,8 @@ async def insert_memory(payload: InsertRequest, authorization: str | None = Head
 @app.post("/v1/academic/insert")
 async def insert_academic_document(payload: AcademicDocumentRequest, authorization: str | None = Header(default=None)):
     authorize(authorization)
+    started = time.perf_counter()
+    print(f"INFO: Academic indexing started document_id={payload.document_id} content_chars={len(payload.content)}", flush=True)
     rag = await get_rag(payload.user_id)
     source = " | ".join(filter(None, [f"title: {payload.title}", f"course: {payload.course}" if payload.course else None, f"source_type: {payload.source_type}"]))
     await rag.ainsert(
@@ -378,6 +383,8 @@ async def insert_academic_document(payload: AcademicDocumentRequest, authorizati
         ids=[payload.document_id],
         file_paths=[payload.file_path],
     )
+    elapsed_ms = round((time.perf_counter() - started) * 1000)
+    print(f"INFO: Academic indexing completed document_id={payload.document_id} elapsed_ms={elapsed_ms}", flush=True)
     return {"success": True, "document_id": payload.document_id}
 
 

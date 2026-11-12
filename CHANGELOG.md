@@ -5,6 +5,8 @@ Notable changes to NallyHermes are recorded here.
 ## [2.2.0-alpha.1] - 2026-11-11
 
 ### Bug fixes
+- Fixed LightRAG's 2,048-dimension PostgreSQL HNSW warning by selecting pgvector's `HNSW_HALFVEC` index type, and extended the bounded LightRAG request timeout to 30 minutes for long academic documents.
+- Updated the production image to Node 22 and made Debian package installation noninteractive, removing the deployment's Node engine and debconf warnings.
 - Fixed Render/Docker PDF extraction failures caused by a missing `pdftotext` binary by installing `poppler-utils` and adding a startup dependency check.
 - Fixed large-PDF extraction failures caused by Node child-process stdout buffering; extraction now streams through a temporary file and reports actionable diagnostics.
 - Made explicit durable user facts and preferences trigger a real memory remember operation before acknowledgement.

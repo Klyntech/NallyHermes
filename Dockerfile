@@ -1,10 +1,10 @@
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-venv build-essential poppler-utils \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-venv build-essential poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./

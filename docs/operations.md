@@ -14,6 +14,8 @@ Use the Dockerfile for Render. It installs `poppler-utils`, which provides `pdft
 
 For durable user files, attach a persistent disk and set `FILE_WORKSPACE` to its mount path. Memories and schedules are stored in Neon.
 
+LightRAG uses the 2,048-dimensional Nemotron embedding model with `HNSW_HALFVEC`; regular pgvector HNSW indexes reject dimensions above 2,000. Long academic documents can take several minutes because LightRAG performs entity and relationship extraction with the LLM. `LIGHTRAG_REQUEST_TIMEOUT_MS` defaults to 30 minutes, and the LightRAG service logs explicit academic indexing start and completion lines with elapsed time.
+
 ## Diagnostics
 
 - `/memorycheck` runs an isolated temporary LightRAG write/read/delete check.

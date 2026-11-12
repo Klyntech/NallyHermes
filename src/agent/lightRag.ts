@@ -20,7 +20,7 @@ async function request<T>(path: string, body: Record<string, unknown>): Promise<
     method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(300_000)
+    signal: AbortSignal.timeout(config.LIGHTRAG_REQUEST_TIMEOUT_MS)
   });
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 500);

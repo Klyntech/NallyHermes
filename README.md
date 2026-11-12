@@ -215,6 +215,8 @@ See [`.env.example`](.env.example) for the complete template.
 | `LIGHTRAG_EMBEDDING_MODEL` | If enabled | Defaults to `nvidia/nemotron-3-embed-1b` |
 | `LIGHTRAG_EMBEDDING_DIM` | If enabled | Defaults to `2048`; must match the model output |
 | `LIGHTRAG_WORKING_DIR` | No | Defaults to `./lightrag_data` |
+| `LIGHTRAG_REQUEST_TIMEOUT_MS` | No | LightRAG request timeout; defaults to 30 minutes for long academic documents |
+| `POSTGRES_VECTOR_INDEX_TYPE` | No | Defaults to `HNSW_HALFVEC`, required for 2,048-dimensional pgvector embeddings |
 | `GITHUB_TOKEN` | For GitHub | GitHub Personal Access Token stored only in the deployment environment |
 | `GITHUB_ALLOW_ALL_REPOS` | No | Defaults to `true`; set `false` to enforce `GITHUB_ALLOWED_REPOS` |
 | `GITHUB_ALLOWED_REPOS` | Restrictive GitHub mode | Comma-separated `owner/repo` allowlist |
