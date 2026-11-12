@@ -8,6 +8,12 @@ Notable changes to NallyHermes are recorded here.
 - Opened the V2.2 capability track for the improved custom orchestra, coding mode, general assistant abilities, law-student companion, active memory application, and the `notion`, `gmail`, and `nallputer` connectors.
 - Added the [V2.2 roadmap](./V2.2_ROADMAP.md), including connector security boundaries, typed memory, entity continuity, and phased release criteria.
 
+### Implemented in alpha.1
+- Added typed memory fields for facts, preferences, projects, commitments, entities, and episodes, including confidence, source, expiry, and confirmation timestamps.
+- Added bounded active-memory context before model routing so relevant durable facts can resolve incomplete references while current facts still require live verification.
+- Added dynamic dispatcher contracts for `notion`, `gmail`, and `nallputer`, with fail-closed credentials, explicit write gates, and no fake success from contract-only operations.
+- Added V2.2 connector configuration, executor validation, workflow allowlist support, and regression coverage.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added

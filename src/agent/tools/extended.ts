@@ -280,13 +280,16 @@ export async function syncUserMemories(telegramId: string, onProgress?: ToolProg
   }
 }
 
-type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string };
+type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string; kind?: "fact" | "preference" | "project" | "commitment" | "entity" | "episode"; subject?: string; predicate?: string; object?: string; confidence?: number; expires_at?: string };
 export async function memoryTool(telegramId: string, input: MemoryInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
   switch (input.operation) {
     case "remember": {
       if (!input.content?.trim() || input.content.length > 4000) throw new Error("Memory content must be 1–4000 characters.");
-      const [saved] = await db.insert(memories).values({ userId, content: input.content.trim() }).returning({ id: memories.id, content: memories.content });
+      const confidence = Math.min(100, Math.max(0, Math.round(input.confidence ?? 80)));
+      const expiresAt = input.expires_at ? new Date(input.expires_at) : undefined;
+      if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new Error("expires_at must be a valid ISO-8601 timestamp.");
+      const [saved] = await db.insert(memories).values({ userId, content: input.content.trim(), kind: input.kind ?? "fact", subject: input.subject?.trim().slice(0, 200) || null, predicate: input.predicate?.trim().slice(0, 200) || null, object: input.object?.trim().slice(0, 500) || null, confidence, source: "user", expiresAt: expiresAt ?? null, lastConfirmedAt: new Date() }).returning({ id: memories.id, content: memories.content, kind: memories.kind, subject: memories.subject, predicate: memories.predicate, object: memories.object, confidence: memories.confidence });
       if (!saved) throw new Error("Memory could not be saved.");
       let indexed = false;
       try {
@@ -333,7 +336,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).limit(1);
       if (!existing) return { updated: false };
       await deleteMemory(telegramId, input.id);
-      const [updated] = await db.update(memories).set({ content: input.content.trim(), updatedAt: new Date() })
+      const [updated] = await db.update(memories).set({ content: input.content.trim(), kind: input.kind ?? undefined, subject: input.subject?.trim().slice(0, 200) || undefined, predicate: input.predicate?.trim().slice(0, 200) || undefined, object: input.object?.trim().slice(0, 500) || undefined, confidence: input.confidence === undefined ? undefined : Math.min(100, Math.max(0, Math.round(input.confidence))), lastConfirmedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id, content: memories.content });
       if (!updated) return { updated: false };
       let indexed = false;

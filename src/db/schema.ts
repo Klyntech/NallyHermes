@@ -95,10 +95,18 @@ export const memories = pgTable("memories", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
+  kind: text("kind").notNull().default("fact"),
+  subject: text("subject"),
+  predicate: text("predicate"),
+  object: text("object"),
+  confidence: integer("confidence").notNull().default(80),
+  source: text("source").notNull().default("user"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true }),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
-}, (table) => [index("memories_user_id_idx").on(table.userId)]);
+}, (table) => [index("memories_user_id_idx").on(table.userId), index("memories_context_idx").on(table.userId, table.kind, table.updatedAt)]);
 
 export const scheduledJobs = pgTable("scheduled_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),

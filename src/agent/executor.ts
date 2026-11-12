@@ -7,6 +7,7 @@ import { calendarTool } from "./calendar.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { classifyFailure } from "./failure.js";
 import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from "../connectors/github.js";
+import { callV22Operation, getV22Operation, listV22Operations, type V22Connector } from "../connectors/v22.js";
 
 export interface ToolCallInput {
   id: string;
@@ -31,7 +32,13 @@ const schemas = {
     operation: z.enum(["recall", "remember", "forget", "update"]),
     content: z.string().max(4000).optional(),
     id: z.string().max(100).optional(),
-    query: z.string().max(1000).optional()
+    query: z.string().max(1000).optional(),
+    kind: z.enum(["fact", "preference", "project", "commitment", "entity", "episode"]).optional(),
+    subject: z.string().max(200).optional(),
+    predicate: z.string().max(200).optional(),
+    object: z.string().max(500).optional(),
+    confidence: z.number().int().min(0).max(100).optional(),
+    expires_at: z.string().max(64).optional()
   }).strict(),
   schedule: z.object({
     operation: z.enum(["create", "list", "cancel"]),
@@ -48,7 +55,7 @@ const schemas = {
     run_at: z.string().max(64).optional(),
     recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
     timezone: z.string().max(100).optional(),
-    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule", "calendar", "github"])).max(10).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"])).max(10).optional(),
     approval_policy: z.string().trim().min(1).max(100).optional(),
     output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()
@@ -72,7 +79,10 @@ const schemas = {
     name: z.string().trim().max(100).optional(),
     arguments: z.record(z.string(), z.unknown()).optional(),
     approved: z.boolean().optional()
-  }).strict()
+  }).strict(),
+  notion: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
+  gmail: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
+  nallputer: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict()
 };
 
 type ToolName = keyof typeof schemas;
@@ -133,6 +143,17 @@ async function executeToolCallOnce(
         else if (!githubArgs.name) throw new Error("GitHub operation name is required.");
         else if (githubArgs.operation === "get_operation") result = getGitHubOperation(githubArgs.name);
         else result = await callGitHubOperation(githubArgs.name, githubArgs.arguments ?? {}, githubArgs.approved === true);
+        break;
+      }
+      case "notion":
+      case "gmail":
+      case "nallputer": {
+        const provider = call.function.name as V22Connector;
+        const connectorArgs = args as { operation: "list_operations" | "get_operation" | "call_operation"; name?: string; arguments?: Record<string, unknown>; approved?: boolean };
+        if (connectorArgs.operation === "list_operations") result = listV22Operations(provider);
+        else if (!connectorArgs.name) throw new Error(`${provider} operation name is required.`);
+        else if (connectorArgs.operation === "get_operation") result = getV22Operation(provider, connectorArgs.name);
+        else result = await callV22Operation(provider, connectorArgs.name, connectorArgs.arguments ?? {}, connectorArgs.approved === true);
         break;
       }
       default:
@@ -201,6 +222,10 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
       case "calendar":
         return args.operation === "list";
       case "github":
+        return args.operation === "list_operations" || args.operation === "get_operation";
+      case "notion":
+      case "gmail":
+      case "nallputer":
         return args.operation === "list_operations" || args.operation === "get_operation";
       default:
         return false;
