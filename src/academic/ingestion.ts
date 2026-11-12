@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { indexAcademicDocument } from "../agent/lightRag.js";
@@ -46,14 +46,19 @@ export async function ingestAcademicDocument(telegramId: string, input: { title:
   let error: string | undefined;
   const isPdf = input.mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
   if (isPdf) {
+    const extractedPath = `${filePath}.txt`;
     try {
-      const extracted = await execFileAsync("pdftotext", ["-layout", filePath, "-"], { timeout: 20_000, maxBuffer: 2_000_000 });
-      extractedText = extracted.stdout.trim();
+      // Do not send document text through stdout: a valid law PDF can exceed
+      // Node's child-process maxBuffer even when the uploaded PDF is under 20 MB.
+      await execFileAsync("pdftotext", ["-layout", filePath, extractedPath], { timeout: 60_000, maxBuffer: 1_000_000 });
+      extractedText = (await readFile(extractedPath, "utf8")).trim();
       status = extractedText ? "extracted" : "stored_no_text";
       if (!extractedText) error = "pdftotext completed successfully but produced no text; the PDF may be scanned/image-only or use an unsupported encoding.";
     } catch (cause) {
       status = "stored_extraction_failed";
       error = extractionError(cause);
+    } finally {
+      await rm(extractedPath, { force: true }).catch(() => undefined);
     }
   } else {
     status = "stored";

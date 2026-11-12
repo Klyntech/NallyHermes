@@ -184,7 +184,7 @@ bot.on("message:document", async (ctx) => {
     const course = caption.match(/course\s*:\s*([^|\n]+)/i)?.[1]?.trim();
     const title = caption.match(/title\s*:\s*([^|\n]+)/i)?.[1]?.trim() || document.file_name?.replace(/\.pdf$/i, "") || "Academic PDF";
     const saved = await ingestAcademicDocument(telegramId, { title, course, sourceType: "telegram_pdf", fileName: document.file_name ?? "academic-document.pdf", mimeType: document.mime_type ?? "application/pdf", base64: bytes.toString("base64") });
-    await ctx.reply(`Ingested “${title}”. Status: ${saved.status}${course ? ` · ${course}` : ""}.`);
+    await ctx.reply(`Ingested “${title}”. Status: ${saved.status}${course ? ` · ${course}` : ""}.${saved.error ? `\n\nDetail: ${saved.error}` : ""}`);
   } catch (error) {
     console.error("Telegram academic ingestion failed:", error);
     await ctx.reply(error instanceof Error ? `I couldn't ingest that PDF: ${error.message}` : "I couldn't ingest that PDF.");
