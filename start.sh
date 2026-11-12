@@ -13,6 +13,11 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if ! command -v pdftotext >/dev/null 2>&1; then
+  echo "Required dependency pdftotext is missing. Rebuild the image with poppler-utils installed." >&2
+  exit 1
+fi
+
 if [[ "${LIGHTRAG_ENABLED:-false}" == "true" ]]; then
   python -m uvicorn app:app --app-dir memory-service --host 127.0.0.1 --port 9621 &
   LIGHTRAG_PID=$!

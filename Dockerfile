@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-venv build-essential \
+    && apt-get install -y --no-install-recommends python3 python3-venv build-essential poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./

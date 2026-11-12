@@ -10,7 +10,7 @@ The public health endpoint confirms that the Node HTTP server is responding. It 
 
 ## Deployment
 
-Use the Dockerfile for Render. Set the required application variables and configure LightRAG only when it is needed. When enabled, the Python sidecar starts before the Node process and must pass its local health check.
+Use the Dockerfile for Render. It installs `poppler-utils`, which provides `pdftotext` for Telegram PDF ingestion. Set the required application variables and configure LightRAG only when it is needed. When enabled, the Python sidecar starts before the Node process and must pass its local health check. The container fails fast at startup if `pdftotext` is unavailable rather than accepting PDFs that cannot be extracted.
 
 For durable user files, attach a persistent disk and set `FILE_WORKSPACE` to its mount path. Memories and schedules are stored in Neon.
 

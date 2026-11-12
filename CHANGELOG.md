@@ -5,6 +5,7 @@ Notable changes to NallyHermes are recorded here.
 ## [2.2.0-alpha.1] - 2026-11-11
 
 ### Bug fixes
+- Fixed Render/Docker PDF extraction failures caused by a missing `pdftotext` binary by installing `poppler-utils` and adding a startup dependency check.
 - Fixed large-PDF extraction failures caused by Node child-process stdout buffering; extraction now streams through a temporary file and reports actionable diagnostics.
 - Made explicit durable user facts and preferences trigger a real memory remember operation before acknowledgement.
 - Prevented scheduled workflow runs from mutating reminders, calendars, files, or connectors merely because their policy says `confirm_mutations`; automated runs now stop and report that interactive user confirmation is required.
