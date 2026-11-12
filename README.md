@@ -163,6 +163,8 @@ See the [V2 final report](./V2_FINAL_REPORT.md) for the consolidated feature, se
 
 See the [V2.2 roadmap](./V2.2_ROADMAP.md) for the next orchestra, connector, coding, assistant, memory, and Student Companion milestones.
 
+V2.2 alpha now includes live Notion and Gmail adapters. Notion supports bounded search, page/block reads, database queries, and approval-gated writes. Gmail uses OAuth refresh-token access for bounded message/thread reads, labels, drafts, approved sends, and approved label/archive mutations. Nallputer remains behind its bounded VM API contract until that adapter is connected.
+
 ### Hand-built orchestra
 
 NallyHermes does not use an agent-orchestration framework. V2 now includes the next layer of the custom orchestra: deterministic request routing, first-class execution state, phase latency summaries, typed tool-failure categories, condition-monitoring state transitions, and voice-ready request/response boundaries. The router skips smart planning for ordinary conversation, follow-ups, and single actions, while retaining bounded planning for multi-step and monitoring requests. Each execution emits a structured `orchestra.execution` summary for later latency analysis.

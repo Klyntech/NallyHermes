@@ -11,7 +11,9 @@ Notable changes to NallyHermes are recorded here.
 ### Implemented in alpha.1
 - Added typed memory fields for facts, preferences, projects, commitments, entities, and episodes, including confidence, source, expiry, and confirmation timestamps.
 - Added bounded active-memory context before model routing so relevant durable facts can resolve incomplete references while current facts still require live verification.
-- Added dynamic dispatcher contracts for `notion`, `gmail`, and `nallputer`, with fail-closed credentials, explicit write gates, and no fake success from contract-only operations.
+- Added dynamic dispatcher contracts for `notion`, `gmail`, and `nallputer`, with fail-closed credentials, explicit write gates, and no fake success from unavailable operations.
+- Implemented the Notion REST adapter for bounded search, page reads, block reads, database queries, page creation, block appends, and page-property updates.
+- Implemented the Gmail OAuth adapter for bounded message/thread search and reads, labels, drafts, approved sends, and approved label/archive mutations.
 - Added V2.2 connector configuration, executor validation, workflow allowlist support, and regression coverage.
 
 ## [2.1.0] - 2026-11-11
