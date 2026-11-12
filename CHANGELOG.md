@@ -4,6 +4,14 @@ Notable changes to NallyHermes are recorded here.
 
 ## [2.2.0-alpha.1] - 2026-11-11
 
+### Bug fixes
+- Made explicit durable user facts and preferences trigger a real memory remember operation before acknowledgement.
+- Prevented scheduled workflow runs from mutating reminders, calendars, files, or connectors merely because their policy says `confirm_mutations`; automated runs now stop and report that interactive user confirmation is required.
+- Clarified that recurring schedules are not live event monitors and cannot claim to watch changing conditions between runs.
+- Added Telegram document-update idempotency protection to suppress duplicate ingestion and completion messages after webhook retries.
+- Improved PDF diagnostics with scanned/image-only detection and extraction exit-code, signal, and stderr details.
+- Raised the default Telegram PDF ingestion limit from 10 MB to 20 MB across runtime configuration, templates, and documentation.
+
 ### Planned
 - Opened the V2.2 capability track for the improved custom orchestra, coding mode, general assistant abilities, law-student companion, active memory application, and the `notion`, `gmail`, and `nallputer` connectors.
 - Added the [V2.2 roadmap](./V2.2_ROADMAP.md), including connector security boundaries, typed memory, entity continuity, and phased release criteria.

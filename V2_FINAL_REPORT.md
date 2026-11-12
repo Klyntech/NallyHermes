@@ -107,7 +107,7 @@ GITHUB_ALLOWED_REPOS=
 GITHUB_ALLOW_WRITES=true
 
 # Academic PDFs sent through Telegram
-INGESTION_MAX_UPLOAD_BYTES=10000000
+INGESTION_MAX_UPLOAD_BYTES=20000000
 ```
 
 Keep `GITHUB_TOKEN` separate from Telegram and application webhook secrets. If write access is not required, leave `GITHUB_ALLOW_WRITES=false`.

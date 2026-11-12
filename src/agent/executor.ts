@@ -246,7 +246,8 @@ export async function executeToolCalls(
   calls: ToolCallInput[],
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  allowedTools?: ReadonlySet<string>
+  allowedTools?: ReadonlySet<string>,
+  readOnlyOnly = false
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
   let progressQueue: Promise<void> = Promise.resolve();
   const reportProgress = onProgress
@@ -266,6 +267,15 @@ export async function executeToolCalls(
         role: "tool",
         tool_call_id: calls[index]!.id,
         content: JSON.stringify({ error: "This tool is not allowed for the current workflow." })
+      });
+      index++;
+      continue;
+    }
+    if (readOnlyOnly && !isReadOnlyCall(calls[index]!)) {
+      results.push({
+        role: "tool",
+        tool_call_id: calls[index]!.id,
+        content: JSON.stringify({ error: "This workflow cannot perform mutations automatically. User confirmation is required before this action." })
       });
       index++;
       continue;

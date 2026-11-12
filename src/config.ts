@@ -44,7 +44,7 @@ const envSchema = z.object({
   NALLPUTER_ALLOW_WRITES: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   NALLPUTER_ALLOW_COMMANDS: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   NALLPUTER_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
-  INGESTION_MAX_UPLOAD_BYTES: z.coerce.number().int().min(1_000_000).max(25_000_000).default(10_000_000),
+  INGESTION_MAX_UPLOAD_BYTES: z.coerce.number().int().min(1_000_000).max(25_000_000).default(20_000_000),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   AGENT_MAX_MODEL_ROUNDS: z.coerce.number().int().min(1).max(100).default(12),
   AGENT_MAX_PLAN_TOOL_ROUNDS: z.coerce.number().int().min(1).max(500).default(60),

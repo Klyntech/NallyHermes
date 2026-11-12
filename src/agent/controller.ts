@@ -433,7 +433,8 @@ export async function runAgent(
   userMessage: string,
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  workflowAllowedTools?: ReadonlySet<string>
+  workflowAllowedTools?: ReadonlySet<string>,
+  workflowApprovalPolicy?: "read_only" | "confirm_mutations"
 ): Promise<string> {
   const route = routeRequest(userMessage);
   const state = createExecutionState(
@@ -522,7 +523,8 @@ export async function runAgent(
       functionCalls as ToolCallInput[],
       telegramId,
       reportProgress,
-      workflowAllowedTools
+      workflowAllowedTools,
+      Boolean(workflowApprovalPolicy)
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
     let hadToolErrors = false;

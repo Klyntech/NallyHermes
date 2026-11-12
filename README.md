@@ -220,7 +220,7 @@ See [`.env.example`](.env.example) for the complete template.
 | `GITHUB_ALLOWED_REPOS` | Restrictive GitHub mode | Comma-separated `owner/repo` allowlist |
 | `GITHUB_ALLOW_WRITES` | No | Enables the separate write gate; defaults to `false` in production secrets; delete remains denied |
 | `GITHUB_TIMEOUT_MS` | No | GitHub request timeout; defaults to 30 seconds |
-| `INGESTION_MAX_UPLOAD_BYTES` | No | Telegram PDF ingestion limit; defaults to 10 MB |
+| `INGESTION_MAX_UPLOAD_BYTES` | No | Telegram PDF ingestion limit; defaults to 20 MB |
 | `AGENT_*` | No | Bounded planning, tool, retry, parallelism and timeout budgets; individual model calls default to 120 seconds |
 | `NODE_ENV` | No | Runtime environment |
 | `LOG_LEVEL` | No | Logging configuration |

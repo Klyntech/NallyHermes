@@ -18,6 +18,8 @@ import { ingestAcademicDocument } from "./academic/ingestion.js";
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<string, ChatCompletionMessageParam[]>();
 const MAX_ACTIVE_CONVERSATIONS = 1_000;
+const processedDocumentUpdates = new Map<string, number>();
+const DOCUMENT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1_000;
 
 function conversationKey(chatId: number, userId: number): string {
   // A group chat has one private history per participant; it never shares
@@ -158,6 +160,13 @@ bot.command("rerankbench", async (ctx) => {
 bot.on("message:document", async (ctx) => {
   if (!ctx.from) return;
   const document = ctx.message.document;
+  const updateKey = `${ctx.chat.id}:${ctx.message.message_id}`;
+  const now = Date.now();
+  for (const [key, seenAt] of processedDocumentUpdates) {
+    if (now - seenAt > DOCUMENT_DEDUPE_TTL_MS) processedDocumentUpdates.delete(key);
+  }
+  if (processedDocumentUpdates.has(updateKey)) return;
+  processedDocumentUpdates.set(updateKey, now);
   if (document.mime_type !== "application/pdf" && !document.file_name?.toLowerCase().endsWith(".pdf")) {
     await ctx.reply("I can ingest PDF documents for the academic library right now. Send a PDF as a document.");
     return;
@@ -380,15 +389,15 @@ startWorkflowWorker(
   async (workflow) => {
     const allowedTools = new Set(workflow.allowedTools);
     const policy = [
-      "This is an approved recurring workflow run.",
+      "This is an automated recurring workflow run, not blanket approval for external mutations.",
       `Workflow name: ${workflow.name}`,
       `Approval policy: ${workflow.approvalPolicy}`,
       `Only use these allowed tools: ${workflow.allowedTools.join(", ") || "none"}.`,
-      "Do not perform mutations unless the workflow approval policy explicitly allows them.",
+      "Never perform a mutation automatically during a scheduled run. If a mutation is needed, report that explicit user confirmation is required and do not claim it happened.",
       "Produce a concise report of completed work, evidence, and any limitation.",
       workflow.instructions
     ].join("\n\n");
-    return respond([], policy, workflow.telegramId, undefined, allowedTools);
+    return respond([], policy, workflow.telegramId, undefined, allowedTools, workflow.approvalPolicy as "read_only" | "confirm_mutations");
   },
   async (telegramId, message) => {
     await bot.api.sendMessage(Number(telegramId), "Workflow report\n\n" + message);
