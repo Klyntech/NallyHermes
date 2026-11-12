@@ -21,7 +21,7 @@ test("short follow-ups stay anchored to the active event topic", () => {
   assert.ok(context);
   assert.match(context, /active topic/);
   assert.match(context, /match starts/);
-  assert.match(context, /not report the current clock time/);
+  assert.match(context, /current clock time/);
 });
 
 test("long ordinary requests do not receive short-follow-up instructions", () => {

@@ -5,17 +5,18 @@ const { routeRequest, toVoiceResponse } = await import("../src/agent/orchestra.j
 const { classifyFailure } = await import("../src/agent/failure.js");
 const { applyObservation, shouldNotify } = await import("../src/agent/eventMonitor.js");
 
-test("router avoids the planner for conversation, follow-up, and single actions", () => {
-  assert.equal(routeRequest("Hi").usePlanner, false);
-  assert.equal(routeRequest("Confirm time").mode, "direct");
-  assert.equal(routeRequest("Remind me in 15 minutes").mode, "single_action");
-  assert.equal(routeRequest("Research this and compare the results").mode, "planned");
+test("router delegates capability selection to the adaptive orchestra", () => {
+  for (const request of ["Hi", "Confirm time", "Remind me in 15 minutes", "Research this and compare the results"]) {
+    const decision = routeRequest(request);
+    assert.equal(decision.mode, "adaptive");
+    assert.equal(decision.usePlanner, false);
+  }
 });
 
-test("router identifies event monitoring instead of fixed reminders", () => {
+test("adaptive routing does not guess event intent from wording", () => {
   const decision = routeRequest("Message me when the Barcelona match starts and update me every 30 minutes");
-  assert.equal(decision.mode, "monitoring");
-  assert.equal(decision.usePlanner, true);
+  assert.equal(decision.mode, "adaptive");
+  assert.equal(decision.usePlanner, false);
 });
 
 test("failures are typed for safe recovery decisions", () => {

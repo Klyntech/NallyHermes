@@ -14,6 +14,8 @@ Notable changes to NallyHermes are recorded here.
 - Added dynamic dispatcher contracts for `notion`, `gmail`, and `nallputer`, with fail-closed credentials, explicit write gates, and no fake success from unavailable operations.
 - Implemented the Notion REST adapter for bounded search, page reads, block reads, database queries, page creation, block appends, and page-property updates.
 - Implemented the Gmail OAuth adapter for bounded message/thread search and reads, labels, drafts, approved sends, and approved label/archive mutations.
+- Replaced regex-led intent routing with one model-led adaptive orchestra path; deterministic code now focuses on safety, budgets, ownership, and evidence instead of guessing user intent.
+- Removed keyword-based short follow-up classification and replaced it with context supplied to the model for interpretation against recent conversation.
 - Added V2.2 connector configuration, executor validation, workflow allowlist support, and regression coverage.
 
 ## [2.1.0] - 2026-11-11

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 export type InteractionChannel = "telegram" | "voice" | "api";
-export type ExecutionMode = "conversation" | "direct" | "single_action" | "planned" | "workflow" | "monitoring";
+export type ExecutionMode = "adaptive" | "workflow";
 export type ExecutionStatus = "created" | "running" | "waiting_for_tool" | "completed" | "partial" | "failed";
 
 export interface OrchestraRequest {
@@ -39,22 +39,12 @@ export interface RouteDecision {
   usePlanner: boolean;
 }
 
-const FOLLOW_UP = /^(confirm(?:\s+time)?|yes|yeah|yep|no|nope|do\s+that|update\s+me|cancel\s+(?:it|that)|the\s+score)$/i;
-const EVENT_TRIGGER = /\b(when|once|as soon as|if|keep checking|until)\b.*\b(starts?|begins?|goes live|happens?|changes?|ends?|finishes?)\b/i;
-const REPEATING_UPDATE = /\b(?:every|each)\s+\d+\s*(?:min|mins|minutes|hour|hours)\b/i;
-const MULTI_STEP = /\b(and then|then|after that|also|compare|summari[sz]e|research|investigate|review .* and)\b/i;
-const ACTION = /\b(remind|schedule|remember|forget|cancel|create|update|delete|send|message|set)\b/i;
-
 export function routeRequest(text: string): RouteDecision {
-  const value = text.trim();
-  if (!value) return { mode: "conversation", reason: "empty conversational input", usePlanner: false };
-  if (FOLLOW_UP.test(value)) return { mode: "direct", reason: "short contextual follow-up", usePlanner: false };
-  if (EVENT_TRIGGER.test(value) || REPEATING_UPDATE.test(value)) {
-    return { mode: "monitoring", reason: "condition or repeated-update request", usePlanner: true };
-  }
-  if (MULTI_STEP.test(value)) return { mode: "planned", reason: "multiple steps likely required", usePlanner: true };
-  if (ACTION.test(value)) return { mode: "single_action", reason: "single action or tool request", usePlanner: false };
-  return { mode: "conversation", reason: "ordinary conversation or answer", usePlanner: false };
+  return {
+    mode: "adaptive",
+    reason: text.trim() ? "model-led capability selection" : "empty request handled by the model",
+    usePlanner: false
+  };
 }
 
 export function createExecutionState(input: OrchestraRequest, route: RouteDecision, budget: Omit<ExecutionBudget, "deadlineAt"> & { deadlineAt?: number }): ExecutionState {
