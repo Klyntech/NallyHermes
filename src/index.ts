@@ -8,18 +8,30 @@ import { respond } from "./agent/orchestrator.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { startWorkflowWorker } from "./agent/workflows.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
+import { formatIngestionGuidance, parseIngestionCaption } from "./telegram/ingestionMeta.js";
 import { benchmarkRerankers } from "./agent/lightRag.js";
 import { displayProgress } from "./agent/progress.js";
 import { getDefaultTimezone, getUserTimezone, setUserTimezone } from "./agent/clock.js";
 import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { ingestAcademicDocument } from "./academic/ingestion.js";
+import { updateAcademicDocumentMetadata } from "./academic/store.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 const histories = new Map<string, ChatCompletionMessageParam[]>();
 const MAX_ACTIVE_CONVERSATIONS = 1_000;
 const processedDocumentUpdates = new Map<string, number>();
 const DOCUMENT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1_000;
+
+/** Maps bot reply message_id → document id so a user can reply with labels after upload. */
+const pendingIngestionLabels = new Map<string, { documentId: string; telegramId: string; fileName?: string; expiresAt: number }>();
+const PENDING_LABEL_TTL_MS = 2 * 60 * 60 * 1_000;
+
+function prunePendingLabels(now = Date.now()): void {
+  for (const [key, entry] of pendingIngestionLabels) {
+    if (entry.expiresAt <= now) pendingIngestionLabels.delete(key);
+  }
+}
 
 function conversationKey(chatId: number, userId: number): string {
   // A group chat has one private history per participant; it never shares
@@ -75,7 +87,7 @@ bot.command("help", async (ctx) => {
 });
 
 bot.command("ingest", async (ctx) => {
-  await ctx.reply("Send me a PDF as a document. Use the caption `Course: Tort | Title: Negligence lecture 3` to label it, or I’ll use the filename.");
+  await ctx.reply("Send me a PDF as a document. Caption it with `Course: Tort | Title: Negligence lecture 3`, or send the file first and reply to my confirmation with the same labels.");
 });
 
 bot.command("timezone", async (ctx) => {
@@ -180,11 +192,33 @@ bot.on("message:document", async (ctx) => {
     if (!response.ok) throw new Error(`Telegram file download failed with HTTP ${response.status}.`);
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > config.INGESTION_MAX_UPLOAD_BYTES) throw new Error(`That PDF is larger than the ${Math.round(config.INGESTION_MAX_UPLOAD_BYTES / 1_000_000)} MB ingestion limit.`);
-    const caption = ctx.message.caption?.trim() ?? "";
-    const course = caption.match(/course\s*:\s*([^|\n]+)/i)?.[1]?.trim();
-    const title = caption.match(/title\s*:\s*([^|\n]+)/i)?.[1]?.trim() || document.file_name?.replace(/\.pdf$/i, "") || "Academic PDF";
-    const saved = await ingestAcademicDocument(telegramId, { title, course, sourceType: "telegram_pdf", fileName: document.file_name ?? "academic-document.pdf", mimeType: document.mime_type ?? "application/pdf", base64: bytes.toString("base64") });
-    await ctx.reply(`Ingested “${title}”. Status: ${saved.status}${course ? ` · ${course}` : ""}.${saved.error ? `\n\nDetail: ${saved.error}` : ""}`);
+
+    // Caption is optional at upload time. Metadata is parsed separately so a
+    // follow-up reply can still label the document after the file is stored.
+    const meta = parseIngestionCaption(ctx.message.caption, document.file_name);
+    const saved = await ingestAcademicDocument(telegramId, {
+      title: meta.title,
+      course: meta.course,
+      sourceType: "telegram_pdf",
+      fileName: document.file_name ?? "academic-document.pdf",
+      mimeType: document.mime_type ?? "application/pdf",
+      base64: bytes.toString("base64")
+    });
+
+    if (meta.fromCaption) {
+      await ctx.reply(`Ingested “${meta.title}”. Status: ${saved.status}${meta.course ? ` · ${meta.course}` : ""}.${saved.error ? `\n\nDetail: ${saved.error}` : ""}`);
+    } else {
+      const guidance = await ctx.reply(
+        `Ingested using the filename (“${meta.title}”). Status: ${saved.status}.${saved.error ? `\n\nDetail: ${saved.error}` : ""}\n\n${formatIngestionGuidance(document.file_name)}`
+      );
+      prunePendingLabels();
+      pendingIngestionLabels.set(`${ctx.chat.id}:${guidance.message_id}`, {
+        documentId: saved.id,
+        telegramId,
+        fileName: document.file_name ?? undefined,
+        expiresAt: Date.now() + PENDING_LABEL_TTL_MS
+      });
+    }
   } catch (error) {
     console.error("Telegram academic ingestion failed:", error);
     await ctx.reply(error instanceof Error ? `I couldn't ingest that PDF: ${error.message}` : "I couldn't ingest that PDF.");
@@ -193,6 +227,35 @@ bot.on("message:document", async (ctx) => {
 
 bot.on("message:text", async (ctx) => {
   if (!ctx.from) return;
+
+  // Reply-to enrichment: if the user replies to an ingestion confirmation with
+  // labels, update metadata and skip the normal agent turn.
+  const replyToId = ctx.message.reply_to_message?.message_id;
+  if (replyToId !== undefined) {
+    prunePendingLabels();
+    const pendingKey = `${ctx.chat.id}:${replyToId}`;
+    const pending = pendingIngestionLabels.get(pendingKey);
+    if (pending && pending.telegramId === String(ctx.from.id)) {
+      try {
+        const meta = parseIngestionCaption(ctx.message.text, pending.fileName);
+        const updated = await updateAcademicDocumentMetadata(pending.telegramId, pending.documentId, {
+          title: meta.title,
+          course: meta.course ?? null
+        });
+        pendingIngestionLabels.delete(pendingKey);
+        if (updated) {
+          await ctx.reply(`Updated labels: “${updated.title}”${updated.course ? ` · ${updated.course}` : ""}.`);
+        } else {
+          await ctx.reply("I couldn't find that document to update. Please send the PDF again with a caption.");
+        }
+      } catch (error) {
+        console.error("Ingestion metadata enrichment failed:", error);
+        await ctx.reply(error instanceof Error ? `I couldn't update those labels: ${error.message}` : "I couldn't update those labels.");
+      }
+      return;
+    }
+  }
+
   const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
   await serializeConversation(historyKey, async () => {
     await ctx.replyWithChatAction("typing");
