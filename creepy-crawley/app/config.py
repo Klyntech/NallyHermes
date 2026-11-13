@@ -1,15 +1,30 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    api_key: str = "change-me-to-a-long-random-secret"
-    searxng_url: str = "http://localhost:8080"
-    request_timeout_seconds: float = 15.0
-    max_results_limit: int = 20
+    # Render injects API_KEY as a process environment variable.
+    # The validation alias makes that mapping explicit.
+    api_key: str = Field(default="", validation_alias="API_KEY")
+    searxng_url: str = Field(
+        default="http://localhost:8080",
+        validation_alias="SEARXNG_URL",
+    )
+    request_timeout_seconds: float = Field(
+        default=15.0,
+        validation_alias="REQUEST_TIMEOUT_SECONDS",
+    )
+    max_results_limit: int = Field(
+        default=20,
+        validation_alias="MAX_RESULTS_LIMIT",
+    )
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".environment"),
+        extra="ignore",
+    )
 
 
 @lru_cache
