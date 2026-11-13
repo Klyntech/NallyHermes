@@ -7,7 +7,7 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
-import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, type ExecutionState } from "./orchestra.js";
+import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -453,17 +453,32 @@ async function runPlannedRequest(
  * Orchestra controller: model-led planning with bounded execution, preserved
  * partial evidence, and a final synthesis pass even when execution is incomplete.
  */
+export type RunAgentOptions = {
+  channel?: InteractionChannel;
+  responseStyle?: ResponseStyle;
+  conversationId?: string;
+};
+
 export async function runAgent(
   history: ChatCompletionMessageParam[],
   userMessage: string,
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   workflowAllowedTools?: ReadonlySet<string>,
-  workflowApprovalPolicy?: "read_only" | "confirm_mutations"
+  workflowApprovalPolicy?: "read_only" | "confirm_mutations",
+  requestOptions?: RunAgentOptions
 ): Promise<string> {
-  const route = routeRequest(userMessage);
+  const channel = requestOptions?.channel ?? "telegram";
+  const responseStyle = requestOptions?.responseStyle;
+  const route = routeRequest(userMessage, { channel, responseStyle });
   const state = createExecutionState(
-    { text: userMessage, telegramId, channel: "telegram" },
+    {
+      text: userMessage,
+      telegramId,
+      channel,
+      responseStyle,
+      conversationId: requestOptions?.conversationId
+    },
     route,
     {
       maxModelRounds: config.AGENT_MAX_MODEL_ROUNDS,
@@ -480,7 +495,11 @@ export async function runAgent(
   };
 
   beginPhase(state, "context");
-  const { messages } = await prepareRequest(history, userMessage, telegramId);
+  const prepared = await prepareRequest(history, userMessage, telegramId);
+  const messages = [...prepared.messages];
+  if (state.responseStyle === "spoken") {
+    messages.push({ role: "system", content: SPOKEN_STYLE_GUIDANCE });
+  }
   endPhase(state, "context");
 
   await reportProgress({ type: "planning" });
