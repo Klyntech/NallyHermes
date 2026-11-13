@@ -15,9 +15,11 @@ test("GitHub exposes a broad discoverable operation catalog", () => {
   assert.ok(operations.some((operation) => operation.name === "get_file"));
   assert.ok(operations.some((operation) => operation.name === "merge_pull_request"));
   assert.ok(operations.some((operation) => operation.name === "list_my_repositories"));
+  assert.ok(operations.some((operation) => operation.name === "push_files"));
   assert.equal(getGitHubOperation("create_issue").readOnly, false);
   assert.equal(getGitHubOperation("get_repository").readOnly, true);
   assert.equal(getGitHubOperation("list_my_repositories").readOnly, true);
+  assert.equal(getGitHubOperation("push_files").readOnly, false);
 });
 
 test("GitHub list_my_repositories is distinct from public list_user_repositories", () => {
@@ -25,6 +27,13 @@ test("GitHub list_my_repositories is distinct from public list_user_repositories
   const publicRepos = getGitHubOperation("list_user_repositories");
   assert.match(myRepos.description, /authenticated/i);
   assert.match(publicRepos.description, /public/i);
+});
+
+test("GitHub push_files is documented as batch commit authored by NallyHermes", () => {
+  const op = getGitHubOperation("push_files");
+  assert.match(op.description, /multiple files/i);
+  assert.match(op.description, /NallyHermes/);
+  assert.match(getGitHubOperation("update_file").description, /NallyHermes/);
 });
 
 test("GitHub delete operations are denied by policy", () => {

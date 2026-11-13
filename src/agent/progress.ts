@@ -4,7 +4,12 @@ export type ToolProgressEvent =
   | { type: "tool_progress"; tool: "file_io"; stage: "file_processing"; operation: string; path: string }
   | { type: "tool_progress"; tool: "memory"; stage: "memory_indexing" | "memory_retrieving" }
   | { type: "tool_progress"; tool: "academic"; stage: "academic_list" | "academic_search" | "academic_get" | "academic_delete" | "academic_rename" }
-  | { type: "tool_progress"; tool: "schedule"; stage: "schedule_saving" };
+  | { type: "tool_progress"; tool: "schedule"; stage: "schedule_saving" }
+  | { type: "tool_progress"; tool: "github"; stage: "github_working" }
+  | { type: "tool_progress"; tool: "notion"; stage: "notion_working" }
+  | { type: "tool_progress"; tool: "gmail"; stage: "gmail_working" }
+  | { type: "tool_progress"; tool: "nallputer"; stage: "nallputer_working" }
+  | { type: "tool_progress"; tool: "calendar"; stage: "calendar_working" };
 
 export type ToolProgressReporter = (event: ToolProgressEvent) => Promise<void> | void;
 
@@ -37,6 +42,15 @@ function short(value: unknown, max = 72): string {
   return typeof value === "string"
     ? value.replaceAll("\n", " ").replaceAll("\r", " ").replaceAll("\t", " ").trim().slice(0, max)
     : "";
+}
+
+function dispatcherStatus(provider: string, args: Record<string, unknown>): string {
+  const operation = String(args.operation ?? "");
+  const name = short(args.name, 48);
+  if (operation === "list_operations") return `Listing ${provider} operations…`;
+  if (operation === "get_operation") return name ? `Inspecting ${provider}: ${name}…` : `Inspecting ${provider} operation…`;
+  if (operation === "call_operation") return name ? `Using ${provider}: ${name}…` : `Working with ${provider}…`;
+  return `Working with ${provider}…`;
 }
 
 function toolStatus(tool: string, args: Record<string, unknown>): string {
@@ -82,6 +96,23 @@ function toolStatus(tool: string, args: Record<string, unknown>): string {
       };
       return labels[String(args.operation)] ?? "Checking schedules…";
     }
+    case "calendar": {
+      const labels: Record<string, string> = {
+        list: "Checking calendar…",
+        create: "Creating calendar event…",
+        update: "Updating calendar event…",
+        cancel: "Cancelling calendar event…"
+      };
+      return labels[String(args.operation)] ?? "Working with calendar…";
+    }
+    case "github":
+      return dispatcherStatus("GitHub", args);
+    case "notion":
+      return dispatcherStatus("Notion", args);
+    case "gmail":
+      return dispatcherStatus("Gmail", args);
+    case "nallputer":
+      return dispatcherStatus("Nallputer", args);
     default:
       return "Working…";
   }
@@ -147,6 +178,16 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
           };
         case "schedule":
           return { text: "Saving reminder details…" };
+        case "github":
+          return { text: "Working with GitHub…" };
+        case "notion":
+          return { text: "Working with Notion…" };
+        case "gmail":
+          return { text: "Working with Gmail…" };
+        case "nallputer":
+          return { text: "Working with Nallputer…" };
+        case "calendar":
+          return { text: "Working with calendar…" };
         default:
           return { text: "Working…" };
       }

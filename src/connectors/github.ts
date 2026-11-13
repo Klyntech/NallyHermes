@@ -4,6 +4,12 @@ export interface GitHubOperationDescription { name: string; description: string;
 type Method = "GET" | "POST" | "PATCH" | "PUT";
 type Spec = GitHubOperationDescription & { method: Method; path: (a: Record<string, unknown>) => string; body?: (a: Record<string, unknown>) => unknown };
 
+/** Commits created through Nally always attribute authorship to NallyHermes. */
+const NALLY_COMMIT_IDENTITY = {
+  name: "NallyHermes",
+  email: "nallyhermes@users.noreply.github.com"
+} as const;
+
 const repo = (a: Record<string, unknown>): string => {
   const owner = String(a.owner ?? "").trim(); const name = String(a.repo ?? "").trim();
   if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(name)) throw new Error("GitHub owner and repo are required.");
@@ -24,6 +30,14 @@ const q = (a: Record<string, unknown>): string => {
 const rs = (path: (a: Record<string, unknown>) => string, description: string, name: string): Spec => ({ name, description, readOnly: true, method: "GET", path, inputSchema: { type: "object", additionalProperties: true } });
 const ws = (name: string, description: string, method: Method, path: (a: Record<string, unknown>) => string, body: (a: Record<string, unknown>) => unknown): Spec => ({ name, description, readOnly: false, method, path, body, inputSchema: { type: "object", additionalProperties: true } });
 
+function withNallyAuthor(payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...payload,
+    author: { ...NALLY_COMMIT_IDENTITY },
+    committer: { ...NALLY_COMMIT_IDENTITY }
+  };
+}
+
 const operations: Spec[] = [
   rs(a => `/repos/${repo(a)}`, "Read repository metadata.", "get_repository"),
   rs(a => `/repos/${repo(a)}/issues`, "List repository issues.", "list_issues"), rs(a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}`, "Read one issue.", "get_issue"),
@@ -43,12 +57,187 @@ const operations: Spec[] = [
   rs(a => `/orgs/${encodeURIComponent(String(a.org))}/repos`, "List organization repositories.", "list_org_repositories"),
   rs(a => `/users/${encodeURIComponent(String(a.username))}/gists`, "List user gists.", "list_gists"),
   rs(a => `/gists/${encodeURIComponent(String(a.gist_id))}`, "Read a gist.", "get_gist"),
-  ws("create_issue", "Create an issue; explicit approval required.", "POST", a => `/repos/${repo(a)}/issues`, a => pick(a,["title","body","labels"])), ws("update_issue", "Update an issue; explicit approval required.", "PATCH", a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}`, a => pick(a,["title","body","state","labels","assignees"])), ws("create_issue_comment", "Comment on an issue; explicit approval required.", "POST", a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}/comments`, a => ({ body: String(a.body) })), ws("create_pull_request", "Create a pull request; explicit approval required.", "POST", a => `/repos/${repo(a)}/pulls`, a => pick(a,["title","body","head","base","draft"])), ws("create_gist", "Create a gist; explicit approval required.", "POST", _a => "/gists", a => pick(a,["description","public","files"])), ws("update_file", "Create or update a file; explicit approval required.", "PUT", a => `/repos/${repo(a)}/contents/${safePath(a)}`, a => pick(a,["message","content","sha","branch"])), ws("create_branch", "Create a branch; explicit approval required.", "POST", a => `/repos/${repo(a)}/git/refs`, a => ({ ref: `refs/heads/${String(a.branch)}`, sha: String(a.sha) })), ws("create_release", "Create a release; explicit approval required.", "POST", a => `/repos/${repo(a)}/releases`, a => pick(a,["tag_name","name","body","draft","prerelease","target_commitish"])), ws("merge_pull_request", "Merge a pull request; explicit approval required.", "PUT", a => `/repos/${repo(a)}/pulls/${n(a,"pull_number")}/merge`, a => pick(a,["commit_title","commit_message","merge_method"]))
+  ws("create_issue", "Create an issue; explicit approval required.", "POST", a => `/repos/${repo(a)}/issues`, a => pick(a,["title","body","labels"])),
+  ws("update_issue", "Update an issue; explicit approval required.", "PATCH", a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}`, a => pick(a,["title","body","state","labels","assignees"])),
+  ws("create_issue_comment", "Comment on an issue; explicit approval required.", "POST", a => `/repos/${repo(a)}/issues/${n(a,"issue_number")}/comments`, a => ({ body: String(a.body) })),
+  ws("create_pull_request", "Create a pull request; explicit approval required.", "POST", a => `/repos/${repo(a)}/pulls`, a => pick(a,["title","body","head","base","draft"])),
+  ws("create_gist", "Create a gist; explicit approval required.", "POST", _a => "/gists", a => pick(a,["description","public","files"])),
+  ws("update_file", "Create or update a single file; explicit approval required. Prefer push_files when changing multiple files in one commit. Commits are authored as NallyHermes.", "PUT", a => `/repos/${repo(a)}/contents/${safePath(a)}`, a => withNallyAuthor(pick(a,["message","content","sha","branch"]))),
+  ws("create_branch", "Create a branch; explicit approval required.", "POST", a => `/repos/${repo(a)}/git/refs`, a => ({ ref: `refs/heads/${String(a.branch)}`, sha: String(a.sha) })),
+  ws("create_release", "Create a release; explicit approval required.", "POST", a => `/repos/${repo(a)}/releases`, a => pick(a,["tag_name","name","body","draft","prerelease","target_commitish"])),
+  ws("merge_pull_request", "Merge a pull request; explicit approval required.", "PUT", a => `/repos/${repo(a)}/pulls/${n(a,"pull_number")}/merge`, a => pick(a,["commit_title","commit_message","merge_method"]))
 ];
 
-function definition(name: string): Spec { if (name.toLowerCase().includes("delete")) throw new Error("GitHub delete operations are denied by Nally's policy."); const found = operations.find(x => x.name === name); if (!found) throw new Error(`Unknown GitHub operation: ${name}`); return found; }
-function token(): string { if (!config.GITHUB_TOKEN) throw new Error("GitHub is not configured. Add GITHUB_TOKEN."); return config.GITHUB_TOKEN; }
-async function request(t: string, method: Method, path: string, body?: unknown): Promise<unknown> { const r = await fetch(`https://api.github.com${path}`, { method, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${t}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "NallyHermes-GitHub-Connector", ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(config.GITHUB_TIMEOUT_MS) }); const result = await r.json().catch(() => null); if (!r.ok) throw new Error(result && typeof result === "object" && "message" in result ? String((result as {message: unknown}).message).slice(0,500) : `GitHub API returned ${r.status}`); return result; }
-export function listGitHubOperations(): GitHubOperationDescription[] { return operations.map(({name,description,readOnly,inputSchema}) => ({name,description,readOnly,inputSchema:structuredClone(inputSchema)})); }
-export function getGitHubOperation(name: string): GitHubOperationDescription { const x = definition(name); return { name:x.name, description:x.description, readOnly:x.readOnly, inputSchema:structuredClone(x.inputSchema) }; }
-export async function callGitHubOperation(name: string, args: Record<string, unknown>, approved = false): Promise<unknown> { const x = definition(name); if (!x.readOnly && (!config.GITHUB_ALLOW_WRITES || !approved)) throw new Error("GitHub write operations require GITHUB_ALLOW_WRITES=true and explicit approval."); const path = x.path(args) + (x.method === "GET" ? q(args) : ""); return request(token(), x.method, path, x.body?.(args)); }
+function definition(name: string): Spec {
+  if (name.toLowerCase().includes("delete")) throw new Error("GitHub delete operations are denied by Nally's policy.");
+  const found = operations.find(x => x.name === name);
+  if (!found) throw new Error(`Unknown GitHub operation: ${name}`);
+  return found;
+}
+
+function token(): string {
+  if (!config.GITHUB_TOKEN) throw new Error("GitHub is not configured. Add GITHUB_TOKEN.");
+  return config.GITHUB_TOKEN;
+}
+
+async function request(t: string, method: Method, path: string, body?: unknown): Promise<unknown> {
+  const r = await fetch(`https://api.github.com${path}`, {
+    method,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${t}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "NallyHermes-GitHub-Connector",
+      ...(body ? { "content-type": "application/json" } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(config.GITHUB_TIMEOUT_MS)
+  });
+  const result = await r.json().catch(() => null);
+  if (!r.ok) {
+    throw new Error(
+      result && typeof result === "object" && "message" in result
+        ? String((result as { message: unknown }).message).slice(0, 500)
+        : `GitHub API returned ${r.status}`
+    );
+  }
+  return result;
+}
+
+type PushFile = { path: string; content: string };
+
+function parsePushFiles(args: Record<string, unknown>): PushFile[] {
+  const raw = args.files;
+  if (!Array.isArray(raw) || raw.length === 0) throw new Error("push_files requires a non-empty files array.");
+  if (raw.length > 50) throw new Error("push_files supports at most 50 files per commit.");
+  const files: PushFile[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Each files entry must be an object with path and content.");
+    const entry = item as Record<string, unknown>;
+    const path = String(entry.path ?? "").replace(/^\/+/, "").trim();
+    if (!path || path.includes("..") || path.length > 500) throw new Error("Each file needs a safe relative path.");
+    if (typeof entry.content !== "string") throw new Error(`File ${path} is missing string content.`);
+    if (entry.content.length > 1_000_000) throw new Error(`File ${path} exceeds the 1MB content limit.`);
+    files.push({ path, content: entry.content });
+  }
+  return files;
+}
+
+/**
+ * Batch create/update many files in a single commit via the Git Data API.
+ * Always authored as NallyHermes.
+ */
+async function pushFilesBatch(args: Record<string, unknown>): Promise<unknown> {
+  const ownerRepo = repo(args);
+  const branch = String(args.branch ?? "").trim();
+  if (!/^[A-Za-z0-9._/-]{1,200}$/.test(branch)) throw new Error("branch is required for push_files.");
+  const message = String(args.message ?? "").trim();
+  if (!message || message.length > 2000) throw new Error("message is required and must be at most 2000 characters.");
+  const files = parsePushFiles(args);
+  const t = token();
+
+  const ref = (await request(t, "GET", `/repos/${ownerRepo}/git/ref/heads/${encodeURIComponent(branch)}`)) as { object?: { sha?: string } };
+  const headSha = ref.object?.sha;
+  if (!headSha) throw new Error(`Could not resolve branch head for ${branch}.`);
+
+  const headCommit = (await request(t, "GET", `/repos/${ownerRepo}/git/commits/${encodeURIComponent(headSha)}`)) as { tree?: { sha?: string } };
+  const baseTree = headCommit.tree?.sha;
+  if (!baseTree) throw new Error("Could not resolve the base tree for the branch head.");
+
+  const treeEntries: Array<{ path: string; mode: "100644"; type: "blob"; sha: string }> = [];
+  for (const file of files) {
+    const blob = (await request(t, "POST", `/repos/${ownerRepo}/git/blobs`, {
+      content: Buffer.from(file.content, "utf8").toString("base64"),
+      encoding: "base64"
+    })) as { sha?: string };
+    if (!blob.sha) throw new Error(`Failed to create blob for ${file.path}.`);
+    treeEntries.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
+  }
+
+  const tree = (await request(t, "POST", `/repos/${ownerRepo}/git/trees`, {
+    base_tree: baseTree,
+    tree: treeEntries
+  })) as { sha?: string };
+  if (!tree.sha) throw new Error("Failed to create git tree for push_files.");
+
+  const commit = (await request(t, "POST", `/repos/${ownerRepo}/git/commits`, withNallyAuthor({
+    message,
+    tree: tree.sha,
+    parents: [headSha]
+  }))) as { sha?: string; html_url?: string; message?: string; author?: unknown; committer?: unknown };
+  if (!commit.sha) throw new Error("Failed to create commit for push_files.");
+
+  await request(t, "PATCH", `/repos/${ownerRepo}/git/refs/heads/${encodeURIComponent(branch)}`, {
+    sha: commit.sha,
+    force: false
+  });
+
+  return {
+    ok: true,
+    branch,
+    commit_sha: commit.sha,
+    html_url: commit.html_url,
+    message: commit.message ?? message,
+    files: files.map((file) => file.path),
+    author: NALLY_COMMIT_IDENTITY,
+    committer: NALLY_COMMIT_IDENTITY
+  };
+}
+
+export function listGitHubOperations(): GitHubOperationDescription[] {
+  const catalog = operations.map(({ name, description, readOnly, inputSchema }) => ({
+    name,
+    description,
+    readOnly,
+    inputSchema: structuredClone(inputSchema)
+  }));
+  catalog.push({
+    name: "push_files",
+    description:
+      "Create or update multiple files in one commit on a branch; explicit approval required. Prefer this over repeated update_file calls. Commits are authored as NallyHermes. Arguments: owner, repo, branch, message, files:[{path,content}].",
+    readOnly: false,
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        owner: { type: "string" },
+        repo: { type: "string" },
+        branch: { type: "string" },
+        message: { type: "string" },
+        files: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { path: { type: "string" }, content: { type: "string" } },
+            required: ["path", "content"]
+          }
+        }
+      },
+      required: ["owner", "repo", "branch", "message", "files"]
+    }
+  });
+  return catalog;
+}
+
+export function getGitHubOperation(name: string): GitHubOperationDescription {
+  if (name === "push_files") {
+    return listGitHubOperations().find((item) => item.name === "push_files")!;
+  }
+  const x = definition(name);
+  return { name: x.name, description: x.description, readOnly: x.readOnly, inputSchema: structuredClone(x.inputSchema) };
+}
+
+export async function callGitHubOperation(name: string, args: Record<string, unknown>, approved = false): Promise<unknown> {
+  if (name === "push_files") {
+    if (!config.GITHUB_ALLOW_WRITES || !approved) {
+      throw new Error("GitHub write operations require GITHUB_ALLOW_WRITES=true and explicit approval.");
+    }
+    return pushFilesBatch(args);
+  }
+  const x = definition(name);
+  if (!x.readOnly && (!config.GITHUB_ALLOW_WRITES || !approved)) {
+    throw new Error("GitHub write operations require GITHUB_ALLOW_WRITES=true and explicit approval.");
+  }
+  const path = x.path(args) + (x.method === "GET" ? q(args) : "");
+  return request(token(), x.method, path, x.body?.(args));
+}

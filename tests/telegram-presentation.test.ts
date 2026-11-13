@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { markdownToTelegramHtml, replyFormatted } from "../src/telegram/presentation.js";
+import { markdownToTelegramHtml, replyFormatted, tablesToFences } from "../src/telegram/presentation.js";
 
 test("escapes user-controlled HTML instead of emitting raw tags", () => {
   const html = markdownToTelegramHtml("Hello <script>alert(1)</script> & goodbye");
@@ -26,6 +26,25 @@ test("renders fenced code as escaped preformatted text", () => {
 test("does not create links for unsafe URL schemes", () => {
   const html = markdownToTelegramHtml("[click](javascript:alert(1))");
   assert.equal(html, "[click](javascript:alert(1))");
+});
+
+test("markdown tables become aligned preformatted text", () => {
+  const html = markdownToTelegramHtml(
+    "| Name | Status |\n" +
+    "| --- | --- |\n" +
+    "| Nally | Ready |\n" +
+    "| Worker | Pending |"
+  );
+  assert.match(html, /<pre><code>/);
+  assert.match(html, /Name\s+Status/);
+  assert.match(html, /Nally\s+Ready/);
+  assert.doesNotMatch(html, /<table>/);
+});
+
+test("tablesToFences leaves existing fences alone", () => {
+  const input = "```\n| not | a | table |\n```\n";
+  assert.equal(tablesToFences(input), input.trimEnd() === input ? input : input);
+  assert.match(tablesToFences(input), /```/);
 });
 
 test("splits long Telegram replies without exceeding the message limit", async () => {

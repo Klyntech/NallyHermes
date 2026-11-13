@@ -17,6 +17,74 @@ function safeLink(value: string): string | undefined {
   }
 }
 
+function tableCells(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split(/(?<!\\)\|/g).map((part) => part.trim().replace(/\\\|/g, "|"));
+}
+
+function isTableSeparator(line: string): boolean {
+  const cells = tableCells(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+/** Align markdown table rows into fixed-width plain text (ported from Nally.com telegram renderer). */
+function tableText(lines: string[]): string {
+  const parsed = lines.map(tableCells);
+  const headers = parsed[0] ?? [];
+  const body = parsed.length > 1 && isTableSeparator(lines[1]!) ? parsed.slice(2) : parsed.slice(1);
+  const count = Math.max(headers.length, ...body.map((row) => row.length), 1);
+  const rows = [
+    [...headers, ...Array(Math.max(0, count - headers.length)).fill("")],
+    ...body.map((row) => [...row, ...Array(Math.max(0, count - row.length)).fill("")])
+  ];
+  const widths = Array.from({ length: count }, (_, i) =>
+    Math.min(32, Math.max(3, ...rows.map((row) => String(row[i] ?? "").length)))
+  );
+
+  const fmt = (row: string[]) =>
+    row
+      .map((value, i) => {
+        let cell = String(value).replace(/\s+/g, " ");
+        if (cell.length > widths[i]!) cell = cell.slice(0, widths[i]! - 1) + "…";
+        return cell.padEnd(widths[i]!);
+      })
+      .join("  ")
+      .trimEnd();
+
+  return [fmt(rows[0]!), widths.map((w) => "-".repeat(w)).join("  "), ...rows.slice(1).map(fmt)].join("\n");
+}
+
+/** Convert GFM pipe tables into fenced preformatted blocks so Telegram keeps column alignment. */
+export function tablesToFences(text: string): string {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const result: string[] = [];
+  let i = 0;
+  let inFence = false;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      result.push(line);
+      i += 1;
+      continue;
+    }
+    if (!inFence && i + 1 < lines.length && line.includes("|") && isTableSeparator(lines[i + 1]!)) {
+      const table = [line, lines[i + 1]!];
+      i += 2;
+      while (i < lines.length && lines[i]!.includes("|") && lines[i]!.trim()) {
+        table.push(lines[i]!);
+        i += 1;
+      }
+      result.push("```text", tableText(table), "```");
+      continue;
+    }
+    result.push(line);
+    i += 1;
+  }
+  return result.join("\n");
+}
+
 function renderInline(source: string): string {
   const protectedParts: string[] = [];
   const protect = (html: string) => {
@@ -43,7 +111,7 @@ function renderInline(source: string): string {
 
 /** Converts the Markdown emitted by the agent into Telegram's supported HTML subset. */
 export function markdownToTelegramHtml(markdown: string): string {
-  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  const lines = tablesToFences(markdown).replace(/\r\n?/g, "\n").split("\n");
   const output: string[] = [];
   let paragraph: string[] = [];
   let codeLines: string[] | undefined;
