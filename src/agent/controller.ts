@@ -5,7 +5,7 @@ import type { ProgressEvent } from "./progress.js";
 import { agentTools } from "./definitions.js";
 import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
-import { evaluateTurn, finalResponse, type ModelToolCall } from "./evaluator.js";
+import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, type ExecutionState } from "./orchestra.js";
 
@@ -26,6 +26,20 @@ type StepOutcome = {
 function isFunctionCall(call: ModelToolCall): call is Extract<ModelToolCall, { type: "function" }> {
   return call.type === "function";
 }
+
+function historyUsedResearchTools(messages: ChatCompletionMessageParam[]): boolean {
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    const toolCalls = (message as { tool_calls?: Array<{ type?: string; function?: { name?: string } }> }).tool_calls;
+    if (!toolCalls) continue;
+    for (const call of toolCalls) {
+      const name = call.function?.name;
+      if (name === "web_search" || name === "fetch" || name === "github" || name === "academic") return true;
+    }
+  }
+  return false;
+}
+
 
 function remainingTime(deadline: number): number {
   return Math.max(1_000, deadline - Date.now());
@@ -97,12 +111,23 @@ async function runPlannedStep(
 
       const evaluation = evaluateTurn(message, round, maxToolRounds + 1);
       if (evaluation.kind === "complete") {
+        const audit = auditFactualAnswer(evaluation.answer, {
+          hadResearchTools: historyUsedResearchTools(messages)
+        });
+        if (!audit.ok && round < maxToolRounds) {
+          messages.push({
+            role: "system",
+            content: audit.rewriteHint
+          });
+          continue;
+        }
         return {
           id: step.id,
           task: step.task,
-          status: "completed",
+          status: audit.ok ? "completed" : "partial",
           toolRounds,
-          answer: finalResponse(evaluation.answer)
+          answer: finalResponse(evaluation.answer),
+          failureReason: audit.ok ? undefined : audit.issues.map((i) => i.code).join(", ")
         };
       }
       if (evaluation.kind === "limit_reached") {
@@ -503,9 +528,23 @@ export async function runAgent(
 
     const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
+      const audit = auditFactualAnswer(evaluation.answer, {
+        hadResearchTools: historyUsedResearchTools(messages)
+      });
+      if (!audit.ok && round < config.AGENT_MAX_MODEL_ROUNDS - 1) {
+        messages.push({
+          role: "system",
+          content: audit.rewriteHint
+        });
+        continue;
+      }
       endPhase(state, "execution");
-      completeExecution(state, "completed");
-      console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
+      completeExecution(state, audit.ok ? "completed" : "completed");
+      console.info("orchestra.execution", JSON.stringify({
+        ...summarizeExecution(state),
+        route: route.reason,
+        accuracy_audit: audit.ok ? "pass" : audit.issues.map((i) => i.code)
+      }));
       await reportProgress({ type: "response_ready" });
       return finalResponse(evaluation.answer);
     }

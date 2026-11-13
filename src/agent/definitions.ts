@@ -8,12 +8,14 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Discover current or time-sensitive information and find relevant public sources. Use for broad discovery; use fetch only when a particular result needs deeper inspection.",
+      description: "Discover current or time-sensitive information and find public sources. Prefer depth=advanced or research=true for prices, counts, dates, or complete inventories. Results are source-tiered (primary/secondary/aggregator). For numbers, always follow up with fetch on a primary URL before stating values.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "A focused search query." },
-          max_results: { type: "integer", minimum: 1, maximum: 10, description: "Number of results (default 5)." }
+          query: { type: "string", description: "A focused search query that matches the measurable ask." },
+          max_results: { type: "integer", minimum: 1, maximum: 10, description: "Number of results (default 5)." },
+          depth: { type: "string", enum: ["basic", "advanced"], description: "basic for casual discovery; advanced for factual research (default basic)." },
+          research: { type: "boolean", description: "When true, expand into a few focused queries, use advanced depth, and include raw content on hits for verification." }
         },
         required: ["query"],
         additionalProperties: false

@@ -19,7 +19,9 @@ export interface ToolCallInput {
 const schemas = {
   web_search: z.object({
     query: z.string().trim().min(1).max(400),
-    max_results: z.number().int().min(1).max(10).optional()
+    max_results: z.number().int().min(1).max(10).optional(),
+    depth: z.enum(["basic", "advanced"]).optional(),
+    research: z.boolean().optional()
   }).strict(),
   fetch: z.object({ url: z.string().url().max(2048) }).strict(),
   file_io: z.object({
@@ -125,7 +127,7 @@ async function executeToolCallOnce(
 
     switch (call.function.name) {
       case "web_search":
-        result = await searchWeb(args as { query: string; max_results?: number }, reportToolProgress);
+        result = await searchWeb(args as { query: string; max_results?: number; depth?: "basic" | "advanced"; research?: boolean }, reportToolProgress);
         break;
       case "fetch":
         result = await fetchUrl(args as { url: string }, reportToolProgress);
