@@ -1,18 +1,17 @@
 # Nally Creepy Crawley
 
-A private, self-hosted web-search API intended to replace the search provider behind an existing agent `web_search` tool. The first version uses SearXNG for metasearch and exposes a small Tavily-shaped response contract.
+A private, self-hosted web-search API intended to replace the search provider behind an existing agent `web_search` tool.
 
 ## What is included
 
 - `POST /v1/search`: general/news search, result limit, domain include/exclude filters.
-- `GET /health`: API and SearXNG health status.
+- `GET /health`: API and embedded SearXNG health status.
 - Bearer-token authentication for search requests.
 - Normalized results: `title`, `url`, `content`, `score`, `published_date`.
-- Docker Compose deployment for the API and SearXNG.
 
-This is a search-provider replacement, not a new search index. SearXNG queries configured upstream engines; availability and results depend on those engines and their rate limits.
+SearXNG and the FastAPI application run in the **same container**. SearXNG listens only on loopback port 8080; only the API port is exposed.
 
-## Run locally with Docker
+## Run locally with Docker Compose
 
 ```bash
 cp .env.example .env
@@ -21,7 +20,8 @@ docker compose up --build -d
 ```
 
 API docs: http://127.0.0.1:8000/docs
-Health: `curl http://127.0.0.1:8000/health`
+
+Health: http://127.0.0.1:8000/health
 
 ## Search
 
@@ -36,12 +36,14 @@ News search: set `topic` to `news`. Domain filters accept hostnames such as `exa
 
 ## Connect an existing agent
 
-Point its search tool at `POST /v1/search`, send the bearer token, and map the returned `results` array to the fields your tool expects. The response is intentionally close to common Tavily result fields, but this MVP does not yet implement Tavily's complete API contract or `answer` generation.
+Point its search tool at `POST /v1/search`, send the bearer token, and map the returned `results` array to the fields your tool expects. This MVP does not implement Tavily's complete API contract or answer generation.
 
-## Security and production notes
+## Deployment and security notes
 
-- Keep the API bound to localhost or a private network; do not expose it publicly without TLS and network-level access controls.
-- Replace the example API and SearXNG secrets before deployment.
-- Set `limiter: true` and configure a trusted reverse proxy if exposing SearXNG beyond the internal Docker network.
-- Add rate limiting, request logging policy, monitoring, and automated tests before production use.
-- Search queries are sent to the upstream engines configured in SearXNG. For strict privacy, review and restrict those engines.
+- On Render, deploy this Dockerfile as the existing `NallyCreepyCrawley` service; no additional Render service is required.
+- Set `API_KEY` in Render's Environment page. Never commit it.
+- Set `SEARXNG_URL=http://127.0.0.1:8080` for the single-container deployment.
+- SearXNG is bound to loopback and is not exposed as a public port.
+- A random SearXNG secret is generated at container startup unless `SEARXNG_SECRET` is supplied.
+- Search queries are sent to the upstream engines enabled in SearXNG. Results and availability depend on those engines and their rate limits.
+- The combined workload may exceed the memory limit of Render's Free instance. If the service restarts or is terminated for memory use, move to a larger instance plan or separate the workloads.
