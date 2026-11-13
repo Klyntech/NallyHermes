@@ -217,12 +217,25 @@ export function summarizeExecution(state: ExecutionState): Record<string, unknow
 
 /** System guidance injected when the user should hear the answer, not only read it. */
 export const SPOKEN_STYLE_GUIDANCE = [
-  "The user will hear this answer as speech (or expects a speakable reply).",
-  "Prefer short sentences and plain words. Lead with the result.",
-  "Avoid dense tables, long URL lists, and Markdown-heavy layout in the spoken answer.",
-  "If proof links or Source / Last checked matter, keep them in a brief text supplement mindset: one or two links max, or say you can send the sources as text.",
-  "Do not narrate tool use. Do not pad with filler."
-].join(" ");
+  "The user is on a spoken channel. You must emit TWO parts in this exact layout:",
+  "",
+  "===SPOKEN===",
+  "<what ElevenLabs will read aloud>",
+  "===TEXT===",
+  "<what Telegram shows as text only — sources, links, tables, ids, anything that should not be spoken>",
+  "",
+  "Rules for ===SPOKEN===:",
+  "- Short sentences, plain words, lead with the result.",
+  "- Never read URLs, link paths, or https out loud. Do not spell out links.",
+  "- Do not read dense tables, SHA hashes, or long source lists aloud.",
+  "- If sources matter, say briefly that the sources are in the text message (for example: I put the sources in the text).",
+  "- Do not narrate tool use. Do not pad with filler.",
+  "",
+  "Rules for ===TEXT===:",
+  "- Put links, Source / Last checked, tables, ids, and other unspeakable detail here.",
+  "- If there is nothing extra, leave ===TEXT=== completely empty. Do not write placeholders.",
+  "- This text is shown in Telegram; it is not sent to TTS."
+].join("\n");
 
 export interface VoiceRequest {
   transcript: string;

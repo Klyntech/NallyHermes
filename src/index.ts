@@ -5,7 +5,7 @@ import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
 import { appendConversationExchange, getOrCreateConversation, loadConversationHistory } from "./db/conversationStore.js";
 import { respond } from "./agent/orchestrator.js";
-import { isVoiceConfigured, speechToText, textToSpeech } from "./agent/voice/index.js";
+import { isVoiceConfigured, speechToText, prepareSpokenDelivery } from "./agent/voice/index.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { startWorkflowWorker } from "./agent/workflows.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
@@ -360,16 +360,22 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
       history.push({ role: "user", content: transcriptText }, { role: "assistant", content: answer });
       saveHistory(historyKey, history);
 
-      try {
-        const speech = await textToSpeech(answer);
+              try {
+        const { split, speech } = await prepareSpokenDelivery(answer);
+        const heard = transcriptText.length > 120 ? transcriptText.slice(0, 117) + "…" : transcriptText;
+        const textSupplement = split.text.trim();
         await ctx.api.editMessageText(
           ctx.chat.id,
           statusId,
-          `Heard: “${transcriptText.length > 120 ? transcriptText.slice(0, 117) + "…" : transcriptText}”`
+          `Heard: “${heard}”`
         );
         await ctx.replyWithAudio(new InputFile(speech.audio, `nally-reply.${speech.extension}`), {
-          caption: answer.length > 900 ? answer.slice(0, 897) + "…" : answer
+          caption: split.spoken.length > 900 ? split.spoken.slice(0, 897) + "…" : split.spoken
         });
+        // Text channel only when the model (or fallback) produced unspeakable detail
+        if (textSupplement) {
+          await ctx.reply(textSupplement.slice(0, 3500));
+        }
       } catch (error) {
         console.error("TTS failed:", error);
         await ctx.api.editMessageText(ctx.chat.id, statusId, answer.slice(0, 3500) || "Done, but speech playback failed.");

@@ -5,16 +5,17 @@ export type ElevenLabsSpeech = {
   mimeType: string;
   extension: string;
   provider: "elevenlabs";
+  speed: number;
 };
 
 /**
- * Synthesize speech with ElevenLabs.
- * Returns MP3 suitable for Telegram sendAudio.
+ * Synthesize speech with ElevenLabs at a slightly reduced speaking rate
+ * for clearer production playback (default 0.9 = 10% slower).
  * @see https://elevenlabs.io/docs/api-reference/text-to-speech/convert
  */
 export async function synthesizeWithElevenLabs(
   text: string,
-  options?: { voiceId?: string }
+  options?: { voiceId?: string; speed?: number }
 ): Promise<ElevenLabsSpeech> {
   if (!config.VOICE_ENABLED) {
     throw new Error("Voice is disabled. Set VOICE_ENABLED=true to use speech output.");
@@ -28,6 +29,7 @@ export async function synthesizeWithElevenLabs(
     throw new Error("ELEVENLABS_VOICE_ID is required for speech output.");
   }
 
+  const speed = clampSpeed(options?.speed ?? config.VOICE_SPEECH_SPEED);
   const clipped = text.trim().slice(0, config.VOICE_TTS_MAX_CHARS);
   if (!clipped) {
     throw new Error("Nothing to speak.");
@@ -43,7 +45,14 @@ export async function synthesizeWithElevenLabs(
     body: JSON.stringify({
       text: clipped,
       model_id: config.ELEVENLABS_MODEL_ID,
-      output_format: "mp3_44100_128"
+      output_format: "mp3_44100_128",
+      voice_settings: {
+        stability: config.VOICE_STABILITY,
+        similarity_boost: config.VOICE_SIMILARITY_BOOST,
+        style: config.VOICE_STYLE,
+        use_speaker_boost: true,
+        speed
+      }
     }),
     signal: AbortSignal.timeout(config.VOICE_TTS_TIMEOUT_MS)
   });
@@ -58,6 +67,12 @@ export async function synthesizeWithElevenLabs(
     audio: Buffer.from(arrayBuffer),
     mimeType: "audio/mpeg",
     extension: "mp3",
-    provider: "elevenlabs"
+    provider: "elevenlabs",
+    speed
   };
+}
+
+function clampSpeed(value: number): number {
+  if (!Number.isFinite(value)) return 0.9;
+  return Math.min(1.2, Math.max(0.7, value));
 }

@@ -66,7 +66,12 @@ const envSchema = z.object({
   VOICE_STT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
   VOICE_TTS_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
   VOICE_TTS_MAX_CHARS: z.coerce.number().int().min(200).max(5_000).default(900),
-  VOICE_MAX_AUDIO_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(4_000_000)
+  VOICE_MAX_AUDIO_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(4_000_000),
+  /** Speaking rate for ElevenLabs (1.0 = normal). Default 0.9 = 10% slower. */
+  VOICE_SPEECH_SPEED: z.coerce.number().min(0.7).max(1.2).default(0.9),
+  VOICE_STABILITY: z.coerce.number().min(0).max(1).default(0.45),
+  VOICE_SIMILARITY_BOOST: z.coerce.number().min(0).max(1).default(0.8),
+  VOICE_STYLE: z.coerce.number().min(0).max(1).default(0.35)
 }).superRefine((env, context) => {
   if (new URL(env.WEBHOOK_URL).protocol !== "https:") {
     context.addIssue({
