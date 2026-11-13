@@ -6,10 +6,13 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, HttpUrl
 
 from .config import get_settings
+
+bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI(
     title="Nally Creepy Crawley",
@@ -42,11 +45,11 @@ class SearchResponse(BaseModel):
     response_time: float
 
 
-def require_api_key(authorization: str | None = Header(default=None)) -> None:
+def require_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> None:
     expected = get_settings().api_key
     if not expected or expected == "change-me-to-a-long-random-secret":
         raise HTTPException(status_code=503, detail="API key is not configured. Set API_KEY before using the search endpoint.")
-    supplied = authorization.removeprefix("Bearer ") if authorization else ""
+    supplied = credentials.credentials if credentials else ""
     if not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
