@@ -3,6 +3,7 @@ set -u
 
 export SEARXNG_PORT=8080
 export SEARXNG_BIND_ADDRESS=127.0.0.1
+export GRANIAN_HOST=127.0.0.1
 export SEARXNG_LIMITER=false
 
 # Generate a per-container secret unless Render supplies one.
@@ -11,6 +12,8 @@ if [ -z "${SEARXNG_SECRET:-}" ]; then
     export SEARXNG_SECRET
 fi
 
+# SearXNG imports its package relative to /usr/local/searxng.
+cd /usr/local/searxng
 /usr/local/searxng/entrypoint.sh &
 SEARXNG_PID=$!
 API_PID=
@@ -48,6 +51,7 @@ if [ "$ready" -ne 1 ]; then
     exit 1
 fi
 
+cd /app
 /opt/api-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}" &
 API_PID=$!
 
