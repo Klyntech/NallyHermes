@@ -104,7 +104,7 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
   if (!Number.isFinite(input.runAt.getTime()) || input.runAt <= new Date() || input.runAt.getTime() > Date.now() + 365 * 86400_000) throw new Error("The first workflow run must be in the future and within one year.");
   const timezone = input.timezone ?? await getUserTimezone(telegramId);
   if (!isValidTimezone(timezone)) throw new Error("Invalid IANA timezone.");
-  const supportedTools = new Set(["web_search", "fetch", "memory", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"]);
+  const supportedTools = new Set(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"]);
   const allowedTools = [...new Set((input.allowedTools ?? ["web_search", "fetch", "memory"]).slice(0, 10))];
   if (allowedTools.some((tool) => !supportedTools.has(tool))) throw new Error("Workflow contains an unsupported tool.");
   const approvalPolicy = input.approvalPolicy ?? "confirm_mutations";
