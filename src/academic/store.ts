@@ -1,6 +1,9 @@
 import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import { db } from "../db/client.js";
 import { academicDocuments, academicProfiles, assessments, timetableEntries, users } from "../db/schema.js";
+import { config } from "../config.js";
 
 async function getUserId(telegramId: string): Promise<string> {
   const [user] = await db.select({ id: users.id }).from(users).where(eq(users.telegramId, telegramId)).limit(1);
@@ -120,6 +123,53 @@ export async function updateAcademicDocumentMetadata(
     .where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId)))
     .returning();
   return document;
+}
+
+/**
+ * Delete an academic document owned by the user.
+ * Removes the catalogue row and best-effort deletes the stored file under the user's academic workspace.
+ * Semantic index passages may linger until an academic delete endpoint exists in LightRAG.
+ */
+export async function deleteAcademicDocument(telegramId: string, documentId: string) {
+  const userId = await getUserId(telegramId);
+  const [existing] = await db
+    .select({
+      id: academicDocuments.id,
+      title: academicDocuments.title,
+      course: academicDocuments.course,
+      filePath: academicDocuments.filePath,
+      status: academicDocuments.status
+    })
+    .from(academicDocuments)
+    .where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId)))
+    .limit(1);
+  if (!existing) return null;
+
+  const [deleted] = await db
+    .delete(academicDocuments)
+    .where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId)))
+    .returning({
+      id: academicDocuments.id,
+      title: academicDocuments.title,
+      course: academicDocuments.course,
+      status: academicDocuments.status
+    });
+
+  let fileRemoved = false;
+  if (existing.filePath) {
+    try {
+      const workspaceRoot = path.resolve(config.FILE_WORKSPACE, telegramId, "academic");
+      const resolved = path.resolve(existing.filePath);
+      if (resolved === workspaceRoot || resolved.startsWith(workspaceRoot + path.sep)) {
+        await rm(resolved, { force: true });
+        fileRemoved = true;
+      }
+    } catch (error) {
+      console.warn("Academic file cleanup failed:", error);
+    }
+  }
+
+  return deleted ? { ...deleted, file_removed: fileRemoved } : null;
 }
 
 export async function getAcademicDocument(telegramId: string, documentId: string) {

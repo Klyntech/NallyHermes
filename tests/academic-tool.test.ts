@@ -15,7 +15,7 @@ test("academic tool is registered", () => {
   assert.ok(names.includes("academic"));
 });
 
-test("academic operations are treated as read-only", () => {
+test("academic list/search/get are read-only; delete/rename are mutations", () => {
   for (const operation of ["list", "search", "get"] as const) {
     const call = {
       id: "1",
@@ -23,5 +23,16 @@ test("academic operations are treated as read-only", () => {
       function: { name: "academic", arguments: JSON.stringify({ operation, query: "s.33", document_id: "x" }) }
     };
     assert.equal(isReadOnlyCall(call), true);
+  }
+  for (const operation of ["delete", "rename"] as const) {
+    const call = {
+      id: "1",
+      type: "function",
+      function: {
+        name: "academic",
+        arguments: JSON.stringify({ operation, document_id: "x", title: "New title" })
+      }
+    };
+    assert.equal(isReadOnlyCall(call), false);
   }
 });

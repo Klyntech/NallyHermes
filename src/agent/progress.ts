@@ -3,7 +3,7 @@ export type ToolProgressEvent =
   | { type: "tool_progress"; tool: "fetch"; stage: "fetch_redirect" | "fetch_reading" }
   | { type: "tool_progress"; tool: "file_io"; stage: "file_processing"; operation: string; path: string }
   | { type: "tool_progress"; tool: "memory"; stage: "memory_indexing" | "memory_retrieving" }
-  | { type: "tool_progress"; tool: "academic"; stage: "academic_list" | "academic_search" | "academic_get" }
+  | { type: "tool_progress"; tool: "academic"; stage: "academic_list" | "academic_search" | "academic_get" | "academic_delete" | "academic_rename" }
   | { type: "tool_progress"; tool: "schedule"; stage: "schedule_saving" };
 
 export type ToolProgressReporter = (event: ToolProgressEvent) => Promise<void> | void;
@@ -69,7 +69,9 @@ function toolStatus(tool: string, args: Record<string, unknown>): string {
       const labels: Record<string, string> = {
         list: "Listing academic documents…",
         search: "Searching academic library…",
-        get: "Opening academic document…"
+        get: "Opening academic document…",
+        delete: "Removing academic document…",
+        rename: "Renaming academic document…"
       };
       return labels[String(args.operation)] ?? "Working with academic library…";
     }
@@ -137,7 +139,11 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
                 ? "Listing academic documents…"
                 : event.stage === "academic_get"
                   ? "Opening academic document…"
-                  : "Searching academic library…"
+                  : event.stage === "academic_delete"
+                    ? "Removing academic document…"
+                    : event.stage === "academic_rename"
+                      ? "Renaming academic document…"
+                      : "Searching academic library…"
           };
         case "schedule":
           return { text: "Saving reminder details…" };

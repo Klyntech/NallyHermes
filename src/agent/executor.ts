@@ -42,10 +42,11 @@ const schemas = {
     expires_at: z.string().max(64).optional()
   }).strict(),
   academic: z.object({
-    operation: z.enum(["list", "search", "get"]),
+    operation: z.enum(["list", "search", "get", "delete", "rename"]),
     query: z.string().max(1000).optional(),
     document_id: z.string().max(100).optional(),
-    course: z.string().max(160).optional()
+    course: z.string().max(160).optional(),
+    title: z.string().max(240).optional()
   }).strict(),
   schedule: z.object({
     operation: z.enum(["create", "list", "cancel"]),
@@ -226,7 +227,7 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
       case "memory":
         return args.operation === "recall";
       case "academic":
-        return true;
+        return ["list", "search", "get"].includes(String(args.operation));
       case "schedule":
         return args.operation === "list";
       case "workflow":

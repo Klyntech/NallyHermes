@@ -2,6 +2,7 @@ import { and, desc, eq, ilike } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import { academicDocuments, users } from "../../db/schema.js";
 import { config } from "../../config.js";
+import { deleteAcademicDocument, updateAcademicDocumentMetadata } from "../../academic/store.js";
 import { retrieveAcademic } from "../lightRag.js";
 import type { ToolProgressReporter } from "../progress.js";
 
@@ -12,10 +13,11 @@ async function getUserId(telegramId: string): Promise<string> {
 }
 
 export type AcademicToolInput = {
-  operation: "list" | "search" | "get";
+  operation: "list" | "search" | "get" | "delete" | "rename";
   query?: string;
   document_id?: string;
   course?: string;
+  title?: string;
 };
 
 const MAX_EXTRACT_CHARS = 12_000;
@@ -153,6 +155,48 @@ export async function academicTool(
             : retrievalStatus === "unavailable"
               ? "Semantic index was unreachable; only catalogue matches are available."
               : "No semantic passages returned; use keyword_hits or get a specific document_id."
+      };
+    }
+
+    case "delete": {
+      if (!input.document_id?.trim()) throw new Error("document_id is required for academic delete.");
+      await onProgress?.({ type: "tool_progress", tool: "academic", stage: "academic_delete" });
+      const deleted = await deleteAcademicDocument(telegramId, input.document_id.trim());
+      if (!deleted) return { deleted: false, reason: "Document not found or not owned by this user." };
+      return {
+        deleted: true,
+        id: deleted.id,
+        title: deleted.title,
+        course: deleted.course,
+        previous_status: deleted.status,
+        file_removed: deleted.file_removed,
+        note: "Catalogue entry removed. Semantic index passages may still exist until a dedicated academic delete is available in LightRAG."
+      };
+    }
+
+    case "rename": {
+      if (!input.document_id?.trim()) throw new Error("document_id is required for academic rename.");
+      const title = input.title?.trim();
+      const courseRaw = input.course;
+      const courseProvided = courseRaw !== undefined;
+      if (!title && !courseProvided) {
+        throw new Error("rename requires a new title and/or course.");
+      }
+      await onProgress?.({ type: "tool_progress", tool: "academic", stage: "academic_rename" });
+      const patch: { title?: string; course?: string | null } = {};
+      if (title) patch.title = title;
+      if (courseProvided) {
+        patch.course = courseRaw === null || String(courseRaw).trim() === "" ? null : String(courseRaw).trim();
+      }
+      const updated = await updateAcademicDocumentMetadata(telegramId, input.document_id.trim(), patch);
+      if (!updated) return { renamed: false, reason: "Document not found or not owned by this user." };
+      return {
+        renamed: true,
+        id: updated.id,
+        title: updated.title,
+        course: updated.course,
+        status: updated.status,
+        updated_at: updated.updatedAt
       };
     }
 
