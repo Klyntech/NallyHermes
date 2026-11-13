@@ -4,7 +4,7 @@
 
 Nally combines a natural conversational interface with model-led planning, controlled tool execution, long-term memory and proactive scheduling. It is built around a custom TypeScript agent orchestra rather than a third-party agent framework.
 
-> **Release status: v2.2 alpha planning** — V2.1 is released; the V2.2 capability track is underway on the `Manus-Work-NallyHermes-v2.2` branch. Voice remains intentionally deferred to a later release.
+> **Release status: v2.2.0-alpha.2** — Active development on `Manus-Work-NallyHermes-v2.2`. Accuracy contract, richer web search, claim audit, academic tool, and Telegram rich-message presentation are in. Voice remains deferred. See [CHANGELOG.md](CHANGELOG.md).
 
 ## What Nally does
 
@@ -15,6 +15,7 @@ Nally combines a natural conversational interface with model-led planning, contr
 - **Remembers relevant context.** Chooses when to recall user-scoped memories instead of loading memory on every message.
 - **Understands time.** Uses a trusted clock snapshot and each user's IANA timezone for relative dates and reminders.
 - **Keeps users informed.** Edits one Telegram progress message as work advances, then replaces it with the final response.
+- **Stays evidence-backed.** Prefers primary sources, audits weak factual drafts, and labels gaps as **Not verified** or **Partial** instead of guessing.
 - **Works per user.** Separates each Telegram user's memories, schedules and file workspace.
 
 ## Capabilities
@@ -22,7 +23,7 @@ Nally combines a natural conversational interface with model-led planning, contr
 | Area | Capability |
 | --- | --- |
 | Conversation | Natural language chat with bounded in-memory conversation history |
-| Research | Tavily web search and targeted public-page retrieval |
+| Research | Tavily web search (basic/advanced, research mode, source tiering) and targeted page fetch |
 | Workspace | Read, write, edit, search, list, create folders and delete files |
 | Memory | Structured Neon records with LightRAG semantic and graph retrieval |
 | Scheduling | One-time and recurring reminders delivered proactively in Telegram |
@@ -32,7 +33,9 @@ Nally combines a natural conversational interface with model-led planning, contr
 | Presentation | [NallyHermes V2 Strategy and Architecture Deck](./NallyHermes_V2_—_Personal_AI_Operating_System.pdf) |
 | Orchestration | Smart planning, dependencies, parallel read-only execution and recovery |
 | Time awareness | IANA timezone support and relative-date interpretation |
-| Telegram UX | Live progress editing, Markdown-to-HTML presentation and long-message splitting |
+| Telegram UX | Live progress editing, rich-message Markdown when available, HTML fallback and long-message splitting |
+| Academic | Indexed course PDFs/notes via Telegram documents; list, search, get, delete, rename |
+| Accuracy | System-prompt contract, primary-source preference, deterministic claim audit before final answers |
 
 ## Architecture
 
@@ -47,7 +50,7 @@ flowchart TD
     X --> V[Evaluator and recovery]
     V --> R[Response synthesis]
     R --> T
-    X --> W[Five-tool registry]
+    X --> W[Tool registry]
     W --> S[Search and fetch]
     W --> F[User file workspace]
     W --> M[Neon memory + LightRAG]
@@ -59,7 +62,7 @@ flowchart TD
 
 ### Runtime stack
 
-- **TypeScript / Node.js 20+** — main application and orchestration runtime
+- **TypeScript / Node.js 20+** (production image on Node 22) — main application and orchestration runtime
 - **grammY** — Telegram Bot API and webhook integration
 - **NVIDIA NIM** — agent LLM, embeddings and reranking
 - **Neon PostgreSQL** — users, memories, schedules and LightRAG storage
@@ -70,17 +73,21 @@ flowchart TD
 
 ### Agent tools
 
-Nally intentionally exposes five agent tools:
+Core tools plus V2.2 academic and connector-facing operations:
 
 | Tool | Operations |
 | --- | --- |
-| `web_search` | Discover current information and public sources |
-| `fetch` | Read a specific public HTTP(S) text resource |
+| `web_search` | Discover current information; optional `depth` (`basic` \| `advanced`) and `research` mode with source tiering |
+| `fetch` | Read a specific public HTTP(S) text resource (required for quantitative claims after search) |
 | `file_io` | `read`, `write`, `edit`, `grep`, `delete`, `list`, `mkdir` |
 | `memory` | `recall`, `remember`, `update`, `forget` |
 | `schedule` | `create`, `list`, `cancel` |
+| `academic` | `list`, `search`, `get`, `delete`, `rename` over indexed course materials |
+| `workflow` / connectors | Bounded workflows; GitHub, Notion, Gmail, calendar when configured |
 
 The executor validates arguments against strict schemas. Only read-only calls may run concurrently. Mutations execute sequentially and are never automatically replayed after an ambiguous failure.
+
+Factual answers are gated by a lightweight **claim audit**: approximate numbers, “not disclosed” language, and tables without proof can force one rewrite round before the user sees the reply.
 
 ## Repository layout
 
@@ -292,7 +299,9 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
 - V2 durable conversations currently persist the user/assistant transcript; summaries and explicit conversation-management commands are planned next.
 - File durability depends on mounting persistent storage and setting `FILE_WORKSPACE`.
 - V2 now includes a committed npm lockfile for reproducible dependency installation.
-- Automated tests currently cover Telegram presentation behavior; broader orchestration, memory and scheduling integration tests remain to be added.
+- Automated tests cover Telegram presentation, accuracy-contract heuristics, and several connector/workflow paths; broader live integration coverage is still growing.
+- Exact multi-branch GitHub metrics and a full golden research eval harness are deferred polish (see CHANGELOG alpha.2 deferred items).
+- Rich-message rendering depends on Bot API / grammY support at runtime; HTML fallback remains active.
 - A production release should include a selected open-source license and a completed dependency security review.
 
 ## Project documentation

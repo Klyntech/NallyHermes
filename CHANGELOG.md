@@ -2,6 +2,45 @@
 
 Notable changes to NallyHermes are recorded here.
 
+## [2.2.0-alpha.2] - 2026-11-13
+
+Work landed on `Manus-Work-NallyHermes-v2.2` after alpha.1. Domain tools for exact GitHub metrics and the full research eval harness remain planned polish (P3–P5).
+
+### Accuracy and research
+- Added an **accuracy contract** to the system prompt: restate the measurable ask, tool-backed numbers and dates, primary-source preference, **Not verified** / **Partial** labeling, and bans on confident `~` / "not disclosed" without a primary check.
+- Extended table/proof rules so factual tables include proof (link, id/SHA, date) and a **Source / Last checked** line.
+- Upgraded `web_search`: `depth` (`basic` | `advanced`), `research` mode with a lightweight query planner, source tiering (`primary` / `secondary` / `aggregator` / `unknown`), primary-first ranking, and raw content on advanced/research hits.
+- Tool payloads now include verification guidance so quantitative answers require a follow-up `fetch` on a primary URL.
+- Added a deterministic **claim audit** in the evaluator (approximate numbers, not-disclosed language, tables without proof, numeric claims without research tools) and wired it into the controller so a failed audit triggers one rewrite round before the answer is accepted.
+- Added `tests/accuracy-contract.test.ts` for audit, tiering, and query-planner behavior.
+
+### Telegram presentation
+- Prefer Telegram **rich messages** (`rich_message.markdown`) when the Bot API / grammY build supports them so headings, lists, and tables can render natively instead of HTML approximations.
+- Kept the existing Markdown→Telegram HTML converter and message splitting as a fallback path.
+- Wired `replyFormatted` / `editFormatted` in `src/index.ts` to try rich transport first, then HTML.
+
+### Academic companion
+- Registered the `academic` agent tool for indexed course PDFs and notes (`list`, `search`, `get`, `delete`, `rename`).
+- Stabilized Telegram document ingestion: structured Course/Title labels without requiring a reply-to, decoupled caption metadata, and stronger LightRAG error handling.
+- Raised PDF ingestion reliability (Poppler in the image, large-PDF streaming extraction, clearer diagnostics).
+
+### Connectors and workflows
+- Connector progress labels and GitHub batch push behavior as NallyHermes.
+- Notion and Gmail V2.2 adapters and the hand-built orchestra remaining model-led and adaptive.
+- GitHub repo enumeration fixes and tighter workflow allowlists.
+
+### Bug fixes
+- Restored `src/index.ts` after accidental placeholder writes and completed rich-message wiring.
+- Restored executor / LightRAG wiring after earlier placeholder commits on the branch.
+
+### Documentation
+- Changelog and README updated for alpha.2 (this release).
+
+### Deferred (later polish)
+- P3: GitHub domain tool for exact multi-branch commit counts and similar pinpoint metrics.
+- P4: Stronger proof UX in presentation beyond rich-message support.
+- P5: Golden research eval harness in CI.
+
 ## [2.2.0-alpha.1] - 2026-11-11
 
 ### Bug fixes
