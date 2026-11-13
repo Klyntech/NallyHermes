@@ -1,4 +1,8 @@
 const TELEGRAM_TEXT_LIMIT = 4096;
+/** Rich messages allow up to 32768 UTF-8 characters; keep a safety margin. */
+const TELEGRAM_RICH_LIMIT = 30_000;
+
+export type InputRichMessageMarkdown = { markdown: string };
 
 function escapeHtml(value: string): string {
   return value
@@ -109,7 +113,7 @@ function renderInline(source: string): string {
   return value.replace(/\u0000PART(\d+)\u0000/g, (_match, index: string) => protectedParts[Number(index)] ?? "");
 }
 
-/** Converts the Markdown emitted by the agent into Telegram's supported HTML subset. */
+/** Converts the Markdown emitted by the agent into Telegram's supported HTML subset (legacy fallback). */
 export function markdownToTelegramHtml(markdown: string): string {
   const lines = tablesToFences(markdown).replace(/\r\n?/g, "\n").split("\n");
   const output: string[] = [];
@@ -262,38 +266,102 @@ function splitPlainText(value: string): string[] {
   return parts;
 }
 
-type TelegramSend = (text: string, options?: { parse_mode?: "HTML" }) => Promise<unknown>;
+/** Legacy HTML send path used when rich messages are unavailable. */
+export type TelegramSendHtml = (text: string, options?: { parse_mode?: "HTML" }) => Promise<unknown>;
 
-export async function replyFormatted(reply: TelegramSend, markdown: string): Promise<void> {
+/** Bot API 10.1+ rich message send (native headings, lists, tables via markdown). */
+export type TelegramSendRich = (rich_message: InputRichMessageMarkdown) => Promise<unknown>;
+
+export type TelegramReplyTransport = {
+  /** Prefer this when the Bot API / client supports sendRichMessage. */
+  rich?: TelegramSendRich;
+  /** Always provided; used as fallback and for oversize payloads. */
+  html: TelegramSendHtml;
+};
+
+export type TelegramEditTransport = {
+  rich?: TelegramSendRich;
+  html: TelegramSendHtml;
+};
+
+function normalizeMarkdown(markdown: string): string {
+  const body = markdown.replace(/\r\n?/g, "\n").trim();
+  return body || " ";
+}
+
+async function sendHtmlChunks(send: TelegramSendHtml, markdown: string): Promise<void> {
   const html = markdownToTelegramHtml(markdown);
   try {
     for (const part of splitHtml(html || " ")) {
-      await reply(part, { parse_mode: "HTML" });
+      await send(part, { parse_mode: "HTML" });
     }
   } catch (error) {
     console.warn("Telegram HTML formatting failed; falling back to plain text:", error);
     for (const part of splitPlainText(toPlainText(html) || markdown)) {
-      await reply(escapeHtml(part), { parse_mode: "HTML" });
+      await send(escapeHtml(part), { parse_mode: "HTML" });
     }
   }
 }
 
+/**
+ * Deliver agent Markdown to Telegram.
+ * Prefers Bot API rich messages (`rich_message.markdown`) so headings, lists,
+ * and tables render natively. Falls back to the HTML converter + 4096 splitting.
+ */
+export async function replyFormatted(transport: TelegramReplyTransport | TelegramSendHtml, markdown: string): Promise<void> {
+  const body = normalizeMarkdown(markdown);
+  const send: TelegramReplyTransport =
+    typeof transport === "function" ? { html: transport } : transport;
+
+  if (send.rich && body.length <= TELEGRAM_RICH_LIMIT) {
+    try {
+      await send.rich({ markdown: body });
+      return;
+    } catch (error) {
+      console.warn("Telegram rich message failed; falling back to HTML:", error);
+    }
+  }
+
+  await sendHtmlChunks(send.html, body);
+}
+
+/**
+ * Replace a progress message with the final answer.
+ * Tries rich_message on edit first, then HTML; extra chunks are sent as new messages.
+ */
 export async function editFormatted(
-  edit: TelegramSend,
-  reply: TelegramSend,
+  edit: TelegramEditTransport | TelegramSendHtml,
+  reply: TelegramReplyTransport | TelegramSendHtml,
   markdown: string
 ): Promise<void> {
-  const html = markdownToTelegramHtml(markdown);
+  const body = normalizeMarkdown(markdown);
+  const editTransport: TelegramEditTransport = typeof edit === "function" ? { html: edit } : edit;
+  const replyTransport: TelegramReplyTransport = typeof reply === "function" ? { html: reply } : reply;
+
+  if (editTransport.rich && body.length <= TELEGRAM_RICH_LIMIT) {
+    try {
+      await editTransport.rich({ markdown: body });
+      return;
+    } catch (error) {
+      console.warn("Telegram rich message edit failed; falling back to HTML:", error);
+    }
+  }
+
+  const html = markdownToTelegramHtml(body);
   const parts = splitHtml(html || " ");
   try {
-    await edit(parts[0]!, { parse_mode: "HTML" });
-    for (const part of parts.slice(1)) await reply(part, { parse_mode: "HTML" });
+    await editTransport.html(parts[0]!, { parse_mode: "HTML" });
+    for (const part of parts.slice(1)) {
+      await replyTransport.html(part, { parse_mode: "HTML" });
+    }
   } catch (error) {
     console.warn("Telegram HTML edit failed; falling back to plain text:", error);
-    const plainParts = splitPlainText(toPlainText(html) || markdown);
+    const plainParts = splitPlainText(toPlainText(html) || body);
     if (plainParts.length) {
-      await edit(escapeHtml(plainParts[0]!), { parse_mode: "HTML" });
-      for (const part of plainParts.slice(1)) await reply(escapeHtml(part), { parse_mode: "HTML" });
+      await editTransport.html(escapeHtml(plainParts[0]!), { parse_mode: "HTML" });
+      for (const part of plainParts.slice(1)) {
+        await replyTransport.html(escapeHtml(part), { parse_mode: "HTML" });
+      }
     }
   }
 }

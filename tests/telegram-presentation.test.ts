@@ -28,7 +28,7 @@ test("does not create links for unsafe URL schemes", () => {
   assert.equal(html, "[click](javascript:alert(1))");
 });
 
-test("markdown tables become aligned preformatted text", () => {
+test("markdown tables become aligned preformatted text in HTML fallback", () => {
   const html = markdownToTelegramHtml(
     "| Name | Status |\n" +
     "| --- | --- |\n" +
@@ -53,4 +53,33 @@ test("splits long Telegram replies without exceeding the message limit", async (
   assert.ok(sent.length > 1);
   assert.ok(sent.every((chunk) => chunk.length <= 4096));
   assert.equal(sent.join(""), "x".repeat(10_000));
+});
+
+test("prefers rich message transport when provided", async () => {
+  const richCalls: Array<{ markdown: string }> = [];
+  const htmlCalls: string[] = [];
+  const md = "# Title\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n- item";
+  await replyFormatted(
+    {
+      rich: async (payload) => { richCalls.push(payload); },
+      html: async (text) => { htmlCalls.push(text); }
+    },
+    md
+  );
+  assert.equal(richCalls.length, 1);
+  assert.equal(richCalls[0]!.markdown, md);
+  assert.equal(htmlCalls.length, 0);
+});
+
+test("falls back to HTML when rich transport rejects", async () => {
+  const htmlCalls: string[] = [];
+  await replyFormatted(
+    {
+      rich: async () => { throw new Error("RICH_MESSAGE_UNSUPPORTED"); },
+      html: async (text) => { htmlCalls.push(text); }
+    },
+    "**hello**"
+  );
+  assert.ok(htmlCalls.length >= 1);
+  assert.match(htmlCalls[0]!, /<b>hello<\/b>/);
 });
