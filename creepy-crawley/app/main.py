@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from typing import Literal
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from .config import get_settings
 
+logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI(
@@ -48,9 +50,22 @@ class SearchResponse(BaseModel):
 def require_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> None:
     expected = get_settings().api_key.strip()
     if not expected or expected == "change-me-to-a-long-random-secret":
+        logger.error("API key auth unavailable: configured_key_present=%s", bool(expected))
         raise HTTPException(status_code=503, detail="API key is not configured. Set API_KEY before using the search endpoint.")
+
     supplied = credentials.credentials.strip() if credentials else ""
-    if not secrets.compare_digest(supplied, expected):
+    matches = bool(supplied) and secrets.compare_digest(supplied, expected)
+    if not matches:
+        # Never log either key; lengths and presence are enough to isolate header/config mismatches.
+        logger.warning(
+            "API key auth failed: bearer_credential_present=%s credential_scheme=%s "
+            "supplied_length=%d configured_key_present=%s expected_length=%d",
+            bool(supplied),
+            credentials.scheme if credentials else "missing",
+            len(supplied),
+            bool(expected),
+            len(expected),
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
 
