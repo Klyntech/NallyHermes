@@ -46,10 +46,10 @@ class SearchResponse(BaseModel):
 
 
 def require_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> None:
-    expected = get_settings().api_key
+    expected = get_settings().api_key.strip()
     if not expected or expected == "change-me-to-a-long-random-secret":
         raise HTTPException(status_code=503, detail="API key is not configured. Set API_KEY before using the search endpoint.")
-    supplied = credentials.credentials if credentials else ""
+    supplied = credentials.credentials.strip() if credentials else ""
     if not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
