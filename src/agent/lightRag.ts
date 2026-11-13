@@ -14,19 +14,45 @@ function serviceHeaders(): Record<string, string> {
   };
 }
 
-async function request<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  if (!config.LIGHTRAG_ENABLED) throw new Error("LightRAG is disabled.");
-  const response = await fetch(new URL(path, config.LIGHTRAG_URL), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.LIGHTRAG_REQUEST_TIMEOUT_MS)
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 500);
-    throw new Error(`LightRAG request failed (${response.status}): ${detail}`);
+function describeFetchFailure(cause: unknown, path: string): string {
+  if (cause instanceof Error) {
+    const name = cause.name;
+    const message = cause.message || "unknown error";
+    if (name === "TimeoutError" || /aborted|timeout/i.test(message)) {
+      return `LightRAG timed out calling ${path} (limit ${Math.round(config.LIGHTRAG_REQUEST_TIMEOUT_MS / 1000)}s). The memory service may be overloaded or unreachable.`;
+    }
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|network/i.test(message) || name === "TypeError") {
+      return `LightRAG is unreachable at ${config.LIGHTRAG_URL}${path}: ${message}. Check that the memory service is running and LIGHTRAG_URL is correct.`;
+    }
+    return `LightRAG request to ${path} failed: ${message}`;
   }
-  return response.json() as Promise<T>;
+  return `LightRAG request to ${path} failed for an unknown reason.`;
+}
+
+async function request<T>(path: string, body: Record<string, unknown>, attempt = 1): Promise<T> {
+  if (!config.LIGHTRAG_ENABLED) throw new Error("LightRAG is disabled.");
+  try {
+    const response = await fetch(new URL(path, config.LIGHTRAG_URL), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(config.LIGHTRAG_REQUEST_TIMEOUT_MS)
+    });
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 500);
+      throw new Error(`LightRAG request failed (${response.status}): ${detail}`);
+    }
+    return response.json() as Promise<T>;
+  } catch (cause) {
+    // One retry for transient network failures only (not HTTP 4xx/5xx from a completed response).
+    const isHttpError = cause instanceof Error && /LightRAG request failed \(\d+\)/.test(cause.message);
+    if (!isHttpError && attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      return request<T>(path, body, attempt + 1);
+    }
+    if (cause instanceof Error && cause.message.startsWith("LightRAG")) throw cause;
+    throw new Error(describeFetchFailure(cause, path));
+  }
 }
 
 export async function indexMemory(

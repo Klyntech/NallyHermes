@@ -3,7 +3,7 @@
  *
  * Goal: decouple caption / label capture from upload completion so a document
  * can be stored from the raw file while title, course, and other context can
- * still be attached from the same message caption or a short follow-up reply.
+ * still be attached from the same message caption or a short follow-up message.
  */
 
 export interface IngestionMetadata {
@@ -21,6 +21,18 @@ const NOTES_RE = /(?:^|\|\s*|\n\s*)notes?\s*[:=]\s*([^|\n]+)/i;
 function cleanSegment(value: string | undefined): string | undefined {
   const trimmed = value?.trim().replace(/\s+/g, " ");
   return trimmed && trimmed.length > 0 ? trimmed.slice(0, 240) : undefined;
+}
+
+/**
+ * True when the message is clearly a document-label instruction, not ordinary chat.
+ * Used so a follow-up without Telegram reply-to still enriches the latest pending PDF.
+ */
+export function looksLikeStructuredLabel(text: string | undefined | null): boolean {
+  const raw = (text ?? "").trim();
+  if (!raw || raw.length > 500) return false;
+  const hasCourse = COURSE_RE.test(raw);
+  const hasTitle = TITLE_RE.test(raw);
+  return hasCourse || hasTitle;
 }
 
 /**
@@ -68,8 +80,8 @@ export function formatIngestionGuidance(fileName?: string): string {
   const nameHint = fileName ? ` for “${fileName}”` : "";
   return [
     `I stored the PDF${nameHint}.`,
-    "To label it properly, reply to this message with:",
+    "To label it, send (or reply with):",
     "`Course: Tort | Title: Negligence lecture 3`",
-    "Or send a short free-form title as the reply."
+    "A short free-form title also works."
   ].join("\n");
 }
