@@ -3,6 +3,7 @@ export type ToolProgressEvent =
   | { type: "tool_progress"; tool: "fetch"; stage: "fetch_redirect" | "fetch_reading" }
   | { type: "tool_progress"; tool: "file_io"; stage: "file_processing"; operation: string; path: string }
   | { type: "tool_progress"; tool: "memory"; stage: "memory_indexing" | "memory_retrieving" }
+  | { type: "tool_progress"; tool: "academic"; stage: "academic_list" | "academic_search" | "academic_get" }
   | { type: "tool_progress"; tool: "schedule"; stage: "schedule_saving" };
 
 export type ToolProgressReporter = (event: ToolProgressEvent) => Promise<void> | void;
@@ -64,6 +65,14 @@ function toolStatus(tool: string, args: Record<string, unknown>): string {
       };
       return labels[String(args.operation)] ?? "Working with memory…";
     }
+    case "academic": {
+      const labels: Record<string, string> = {
+        list: "Listing academic documents…",
+        search: "Searching academic library…",
+        get: "Opening academic document…"
+      };
+      return labels[String(args.operation)] ?? "Working with academic library…";
+    }
     case "schedule": {
       const labels: Record<string, string> = {
         create: "Setting up a reminder…", list: "Checking reminders…",
@@ -121,6 +130,15 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
         }
         case "memory":
           return { text: event.stage === "memory_indexing" ? "Adding memory to semantic search…" : "Searching related memories…" };
+        case "academic":
+          return {
+            text:
+              event.stage === "academic_list"
+                ? "Listing academic documents…"
+                : event.stage === "academic_get"
+                  ? "Opening academic document…"
+                  : "Searching academic library…"
+          };
         case "schedule":
           return { text: "Saving reminder details…" };
         default:
