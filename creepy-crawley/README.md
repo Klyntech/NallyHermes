@@ -26,9 +26,9 @@ Health: `curl http://127.0.0.1:8000/health`
 ## Search
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/search \\
-  -H 'Authorization: Bearer YOUR_API_KEY' \\
-  -H 'Content-Type: application/json' \\
+curl -X POST http://127.0.0.1:8000/v1/search \
+  -H 'Authorization: Bearer YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
   -d '{"query":"latest AI research","max_results":8,"topic":"general"}'
 ```
 
