@@ -1,4 +1,5 @@
 import { config } from "../../config.js";
+import { fetchVoiceProvider } from "./resilience.js";
 
 export type ElevenLabsSpeech = {
   audio: Buffer;
@@ -35,7 +36,7 @@ export async function synthesizeWithElevenLabs(
     throw new Error("Nothing to speak.");
   }
 
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+  const response = await fetchVoiceProvider("elevenlabs", `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: {
       "xi-api-key": config.ELEVENLABS_API_KEY,
@@ -53,8 +54,10 @@ export async function synthesizeWithElevenLabs(
         use_speaker_boost: true,
         speed
       }
-    }),
-    signal: AbortSignal.timeout(config.VOICE_TTS_TIMEOUT_MS)
+    })
+  }, {
+    retries: config.VOICE_PROVIDER_RETRIES,
+    timeoutMs: config.VOICE_TTS_TIMEOUT_MS
   });
 
   if (!response.ok) {

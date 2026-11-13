@@ -1,4 +1,5 @@
 import { config } from "../../config.js";
+import { fetchVoiceProvider } from "./resilience.js";
 
 export type DeepgramTranscript = {
   text: string;
@@ -31,14 +32,16 @@ export async function transcribeWithDeepgram(
     language
   });
 
-  const response = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
+  const response = await fetchVoiceProvider("deepgram", `https://api.deepgram.com/v1/listen?${params}`, {
     method: "POST",
     headers: {
       Authorization: `Token ${config.DEEPGRAM_API_KEY}`,
       "Content-Type": options?.mimeType ?? "audio/ogg"
     },
-    body: new Uint8Array(audio),
-    signal: AbortSignal.timeout(config.VOICE_STT_TIMEOUT_MS)
+    body: new Uint8Array(audio)
+  }, {
+    retries: config.VOICE_PROVIDER_RETRIES,
+    timeoutMs: config.VOICE_STT_TIMEOUT_MS
   });
 
   if (!response.ok) {

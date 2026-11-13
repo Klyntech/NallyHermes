@@ -6,6 +6,7 @@ import { users } from "./db/schema.js";
 import { appendConversationExchange, getOrCreateConversation, loadConversationHistory } from "./db/conversationStore.js";
 import { respond } from "./agent/orchestrator.js";
 import { isVoiceConfigured, speechToText, prepareSpokenDelivery } from "./agent/voice/index.js";
+import { normalizeTelegramAudio, readResponseWithLimit } from "./agent/voice/audio.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { startWorkflowWorker } from "./agent/workflows.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
@@ -23,6 +24,8 @@ const histories = new Map<string, ChatCompletionMessageParam[]>();
 const MAX_ACTIVE_CONVERSATIONS = 1_000;
 const processedDocumentUpdates = new Map<string, number>();
 const DOCUMENT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1_000;
+const processedVoiceUpdates = new Map<string, number>();
+const VOICE_DEDUPE_TTL_MS = 24 * 60 * 60 * 1_000;
 
 type PendingLabel = { documentId: string; telegramId: string; fileName?: string; expiresAt: number; pendingKey: string };
 
@@ -31,6 +34,11 @@ const pendingIngestionLabels = new Map<string, PendingLabel>();
 /** Most recent pending document per chat:user — used when the user labels without tapping Reply. */
 const latestPendingByUser = new Map<string, PendingLabel>();
 const PENDING_LABEL_TTL_MS = 2 * 60 * 60 * 1_000;
+function pruneVoiceUpdates(now = Date.now()): void {
+  for (const [key, timestamp] of processedVoiceUpdates) {
+    if (timestamp + VOICE_DEDUPE_TTL_MS <= now) processedVoiceUpdates.delete(key);
+  }
+}
 
 function prunePendingLabels(now = Date.now()): void {
   for (const [key, entry] of pendingIngestionLabels) {
@@ -290,6 +298,11 @@ bot.on("message:document", async (ctx) => {
 bot.on(["message:voice", "message:audio"], async (ctx) => {
   if (!ctx.from) return;
 
+  pruneVoiceUpdates();
+  const voiceUpdateKey = `${ctx.chat.id}:${ctx.message.message_id}`;
+  if (processedVoiceUpdates.has(voiceUpdateKey)) return;
+  processedVoiceUpdates.set(voiceUpdateKey, Date.now());
+
   if (!isVoiceConfigured()) {
     await ctx.reply("Voice is not enabled on this bot yet. Send a text message, or ask Clinton to set VOICE_ENABLED with Deepgram and ElevenLabs keys.");
     return;
@@ -299,6 +312,12 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
   const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
   const voice = ctx.message.voice ?? ctx.message.audio;
   if (!voice) return;
+
+  const declaredDurationSec = ctx.message.voice?.duration ?? ctx.message.audio?.duration;
+  if (declaredDurationSec !== undefined && declaredDurationSec > config.VOICE_MAX_DURATION_SEC) {
+    await ctx.reply(`That voice note is longer than the ${config.VOICE_MAX_DURATION_SEC}-second limit. Try a shorter one.`);
+    return;
+  }
 
   if (voice.file_size && voice.file_size > config.VOICE_MAX_AUDIO_BYTES) {
     await ctx.reply("That voice note is too large for me to transcribe. Try a shorter one.");
@@ -323,16 +342,19 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
         await ctx.api.editMessageText(ctx.chat.id, statusId, "I could not download that voice note from Telegram.");
         return;
       }
-      const audio = Buffer.from(await audioRes.arrayBuffer());
-      if (audio.byteLength > config.VOICE_MAX_AUDIO_BYTES) {
-        await ctx.api.editMessageText(ctx.chat.id, statusId, "That voice note is too large for me to transcribe.");
+      const downloaded = await readResponseWithLimit(audioRes, config.VOICE_MAX_AUDIO_BYTES);
+      const normalized = await normalizeTelegramAudio(downloaded, {
+        maxInputBytes: config.VOICE_MAX_AUDIO_BYTES,
+        maxOutputBytes: config.VOICE_MAX_AUDIO_BYTES * 2,
+        timeoutMs: config.VOICE_AUDIO_PROCESS_TIMEOUT_MS
+      });
+      if (normalized.durationSec !== null && normalized.durationSec > config.VOICE_MAX_DURATION_SEC) {
+        await ctx.api.editMessageText(ctx.chat.id, statusId, `That voice note is longer than the ${config.VOICE_MAX_DURATION_SEC}-second limit. Try a shorter one.`);
         return;
       }
-
-      const mime = ctx.message.voice ? "audio/ogg" : (ctx.message.audio?.mime_type ?? "audio/mpeg");
       let transcriptText: string;
       try {
-        const transcript = await speechToText(audio, mime);
+        const transcript = await speechToText(normalized.audio, normalized.mimeType);
         transcriptText = transcript.text;
       } catch (error) {
         console.error("STT failed:", error);

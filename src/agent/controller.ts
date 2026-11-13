@@ -510,7 +510,7 @@ export async function runAgent(
       notion: Boolean(config.NOTION_TOKEN),
       gmail: Boolean(config.GMAIL_REFRESH_TOKEN),
       calendar: Boolean(config.GOOGLE_CALENDAR_ENABLED),
-      voice: Boolean(config.VOICE_ENABLED && config.DEEPGRAM_API_KEY && config.ELEVENLABS_API_KEY)
+      voice: Boolean(config.VOICE_ENABLED && config.DEEPGRAM_API_KEY && config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID)
     }
   });
   const prepared = await prepareRequest(history, userMessage, telegramId);

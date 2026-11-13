@@ -220,7 +220,7 @@ export const SPOKEN_STYLE_GUIDANCE = [
   "The user is on a spoken channel. You must emit TWO parts in this exact layout:",
   "",
   "===SPOKEN===",
-  "<what ElevenLabs will read aloud>",
+  "<what ElevenLabs will turn into speech and read aloud>",
   "===TEXT===",
   "<what Telegram shows as text only — sources, links, tables, ids, anything that should not be spoken>",
   "",

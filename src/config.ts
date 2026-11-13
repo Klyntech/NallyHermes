@@ -65,8 +65,11 @@ const envSchema = z.object({
   ELEVENLABS_MODEL_ID: z.string().default("eleven_multilingual_v2"),
   VOICE_STT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
   VOICE_TTS_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
+  VOICE_PROVIDER_RETRIES: z.coerce.number().int().min(0).max(4).default(2),
   VOICE_TTS_MAX_CHARS: z.coerce.number().int().min(200).max(5_000).default(900),
   VOICE_MAX_AUDIO_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(4_000_000),
+  VOICE_MAX_DURATION_SEC: z.coerce.number().int().min(1).max(900).default(180),
+  VOICE_AUDIO_PROCESS_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
   /** Speaking rate for ElevenLabs (1.0 = normal). Default 0.9 = 10% slower. */
   VOICE_SPEECH_SPEED: z.coerce.number().min(0.7).max(1.2).default(0.9),
   VOICE_STABILITY: z.coerce.number().min(0).max(1).default(0.45),
@@ -91,20 +94,21 @@ const envSchema = z.object({
     });
   }
 
-  if (!env.LIGHTRAG_ENABLED) return;
-  if (!env.LIGHTRAG_API_TOKEN || env.LIGHTRAG_API_TOKEN.length < 32) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["LIGHTRAG_API_TOKEN"],
-      message: "LIGHTRAG_API_TOKEN must contain at least 32 characters when LightRAG is enabled."
-    });
-  }
-  if (!env.LIGHTRAG_LLM_MODEL?.trim()) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["LIGHTRAG_LLM_MODEL"],
-      message: "LIGHTRAG_LLM_MODEL is required when LightRAG is enabled."
-    });
+  if (env.LIGHTRAG_ENABLED) {
+    if (!env.LIGHTRAG_API_TOKEN || env.LIGHTRAG_API_TOKEN.length < 32) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["LIGHTRAG_API_TOKEN"],
+        message: "LIGHTRAG_API_TOKEN must contain at least 32 characters when LightRAG is enabled."
+      });
+    }
+    if (!env.LIGHTRAG_LLM_MODEL?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["LIGHTRAG_LLM_MODEL"],
+        message: "LIGHTRAG_LLM_MODEL is required when LightRAG is enabled."
+      });
+    }
   }
 
   if (env.VOICE_ENABLED) {

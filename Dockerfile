@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-venv build-essential poppler-utils \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-venv build-essential poppler-utils ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
