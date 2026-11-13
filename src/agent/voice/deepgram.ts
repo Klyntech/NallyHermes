@@ -37,7 +37,7 @@ export async function transcribeWithDeepgram(
       Authorization: `Token ${config.DEEPGRAM_API_KEY}`,
       "Content-Type": options?.mimeType ?? "audio/ogg"
     },
-    body: audio,
+    body: new Uint8Array(audio),
     signal: AbortSignal.timeout(config.VOICE_STT_TIMEOUT_MS)
   });
 

@@ -346,8 +346,7 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
 
       await ctx.api.editMessageText(ctx.chat.id, statusId, "Working…");
 
-      const conversation = await getOrCreateConversation(telegramId, ctx.chat.id);
-      const conversationId = conversation.id;
+      const conversationId = await getOrCreateConversation(telegramId, String(ctx.chat.id));
       const persistedHistory = await loadConversationHistory(conversationId);
       const history = persistedHistory.length ? persistedHistory : getHistory(historyKey);
 

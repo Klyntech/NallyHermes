@@ -96,7 +96,7 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
       ? "spoken/simple path; skip planner for lower latency"
       : "simple ask; direct adaptive loop",
     usePlanner: false,
-    complexity: voiceBias && complexity === "complex" ? complexity : complexity
+    complexity
   };
 }
 
