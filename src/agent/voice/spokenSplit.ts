@@ -49,11 +49,11 @@ export function splitSpokenChannelReply(raw: string): SpokenChannelReply {
   const textIdx = body.search(TEXT_MARKER);
 
   if (spokenIdx >= 0 && textIdx >= 0 && textIdx > spokenIdx) {
-    const spokenBlock = body
+    const spokenPart = body
       .slice(spokenIdx)
       .replace(SPOKEN_MARKER, "")
-      .split(TEXT_MARKER)[0]
-      .trim();
+      .split(TEXT_MARKER)[0];
+    const spokenBlock = (spokenPart ?? "").trim();
     const textBlock = body.slice(textIdx).replace(TEXT_MARKER, "").trim();
     const spoken = stripUnspeakable(spokenBlock) || "Here is the answer in the text message.";
     const text = textBlock
