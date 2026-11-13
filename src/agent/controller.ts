@@ -8,6 +8,8 @@ import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor
 import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
+import { buildAdaptiveContextPack, formatContextPackForModel } from "./contextPack.js";
+import { composePartialAnswer } from "./partial.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -495,12 +497,36 @@ export async function runAgent(
   };
 
   beginPhase(state, "context");
+  const pack = await buildAdaptiveContextPack({
+    telegramId,
+    userMessage,
+    channel: state.channel,
+    responseStyle: state.responseStyle,
+    latencyBudgetMs: Math.max(0, state.budget.deadlineAt - Date.now()),
+    complexityHint: route.complexity,
+    connectors: {
+      tavily: Boolean(config.TAVILY_API_KEY),
+      github: Boolean(config.GITHUB_TOKEN),
+      notion: Boolean(config.NOTION_TOKEN),
+      gmail: Boolean(config.GMAIL_REFRESH_TOKEN),
+      calendar: Boolean(config.GOOGLE_CALENDAR_ENABLED),
+      voice: Boolean(config.VOICE_ENABLED && config.DEEPGRAM_API_KEY && config.ELEVENLABS_API_KEY)
+    }
+  });
   const prepared = await prepareRequest(history, userMessage, telegramId);
   const messages = [...prepared.messages];
+  messages.push({ role: "system", content: formatContextPackForModel(pack) });
   if (state.responseStyle === "spoken") {
     messages.push({ role: "system", content: SPOKEN_STYLE_GUIDANCE });
   }
   endPhase(state, "context");
+  console.info("orchestra.context_pack", JSON.stringify({
+    request_id: state.requestId,
+    topic: pack.activeTopic,
+    risk: pack.risk,
+    entities: pack.entities.length,
+    connectors: pack.connectors.filter((c) => c.available).map((c) => c.id)
+  }));
 
   await reportProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
@@ -613,10 +639,25 @@ export async function runAgent(
   endPhase(state, "execution");
   beginPhase(state, "response");
   await reportProgress({ type: "verifying" });
-  const answer = await synthesizeReport(messages, [], 0, stopReason);
+  const lastAssistant = [...messages].reverse().find(
+    (m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim()
+  );
+  let answer: string;
+  try {
+    answer = await synthesizeReport(messages, [], 0, stopReason);
+  } catch (error) {
+    console.warn("synthesizeReport failed, using partial composer:", error);
+    answer = composePartialAnswer({
+      reason: stopReason,
+      lastAssistantNote: typeof lastAssistant?.content === "string" ? lastAssistant.content : undefined
+    });
+  }
+  if (!answer?.trim()) {
+    answer = composePartialAnswer({ reason: stopReason });
+  }
   endPhase(state, "response");
-  completeExecution(state, "completed");
-  console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
+  completeExecution(state, "partial");
+  console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason, stop: stopReason }));
   await reportProgress({ type: "response_ready" });
   return answer;
 }

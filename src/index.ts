@@ -1,10 +1,11 @@
 import { createServer } from "node:http";
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
 import { appendConversationExchange, getOrCreateConversation, loadConversationHistory } from "./db/conversationStore.js";
 import { respond } from "./agent/orchestrator.js";
+import { isVoiceConfigured, speechToText, textToSpeech } from "./agent/voice/index.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { startWorkflowWorker } from "./agent/workflows.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
@@ -283,6 +284,110 @@ bot.on("message:document", async (ctx) => {
     console.error("Telegram academic ingestion failed:", error);
     await ctx.reply(error instanceof Error ? `I couldn't ingest that PDF: ${error.message}` : "I couldn't ingest that PDF.");
   }
+});
+
+
+bot.on(["message:voice", "message:audio"], async (ctx) => {
+  if (!ctx.from) return;
+
+  if (!isVoiceConfigured()) {
+    await ctx.reply("Voice is not enabled on this bot yet. Send a text message, or ask Clinton to set VOICE_ENABLED with Deepgram and ElevenLabs keys.");
+    return;
+  }
+
+  const telegramId = String(ctx.from.id);
+  const historyKey = conversationKey(ctx.chat.id, ctx.from.id);
+  const voice = ctx.message.voice ?? ctx.message.audio;
+  if (!voice) return;
+
+  if (voice.file_size && voice.file_size > config.VOICE_MAX_AUDIO_BYTES) {
+    await ctx.reply("That voice note is too large for me to transcribe. Try a shorter one.");
+    return;
+  }
+
+  await serializeConversation(historyKey, async () => {
+    let statusId: number | undefined;
+    try {
+      const status = await ctx.reply("Listening…");
+      statusId = status.message_id;
+      await ctx.replyWithChatAction("typing");
+
+      const file = await ctx.getFile();
+      if (!file.file_path) {
+        await ctx.api.editMessageText(ctx.chat.id, statusId, "I could not download that voice note.");
+        return;
+      }
+      const fileUrl = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+      const audioRes = await fetch(fileUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!audioRes.ok) {
+        await ctx.api.editMessageText(ctx.chat.id, statusId, "I could not download that voice note from Telegram.");
+        return;
+      }
+      const audio = Buffer.from(await audioRes.arrayBuffer());
+      if (audio.byteLength > config.VOICE_MAX_AUDIO_BYTES) {
+        await ctx.api.editMessageText(ctx.chat.id, statusId, "That voice note is too large for me to transcribe.");
+        return;
+      }
+
+      const mime = ctx.message.voice ? "audio/ogg" : (ctx.message.audio?.mime_type ?? "audio/mpeg");
+      let transcriptText: string;
+      try {
+        const transcript = await speechToText(audio, mime);
+        transcriptText = transcript.text;
+      } catch (error) {
+        console.error("STT failed:", error);
+        await ctx.api.editMessageText(
+          ctx.chat.id,
+          statusId,
+          "I could not hear that clearly. Please try again or send it as text."
+        );
+        return;
+      }
+
+      await ctx.api.editMessageText(ctx.chat.id, statusId, "Working…");
+
+      const conversation = await getOrCreateConversation(telegramId, ctx.chat.id);
+      const conversationId = conversation.id;
+      const persistedHistory = await loadConversationHistory(conversationId);
+      const history = persistedHistory.length ? persistedHistory : getHistory(historyKey);
+
+      const answer = await respond(history, transcriptText, telegramId, undefined, undefined, undefined, {
+        channel: "voice",
+        responseStyle: "spoken",
+        conversationId
+      });
+
+      await appendConversationExchange(conversationId, transcriptText, answer);
+      history.push({ role: "user", content: transcriptText }, { role: "assistant", content: answer });
+      saveHistory(historyKey, history);
+
+      try {
+        const speech = await textToSpeech(answer);
+        await ctx.api.editMessageText(
+          ctx.chat.id,
+          statusId,
+          `Heard: “${transcriptText.length > 120 ? transcriptText.slice(0, 117) + "…" : transcriptText}”`
+        );
+        await ctx.replyWithAudio(new InputFile(speech.audio, `nally-reply.${speech.extension}`), {
+          caption: answer.length > 900 ? answer.slice(0, 897) + "…" : answer
+        });
+      } catch (error) {
+        console.error("TTS failed:", error);
+        await ctx.api.editMessageText(ctx.chat.id, statusId, answer.slice(0, 3500) || "Done, but speech playback failed.");
+      }
+    } catch (error) {
+      console.error("Voice message handling failed:", error);
+      if (statusId !== undefined) {
+        try {
+          await ctx.api.editMessageText(ctx.chat.id, statusId, "Something went wrong with that voice note. Try text for now.");
+        } catch {
+          /* ignore */
+        }
+      } else {
+        await ctx.reply("Something went wrong with that voice note. Try text for now.");
+      }
+    }
+  });
 });
 
 bot.on("message:text", async (ctx) => {

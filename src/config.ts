@@ -54,7 +54,19 @@ const envSchema = z.object({
   AGENT_MAX_PARALLEL_TOOL_CALLS: z.coerce.number().int().min(1).max(20).default(5),
   AGENT_PLAN_TIMEOUT_MS: z.coerce.number().int().min(30000).max(1800000).default(480000),
   AGENT_MODEL_TIMEOUT_MS: z.coerce.number().int().min(10000).max(300000).default(120000),
-  AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2)
+  AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
+  // Voice (Deepgram STT + ElevenLabs TTS). Disabled unless VOICE_ENABLED=true.
+  VOICE_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  DEEPGRAM_API_KEY: z.string().optional(),
+  DEEPGRAM_MODEL: z.string().default("nova-2"),
+  DEEPGRAM_LANGUAGE: z.string().default("en"),
+  ELEVENLABS_API_KEY: z.string().optional(),
+  ELEVENLABS_VOICE_ID: z.string().optional(),
+  ELEVENLABS_MODEL_ID: z.string().default("eleven_multilingual_v2"),
+  VOICE_STT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
+  VOICE_TTS_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(60_000),
+  VOICE_TTS_MAX_CHARS: z.coerce.number().int().min(200).max(5_000).default(900),
+  VOICE_MAX_AUDIO_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(4_000_000)
 }).superRefine((env, context) => {
   if (new URL(env.WEBHOOK_URL).protocol !== "https:") {
     context.addIssue({
@@ -88,6 +100,30 @@ const envSchema = z.object({
       path: ["LIGHTRAG_LLM_MODEL"],
       message: "LIGHTRAG_LLM_MODEL is required when LightRAG is enabled."
     });
+  }
+
+  if (env.VOICE_ENABLED) {
+    if (!env.DEEPGRAM_API_KEY?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DEEPGRAM_API_KEY"],
+        message: "DEEPGRAM_API_KEY is required when VOICE_ENABLED is true."
+      });
+    }
+    if (!env.ELEVENLABS_API_KEY?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ELEVENLABS_API_KEY"],
+        message: "ELEVENLABS_API_KEY is required when VOICE_ENABLED is true."
+      });
+    }
+    if (!env.ELEVENLABS_VOICE_ID?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ELEVENLABS_VOICE_ID"],
+        message: "ELEVENLABS_VOICE_ID is required when VOICE_ENABLED is true."
+      });
+    }
   }
 });
 
