@@ -8,7 +8,7 @@ import { respond } from "./agent/orchestrator.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
 import { startWorkflowWorker } from "./agent/workflows.js";
 import { editFormatted, replyFormatted } from "./telegram/presentation.js";
-import { formatIngestionGuidance, parseIngestionCaption } from "./telegram/ingestionMeta.js";
+import { formatIngestionGuidance, looksLikeStructuredLabel, parseIngestionCaption } from "./telegram/ingestionMeta.js";
 import { benchmarkRerankers } from "./agent/lightRag.js";
 import { displayProgress } from "./agent/progress.js";
 import { getDefaultTimezone, getUserTimezone, setUserTimezone } from "./agent/clock.js";
@@ -23,14 +23,25 @@ const MAX_ACTIVE_CONVERSATIONS = 1_000;
 const processedDocumentUpdates = new Map<string, number>();
 const DOCUMENT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1_000;
 
-/** Maps bot reply message_id → document id so a user can reply with labels after upload. */
-const pendingIngestionLabels = new Map<string, { documentId: string; telegramId: string; fileName?: string; expiresAt: number }>();
+type PendingLabel = { documentId: string; telegramId: string; fileName?: string; expiresAt: number; pendingKey: string };
+
+/** Maps bot confirmation message_id → document so reply-to labeling works. */
+const pendingIngestionLabels = new Map<string, PendingLabel>();
+/** Most recent pending document per chat:user — used when the user labels without tapping Reply. */
+const latestPendingByUser = new Map<string, PendingLabel>();
 const PENDING_LABEL_TTL_MS = 2 * 60 * 60 * 1_000;
 
 function prunePendingLabels(now = Date.now()): void {
   for (const [key, entry] of pendingIngestionLabels) {
     if (entry.expiresAt <= now) pendingIngestionLabels.delete(key);
   }
+  for (const [key, entry] of latestPendingByUser) {
+    if (entry.expiresAt <= now) latestPendingByUser.delete(key);
+  }
+}
+
+function userPendingKey(chatId: number, telegramId: string): string {
+  return `${chatId}:${telegramId}`;
 }
 
 function conversationKey(chatId: number, userId: number): string {
@@ -74,6 +85,28 @@ async function serializeConversation<T>(key: string, operation: () => Promise<T>
   }
 }
 
+async function applyPendingLabel(
+  pending: PendingLabel,
+  labelText: string
+): Promise<{ ok: true; title: string; course: string | null } | { ok: false; error: string }> {
+  try {
+    const meta = parseIngestionCaption(labelText, pending.fileName);
+    const updated = await updateAcademicDocumentMetadata(pending.telegramId, pending.documentId, {
+      title: meta.title,
+      course: meta.course ?? null
+    });
+    pendingIngestionLabels.delete(pending.pendingKey);
+    for (const [key, entry] of latestPendingByUser) {
+      if (entry.documentId === pending.documentId) latestPendingByUser.delete(key);
+    }
+    if (!updated) return { ok: false, error: "I couldn't find that document to update. Please send the PDF again with a caption." };
+    return { ok: true, title: updated.title, course: updated.course };
+  } catch (error) {
+    console.error("Ingestion metadata enrichment failed:", error);
+    return { ok: false, error: error instanceof Error ? `I couldn't update those labels: ${error.message}` : "I couldn't update those labels." };
+  }
+}
+
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
 const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
@@ -87,7 +120,7 @@ bot.command("help", async (ctx) => {
 });
 
 bot.command("ingest", async (ctx) => {
-  await ctx.reply("Send me a PDF as a document. Caption it with `Course: Tort | Title: Negligence lecture 3`, or send the file first and reply to my confirmation with the same labels.");
+  await ctx.reply("Send me a PDF as a document. Caption it with `Course: Tort | Title: Negligence lecture 3`, or send the file first and then send the same labels (reply optional).");
 });
 
 bot.command("timezone", async (ctx) => {
@@ -194,7 +227,7 @@ bot.on("message:document", async (ctx) => {
     if (bytes.length > config.INGESTION_MAX_UPLOAD_BYTES) throw new Error(`That PDF is larger than the ${Math.round(config.INGESTION_MAX_UPLOAD_BYTES / 1_000_000)} MB ingestion limit.`);
 
     // Caption is optional at upload time. Metadata is parsed separately so a
-    // follow-up reply can still label the document after the file is stored.
+    // follow-up message can still label the document after the file is stored.
     const meta = parseIngestionCaption(ctx.message.caption, document.file_name);
     const saved = await ingestAcademicDocument(telegramId, {
       title: meta.title,
@@ -212,12 +245,15 @@ bot.on("message:document", async (ctx) => {
         `Ingested using the filename (“${meta.title}”). Status: ${saved.status}.${saved.error ? `\n\nDetail: ${saved.error}` : ""}\n\n${formatIngestionGuidance(document.file_name)}`
       );
       prunePendingLabels();
-      pendingIngestionLabels.set(`${ctx.chat.id}:${guidance.message_id}`, {
+      const pending: PendingLabel = {
         documentId: saved.id,
         telegramId,
         fileName: document.file_name ?? undefined,
-        expiresAt: Date.now() + PENDING_LABEL_TTL_MS
-      });
+        expiresAt: Date.now() + PENDING_LABEL_TTL_MS,
+        pendingKey: `${ctx.chat.id}:${guidance.message_id}`
+      };
+      pendingIngestionLabels.set(pending.pendingKey, pending);
+      latestPendingByUser.set(userPendingKey(ctx.chat.id, telegramId), pending);
     }
   } catch (error) {
     console.error("Telegram academic ingestion failed:", error);
@@ -228,29 +264,33 @@ bot.on("message:document", async (ctx) => {
 bot.on("message:text", async (ctx) => {
   if (!ctx.from) return;
 
-  // Reply-to enrichment: if the user replies to an ingestion confirmation with
-  // labels, update metadata and skip the normal agent turn.
+  const telegramId = String(ctx.from.id);
+  prunePendingLabels();
+
+  // 1) Explicit reply-to the bot's confirmation message.
   const replyToId = ctx.message.reply_to_message?.message_id;
   if (replyToId !== undefined) {
-    prunePendingLabels();
-    const pendingKey = `${ctx.chat.id}:${replyToId}`;
-    const pending = pendingIngestionLabels.get(pendingKey);
-    if (pending && pending.telegramId === String(ctx.from.id)) {
-      try {
-        const meta = parseIngestionCaption(ctx.message.text, pending.fileName);
-        const updated = await updateAcademicDocumentMetadata(pending.telegramId, pending.documentId, {
-          title: meta.title,
-          course: meta.course ?? null
-        });
-        pendingIngestionLabels.delete(pendingKey);
-        if (updated) {
-          await ctx.reply(`Updated labels: “${updated.title}”${updated.course ? ` · ${updated.course}` : ""}.`);
-        } else {
-          await ctx.reply("I couldn't find that document to update. Please send the PDF again with a caption.");
-        }
-      } catch (error) {
-        console.error("Ingestion metadata enrichment failed:", error);
-        await ctx.reply(error instanceof Error ? `I couldn't update those labels: ${error.message}` : "I couldn't update those labels.");
+    const pending = pendingIngestionLabels.get(`${ctx.chat.id}:${replyToId}`);
+    if (pending && pending.telegramId === telegramId) {
+      const result = await applyPendingLabel(pending, ctx.message.text);
+      if (result.ok) {
+        await ctx.reply(`Updated labels: “${result.title}”${result.course ? ` · ${result.course}` : ""}.`);
+      } else {
+        await ctx.reply(result.error);
+      }
+      return;
+    }
+  }
+
+  // 2) Structured Course:/Title: message without reply — apply to latest pending PDF for this user.
+  if (looksLikeStructuredLabel(ctx.message.text)) {
+    const pending = latestPendingByUser.get(userPendingKey(ctx.chat.id, telegramId));
+    if (pending && pending.telegramId === telegramId) {
+      const result = await applyPendingLabel(pending, ctx.message.text);
+      if (result.ok) {
+        await ctx.reply(`Updated labels: “${result.title}”${result.course ? ` · ${result.course}` : ""}.`);
+      } else {
+        await ctx.reply(result.error);
       }
       return;
     }
@@ -263,7 +303,6 @@ bot.on("message:text", async (ctx) => {
     let thinkingTimer: ReturnType<typeof setInterval> | undefined;
     let closeProgress: (() => Promise<void>) | undefined;
     try {
-      const telegramId = String(ctx.from.id);
       const progressMessage = await ctx.reply("Thinking…");
       progressMessageId = progressMessage.message_id;
       let lastStatus = "Thinking…";
