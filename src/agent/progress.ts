@@ -1,4 +1,5 @@
 export type ToolProgressEvent =
+  | { type: "tool_progress"; tool: "web_search"; stage: "search_start"; queryCount?: number; depth?: string }
   | { type: "tool_progress"; tool: "web_search"; stage: "search_complete"; resultCount: number }
   | { type: "tool_progress"; tool: "fetch"; stage: "fetch_redirect" | "fetch_reading" }
   | { type: "tool_progress"; tool: "file_io"; stage: "file_processing"; operation: string; path: string }
@@ -151,6 +152,10 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
     case "tool_progress":
       switch (event.tool) {
         case "web_search":
+          if (event.stage === "search_start") {
+            const depth = event.depth ? ` (${event.depth})` : "";
+            return { text: `Searching the web${depth}…` };
+          }
           return { text: `Found ${event.resultCount} search results…` };
         case "fetch":
           return { text: event.stage === "fetch_redirect" ? "Following webpage redirect…" : "Reading webpage content…" };
