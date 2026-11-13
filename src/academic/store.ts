@@ -94,8 +94,42 @@ export async function addAcademicDocument(telegramId: string, input: { title: st
 
 export async function updateAcademicDocumentStatus(telegramId: string, documentId: string, status: string, error?: string) {
   const userId = await getUserId(telegramId);
-  const [document] = await db.update(academicDocuments).set({ status, error: error?.slice(0, 1000) || null }).where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId))).returning();
+  const [document] = await db.update(academicDocuments).set({ status, error: error?.slice(0, 1000) || null, updatedAt: new Date() }).where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId))).returning();
   return document;
+}
+
+/** Update title / course metadata after the file has already been stored (e.g. caption arrived via reply). */
+export async function updateAcademicDocumentMetadata(
+  telegramId: string,
+  documentId: string,
+  input: { title?: string; course?: string | null }
+) {
+  const userId = await getUserId(telegramId);
+  const patch: { title?: string; course?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+  if (input.title !== undefined) {
+    const title = input.title.trim().slice(0, 240);
+    if (!title) throw new Error("Document title cannot be empty.");
+    patch.title = title;
+  }
+  if (input.course !== undefined) {
+    patch.course = input.course === null || input.course === "" ? null : input.course.trim().slice(0, 160);
+  }
+  const [document] = await db
+    .update(academicDocuments)
+    .set(patch)
+    .where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId)))
+    .returning();
+  return document;
+}
+
+export async function getAcademicDocument(telegramId: string, documentId: string) {
+  const userId = await getUserId(telegramId);
+  const [document] = await db
+    .select()
+    .from(academicDocuments)
+    .where(and(eq(academicDocuments.id, documentId), eq(academicDocuments.userId, userId)))
+    .limit(1);
+  return document ?? null;
 }
 
 export async function getAcademicSnapshot(telegramId: string) {
