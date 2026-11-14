@@ -275,10 +275,9 @@ export async function callV22Operation(provider: string, name: string, args: Rec
   throw new Error(`${provider} adapter is not implemented yet. No external action was taken.`);
 }
 
-const DEFAULT_NALLPUTER_URL = "https://nallycomputer.onrender.com";
-
 function nallputerBaseUrl(): string {
-  return (config.NALLPUTER_URL || DEFAULT_NALLPUTER_URL).replace(/\/$/, "");
+  if (!config.NALLPUTER_URL) throw new Error("nallputer is not configured. No external action was taken.");
+  return config.NALLPUTER_URL.replace(/\/$/, "");
 }
 
 async function nallputerFetch(path: string, init?: { method?: string; body?: unknown }): Promise<unknown> {

@@ -152,11 +152,14 @@ export function displayProgress(event: ProgressEvent): ProgressDisplay | null {
     case "tool_progress":
       switch (event.tool) {
         case "web_search":
-          if (event.stage === "search_start" | "approval_required") {
+          if (event.stage === "search_start" || event.stage === "approval_required") {
             const depth = event.depth ? ` (${event.depth})` : "";
             return { text: `Searching the web${depth}…` };
           }
-          return { text: `Found ${event.resultCount} search results…` };
+          if (event.stage === "search_complete") {
+            return { text: `Found ${event.resultCount} search results…` };
+          }
+          return { text: "Searching the web…" };
         case "fetch":
           return { text: event.stage === "fetch_redirect" ? "Following webpage redirect…" : "Reading webpage content…" };
         case "file_io": {

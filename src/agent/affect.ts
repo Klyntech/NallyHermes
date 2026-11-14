@@ -225,8 +225,8 @@ const POLICY_INSTRUCTIONS: Record<Exclude<ReplyPolicy, "baseline">, string[]> = 
   // Acknowledge situation → one question or one next step. No intensity matching.
   stress: [
     "Policy=stress (clinical-style): Acknowledge the setback in one short clause, then move to a useful next step.",
-    "Do not mirror anger. Do not use theatrical empathy (avoid phrases like \"that one hurts\" or \"I'm so sorry you're feeling…\").",
-    "Prefer: name the blocker if known, or ask a single clear question (\"What went wrong?\" / \"Which part failed?\").",
+    "Do not mirror anger or use theatrical empathy; acknowledge the setback briefly and stay practical.",
+    "Prefer naming the blocker if known, or ask a single clear question.",
     "Keep the reply short. No tool-menu dump unless they ask for options."
   ],
   confuse: [
@@ -289,7 +289,7 @@ export function buildAffectPromptHint(
   }
 
   lines.push(
-    "Never announce emotions (do not say \"I feel…\"). Let tone shift slightly; content stays accurate and on-task."
+    "Avoid first-person emotion declarations. Let tone shift slightly; content stays accurate and on-task."
   );
 
   return lines.join("\n");

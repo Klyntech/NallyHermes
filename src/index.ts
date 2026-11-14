@@ -193,7 +193,8 @@ bot.on("callback_query:data", async (ctx) => {
   }
 
   try {
-    const args = { ...pending.arguments, approved: true };
+    const pendingArguments = pending.arguments as Record<string, unknown>;
+    const args: Record<string, unknown> = { ...pendingArguments, approved: true };
     const tool = typeof args.tool === "string" ? args.tool : pending.provider;
     const { tool: _t, ...rest } = args as Record<string, unknown> & { tool?: string };
     let result: unknown;
@@ -212,7 +213,7 @@ bot.on("callback_query:data", async (ctx) => {
     } else if (tool === "workflow") {
       result = await workflowTool(telegramId, rest as Parameters<typeof workflowTool>[1]);
     } else if (tool === "calendar") {
-      result = await calendarTool(telegramId, rest as Parameters<typeof calendarTool>[1]);
+      result = await calendarTool(telegramId, rest as unknown as Parameters<typeof calendarTool>[1]);
     } else {
       throw new Error(`Cannot execute approved tool: ${tool}`);
     }

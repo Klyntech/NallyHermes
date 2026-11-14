@@ -48,7 +48,7 @@ const envSchema = z.object({
   GMAIL_REFRESH_TOKEN: z.string().optional(),
   GMAIL_ALLOW_WRITES: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   GMAIL_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
-  NALLPUTER_URL: z.string().url().default("https://nallycomputer.onrender.com"),
+  NALLPUTER_URL: z.string().url().optional(),
   NALLPUTER_TOKEN: z.string().optional(),
   NALLPUTER_ALLOW_WRITES: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   NALLPUTER_ALLOW_COMMANDS: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
