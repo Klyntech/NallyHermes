@@ -7,6 +7,10 @@
  *
  * Display rules: almost never narrate feelings; only inject a short tone hint
  * when the shift is meaningful and the channel is social (not silent workers).
+ *
+ * Reply policies (stress / confuse / warm / urgent) draw on clinical-style
+ * communication patterns: acknowledge → align → act; do not mirror intensity;
+ * prefer one clear question over long empathy scripts.
  */
 
 export type UserAffect = {
@@ -14,6 +18,7 @@ export type UserAffect = {
   arousal: number; // 0..1 calm..activated
   frustration: number; // 0..1
   warmth: number; // 0..1
+  confusion: number; // 0..1 goal/blocked understanding
 };
 
 export type AgentAffect = {
@@ -33,10 +38,13 @@ export type AffectDecisionParams = {
   preferClarify: boolean;
 };
 
+export type ReplyPolicy = "baseline" | "stress" | "confuse" | "warm" | "urgent";
+
 export type AffectSnapshot = {
   user: UserAffect;
   agent: AgentAffect;
   params: AffectDecisionParams;
+  policy: ReplyPolicy;
   promptHint: string | null;
 };
 
@@ -72,15 +80,16 @@ export function inferUserAffect(userMessage: string): UserAffect {
   let arousal = 0.3;
   let frustration = 0.1;
   let warmth = 0.4;
+  let confusion = 0.1;
 
-  if (/\b(thanks|thank you|great|awesome|love|appreciate|perfect)\b/.test(t)) {
+  if (/\b(thanks|thank you|great|awesome|love|appreciate|perfect|congratulations)\b/.test(t)) {
     valence += 0.45;
     warmth += 0.25;
   }
   if (/\b(please|kindly|when you can)\b/.test(t)) {
     warmth += 0.1;
   }
-  if (/\b(angry|furious|upset|annoyed|frustrated|ridiculous|useless|stupid)\b/.test(t)) {
+  if (/\b(angry|furious|upset|annoyed|frustrated|ridiculous|useless|stupid|hate this)\b/.test(t)) {
     valence -= 0.5;
     arousal += 0.35;
     frustration += 0.45;
@@ -89,21 +98,31 @@ export function inferUserAffect(userMessage: string): UserAffect {
   if (/\b(asap|urgent|now|immediately|hurry)\b/.test(t)) {
     arousal += 0.25;
   }
-  if (/\b(sorry|confused|stuck|help|don't understand|dont understand)\b/.test(t)) {
-    valence -= 0.15;
-    warmth += 0.1;
+  if (
+    /\b(confused|stuck|don't understand|dont understand|what do you mean|unclear|lost me|how does this work)\b/.test(
+      t
+    )
+  ) {
+    confusion += 0.45;
+    valence -= 0.1;
+    warmth += 0.05;
     arousal += 0.1;
+  }
+  if (/\b(sorry|help)\b/.test(t) && confusion < 0.3) {
+    valence -= 0.1;
+    warmth += 0.1;
   }
   if (/\b(hi|hello|hey|good morning|good evening)\b/.test(t) && t.length < 40) {
     warmth += 0.2;
     valence += 0.1;
   }
-  // Caps
+
   return {
     valence: clamp(valence, -1, 1),
     arousal: clamp(arousal, 0, 1),
     frustration: clamp(frustration, 0, 1),
-    warmth: clamp(warmth, 0, 1)
+    warmth: clamp(warmth, 0, 1),
+    confusion: clamp(confusion, 0, 1)
   };
 }
 
@@ -111,7 +130,6 @@ export function inferUserAffect(userMessage: string): UserAffect {
 export function decayAgentAffect(agent: AgentAffect, now = new Date()): AgentAffect {
   const then = new Date(agent.updatedAt).getTime();
   const minutes = Number.isFinite(then) ? Math.max(0, (now.getTime() - then) / 60_000) : 30;
-  // Half-life ~45 minutes toward baseline
   const factor = Math.pow(0.5, minutes / 45);
   const baseline = defaultAgentAffect();
   const lerp = (a: number, b: number) => b + (a - b) * factor;
@@ -169,7 +187,6 @@ export function applyAffectEvent(agent: AgentAffect, event: AffectEvent): AgentA
       next.curiosity = clamp(next.curiosity + 0.05, 0, 1);
       break;
     case "user_frustrated":
-      // Empathy path: calm down, do not mirror rage
       next.arousal = clamp(next.arousal * 0.7, 0, 1);
       next.frustration = clamp(next.frustration * 0.8, 0, 1);
       next.valence = clamp(next.valence - 0.02, -1, 1);
@@ -183,9 +200,49 @@ export function getDecisionParams(agent: AgentAffect, user: UserAffect): AffectD
   const shouldExplore =
     agent.curiosity > 0.55 && agent.frustration < 0.55 && user.frustration < 0.6;
   const maxExtraRetries = agent.frustration > 0.65 ? 0 : agent.frustration > 0.4 ? 1 : 2;
-  const preferClarify = user.frustration > 0.45 || user.arousal > 0.7 || agent.confidence < 0.35;
+  const preferClarify =
+    user.frustration > 0.45 ||
+    user.arousal > 0.7 ||
+    user.confusion > 0.4 ||
+    agent.confidence < 0.35;
   return { riskTolerance, shouldExplore, maxExtraRetries, preferClarify };
 }
+
+/**
+ * Choose a reply policy from user+agent state.
+ * Priority: urgent > stress > confuse > warm > baseline.
+ */
+export function selectReplyPolicy(user: UserAffect, agent: AgentAffect): ReplyPolicy {
+  if (user.arousal > 0.65 && user.frustration > 0.35) return "urgent";
+  if (user.frustration > 0.45) return "stress";
+  if (user.confusion > 0.4) return "confuse";
+  if (user.warmth > 0.55 && user.frustration < 0.3) return "warm";
+  if (agent.frustration > 0.55 || agent.confidence < 0.35) return "stress";
+  return "baseline";
+}
+
+const POLICY_INSTRUCTIONS: Record<Exclude<ReplyPolicy, "baseline">, string[]> = {
+  // Acknowledge situation → one question or one next step. No intensity matching.
+  stress: [
+    "Policy=stress (clinical-style): Acknowledge the setback in one short clause, then move to a useful next step.",
+    "Do not mirror anger. Do not use theatrical empathy (avoid phrases like \"that one hurts\" or \"I'm so sorry you're feeling…\").",
+    "Prefer: name the blocker if known, or ask a single clear question (\"What went wrong?\" / \"Which part failed?\").",
+    "Keep the reply short. No tool-menu dump unless they ask for options."
+  ],
+  confuse: [
+    "Policy=confuse: User likely does not understand the last step or the system state.",
+    "Explain the relevant bit in plain language, then confirm with one check question.",
+    "Do not add new tasks or broad capability lists until the confusion is resolved."
+  ],
+  warm: [
+    "Policy=warm: Friendly, light register is fine; stay competent, not gushy or over-familiar.",
+    "Match their energy briefly, then continue the task or ask what they want next."
+  ],
+  urgent: [
+    "Policy=urgent: Prioritize speed and clarity. Lead with the action or the blocker.",
+    "Skip small talk. One step at a time. Confirm the critical detail only if missing."
+  ]
+};
 
 /**
  * Short tone hint for the system prompt. Never asks the model to monologue feelings.
@@ -194,36 +251,37 @@ export function getDecisionParams(agent: AgentAffect, user: UserAffect): AffectD
 export function buildAffectPromptHint(
   user: UserAffect,
   agent: AgentAffect,
-  options?: { channel?: string; force?: boolean }
+  options?: { channel?: string; force?: boolean; policy?: ReplyPolicy }
 ): string | null {
   if (options?.channel === "workflow") return null;
 
+  const policy = options?.policy ?? selectReplyPolicy(user, agent);
+
   const nearBaseline =
+    policy === "baseline" &&
     Math.abs(agent.valence) < 0.2 &&
     agent.frustration < 0.25 &&
     user.frustration < 0.25 &&
     user.warmth < 0.55 &&
+    user.confusion < 0.35 &&
     !options?.force;
 
   if (nearBaseline) return null;
 
   const lines = [
     "Affect context (internal only — do not narrate feelings or say you are an emotional system):",
-    `- User read: warmth=${user.warmth.toFixed(2)}, frustration=${user.frustration.toFixed(2)}, arousal=${user.arousal.toFixed(2)}.`,
+    `- policy=${policy}`,
+    `- User read: warmth=${user.warmth.toFixed(2)}, frustration=${user.frustration.toFixed(2)}, confusion=${user.confusion.toFixed(2)}, arousal=${user.arousal.toFixed(2)}.`,
     `- Your stance: confidence=${agent.confidence.toFixed(2)}, frustration=${agent.frustration.toFixed(2)}, valence=${agent.valence.toFixed(2)}.`
   ];
 
-  if (user.frustration > 0.45) {
-    lines.push(
-      "User seems stressed or frustrated. Stay calm, clear, and practical. Do not match anger. Offer a concrete next step."
-    );
-  } else if (user.warmth > 0.55 && user.frustration < 0.3) {
-    lines.push("User tone is warm. A lightly friendly register is fine; stay competent, not gushy.");
+  if (policy !== "baseline") {
+    lines.push(...POLICY_INSTRUCTIONS[policy]);
   }
 
   if (agent.frustration > 0.55) {
     lines.push(
-      "Prefer fewer speculative tool retries; if blocked, say so plainly and ask a focused clarifying question."
+      "Prefer fewer speculative tool retries; if blocked, say so plainly and ask one focused clarifying question."
     );
   }
   if (agent.confidence < 0.35) {
@@ -276,12 +334,13 @@ export function beginTurnAffect(input: {
 
   saveAgentAffect(input.telegramId, agent);
   const params = getDecisionParams(agent, user);
+  const policy = selectReplyPolicy(user, agent);
   const promptHint =
     input.injectPrompt === false
       ? null
-      : buildAffectPromptHint(user, agent, { channel: input.channel });
+      : buildAffectPromptHint(user, agent, { channel: input.channel, policy });
 
-  return { user, agent, params, promptHint };
+  return { user, agent, params, policy, promptHint };
 }
 
 export function noteToolOutcome(telegramId: string, ok: boolean): AgentAffect {

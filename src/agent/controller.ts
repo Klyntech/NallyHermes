@@ -518,7 +518,9 @@ export async function runAgent(
       "orchestra.affect",
       JSON.stringify({
         request_id: state.requestId,
+        policy: affect.policy,
         user_frustration: affect.user.frustration,
+        user_confusion: affect.user.confusion,
         agent_confidence: affect.agent.confidence,
         agent_frustration: affect.agent.frustration,
         prompt_injected: Boolean(affect.promptHint),
