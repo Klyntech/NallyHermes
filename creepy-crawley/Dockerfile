@@ -15,7 +15,6 @@ USER root
 WORKDIR /app
 
 COPY --from=lightpanda /usr/local/bin/lightpanda /usr/local/bin/lightpanda
-RUN ldd /usr/local/bin/lightpanda
 
 # Keep the API dependencies isolated from SearXNG's own Python environment.
 COPY requirements.txt /app/requirements.txt
