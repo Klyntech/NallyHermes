@@ -21,11 +21,31 @@ def test_unrelated_title_and_text_are_flagged():
     assert "low_query_overlap" in flags
 
 
-def test_title_only_match_is_uncertain_not_rejected():
+def test_title_match_cannot_override_unrelated_passage():
     status, flags = assess_relevance(
         "how do large language models work",
-        "Large language models",
-        "A general overview of computing systems and data.",
+        "Large language models - Wikipedia",
+        "Demonstrates how to increase efficient exercise by running up and down balls.",
     )
-    assert status == "uncertain"
-    assert "limited_query_overlap" in flags
+    assert status == "low_relevance"
+    assert "title_match_does_not_confirm_passage" in flags
+
+
+def test_one_relevant_term_in_long_passage_is_not_enough():
+    status, flags = assess_relevance(
+        "how do large language models work",
+        "Large language models overview",
+        "Large language models are discussed briefly. The rest covers unrelated exercise routines and sports.",
+    )
+    assert status == "low_relevance"
+    assert "weak_passage_overlap" in flags
+
+
+def test_short_passage_is_flagged():
+    status, flags = assess_relevance(
+        "large language models",
+        "Large language models",
+        "Language models.",
+    )
+    assert status == "low_relevance"
+    assert "short_content" in flags
