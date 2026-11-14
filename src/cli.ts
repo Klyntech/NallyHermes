@@ -50,13 +50,21 @@ if (httpMode) {
           res.end(JSON.stringify({ error: "name must be list_files | read_file | write_file | run_command" }));
           return;
         }
-        const response = await computer.runTool({
-          sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
+        const toolRequest: {
+          name: "list_files" | "read_file" | "write_file" | "run_command";
+          input?: Record<string, unknown>;
+          sessionId?: string;
+        } = {
           name,
-          input: typeof body.input === "object" && body.input && !Array.isArray(body.input)
-            ? (body.input as Record<string, unknown>)
-            : {}
-        });
+          input:
+            typeof body.input === "object" && body.input && !Array.isArray(body.input)
+              ? (body.input as Record<string, unknown>)
+              : {}
+        };
+        if (typeof body.sessionId === "string" && body.sessionId.trim()) {
+          toolRequest.sessionId = body.sessionId;
+        }
+        const response = await computer.runTool(toolRequest);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(response));
         return;
