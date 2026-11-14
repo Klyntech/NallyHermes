@@ -33,3 +33,15 @@ def test_domain_controls_match_subdomains_and_exclusions():
     assert domain_allowed("https://docs.example.com/a", ["example.com"], [])
     assert not domain_allowed("https://docs.example.com/a", ["other.com"], [])
     assert not domain_allowed("https://docs.example.com/a", [], ["example.com"])
+
+
+def test_lightpanda_command_is_local_and_bounded(monkeypatch):
+    from app.crawler import lightpanda_command
+
+    monkeypatch.setenv("LIGHTPANDA_BIN", "/usr/local/bin/lightpanda")
+    monkeypatch.setenv("LIGHTPANDA_WAIT_MS", "9000")
+    command = lightpanda_command("https://example.com/")
+    assert command[0] == "/usr/local/bin/lightpanda"
+    assert command[1:5] == ["fetch", "--obey-robots", "--dump", "html"]
+    assert command[5:7] == ["--wait-ms", "5000"]
+    assert command[-1] == "https://example.com/"
