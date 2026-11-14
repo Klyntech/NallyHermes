@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 import secrets
 import socket
 import time
@@ -41,6 +42,8 @@ class SearchRequest(BaseModel):
     exclude_domains: list[str] = Field(default_factory=list)
     extract_content: bool = True
     max_content_results: int = Field(default=5, ge=0, le=10)
+    max_context_chars: int = Field(default=18000, ge=1000, le=40000)
+    context_per_source_chars: int = Field(default=4000, ge=500, le=8000)
 
 
 class SearchResult(BaseModel):
@@ -49,14 +52,35 @@ class SearchResult(BaseModel):
     content: str = ""
     extracted_content: str | None = None
     extraction_status: Literal["success", "unavailable", "skipped"] = "skipped"
+    extracted_content_truncated: bool = False
     score: float | None = None
     published_date: str | None = None
+
+
+class ContextItem(BaseModel):
+    source_index: int
+    title: str
+    url: HttpUrl
+    text: str
+    content_type: Literal["extracted", "snippet"]
+
+
+class SourceItem(BaseModel):
+    index: int
+    title: str
+    url: HttpUrl
+    score: float | None = None
+    published_date: str | None = None
+    extraction_status: Literal["success", "unavailable", "skipped"]
+    content_truncated: bool = False
 
 
 class SearchResponse(BaseModel):
     query: str
     answer: str | None = None
     images: list = Field(default_factory=list)
+    context: list[ContextItem] = Field(default_factory=list)
+    sources: list[SourceItem] = Field(default_factory=list)
     results: list[SearchResult]
     response_time: float
 
@@ -116,31 +140,31 @@ async def validate_public_url(url: str) -> bool:
         return False
 
 
-async def fetch_page_text(client: httpx.AsyncClient, url: str) -> str | None:
+async def fetch_page_text(client: httpx.AsyncClient, url: str) -> tuple[str | None, bool]:
     current_url = url
     for redirect_count in range(MAX_REDIRECTS + 1):
         if not await validate_public_url(current_url):
-            return None
+            return None, False
 
         try:
             async with client.stream("GET", current_url, headers={"Accept": "text/html,application/xhtml+xml;q=0.9"}) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
                     location = response.headers.get("location")
                     if not location or redirect_count >= MAX_REDIRECTS:
-                        return None
+                        return None, False
                     current_url = urljoin(current_url, location)
                     continue
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "").lower()
                 if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
-                    return None
+                    return None, False
 
                 chunks: list[bytes] = []
                 total = 0
                 async for chunk in response.aiter_bytes():
                     total += len(chunk)
                     if total > MAX_PAGE_BYTES:
-                        return None
+                        return None, False
                     chunks.append(chunk)
                 html = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
                 extracted = trafilatura.extract(
@@ -151,11 +175,11 @@ async def fetch_page_text(client: httpx.AsyncClient, url: str) -> str | None:
                     favor_precision=True,
                 )
                 if not extracted:
-                    return None
-                return extracted[:MAX_EXTRACTED_CHARS].strip() or None
+                    return None, False
+                return (extracted[:MAX_EXTRACTED_CHARS].strip() or None, len(extracted) > MAX_EXTRACTED_CHARS)
         except (httpx.HTTPError, UnicodeError, LookupError, ValueError):
-            return None
-    return None
+            return None, False
+    return None, False
 
 
 async def enrich_result(
@@ -164,12 +188,99 @@ async def enrich_result(
     semaphore: asyncio.Semaphore,
 ) -> None:
     async with semaphore:
-        extracted = await fetch_page_text(client, str(result.url))
+        extracted, truncated = await fetch_page_text(client, str(result.url))
     if extracted:
         result.extracted_content = extracted
+        result.extracted_content_truncated = truncated
         result.extraction_status = "success"
     else:
         result.extraction_status = "unavailable"
+
+
+
+def build_context(
+    query: str,
+    results: list[SearchResult],
+    max_total_chars: int,
+    per_source_chars: int,
+) -> tuple[list[ContextItem], list[SourceItem]]:
+    """Package source passages for downstream agents without generating an answer."""
+    terms = {
+        token.lower()
+        for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", query)
+        if len(token) > 2
+    }
+    context: list[ContextItem] = []
+    sources: list[SourceItem] = []
+    remaining = max_total_chars
+
+    for index, result in enumerate(results):
+        sources.append(SourceItem(
+            index=index,
+            title=result.title,
+            url=result.url,
+            score=result.score,
+            published_date=result.published_date,
+            extraction_status=result.extraction_status,
+            content_truncated=result.extracted_content_truncated,
+        ))
+        if remaining <= 0:
+            continue
+
+        content_type = None
+        source_text = result.extracted_content
+        if source_text:
+            content_type = "extracted"
+        elif len(result.content.strip()) >= 100:
+            snippet_terms = {
+                token.lower() for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", result.content)
+            }
+            if not terms or terms.intersection(snippet_terms):
+                source_text = result.content
+                content_type = "snippet"
+
+        if not source_text or not content_type:
+            continue
+
+        budget = min(per_source_chars, remaining)
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", source_text) if part.strip()]
+        if terms and sentences:
+            ranked = sorted(
+                enumerate(sentences),
+                key=lambda pair: (
+                    -len(terms.intersection({
+                        token.lower() for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", pair[1])
+                    })),
+                    pair[0],
+                ),
+            )
+            chosen = []
+            used = 0
+            for sentence_index, sentence in ranked:
+                sentence_terms = {
+                    token.lower() for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", sentence)
+                }
+                if not terms.intersection(sentence_terms):
+                    continue
+                if used + len(sentence) + 1 > budget:
+                    continue
+                chosen.append((sentence_index, sentence))
+                used += len(sentence) + 1
+            excerpt = " ".join(sentence for _, sentence in sorted(chosen)) if chosen else source_text[:budget]
+        else:
+            excerpt = source_text[:budget]
+        excerpt = excerpt[:budget].strip()
+        if excerpt:
+            context.append(ContextItem(
+                source_index=index,
+                title=result.title,
+                url=result.url,
+                text=excerpt,
+                content_type=content_type,
+            ))
+            remaining -= len(excerpt)
+
+    return context, sources
 
 
 @app.get("/health")
@@ -253,8 +364,17 @@ async def search(payload: SearchRequest) -> SearchResponse:
                 *(enrich_result(result, client, semaphore) for result in selected)
             )
 
+    context, sources = build_context(
+        payload.query,
+        normalized,
+        payload.max_context_chars,
+        payload.context_per_source_chars,
+    )
+
     return SearchResponse(
         query=payload.query,
+        context=context,
+        sources=sources,
         results=normalized,
         response_time=round(time.perf_counter() - started, 3),
     )
