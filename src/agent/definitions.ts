@@ -209,7 +209,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "nallputer",
-      description: "Use the bounded Nallputer VM connector through one dispatcher. Host access, commands, files, services, and logs are scoped by explicit workspace, timeout, output, network, and approval policy.",
+      description: "Use the NallPuter computer kernel (isolated session workspace). Prefer for computer/session file work; use file_io for quick local Hermes files. Operations: health, list_workspace, read_file, write_file (needs approval + NALLPUTER_ALLOW_WRITES), run_command (gated). Pass session_id to continue a session.",
       parameters: {
         type: "object",
         properties: {

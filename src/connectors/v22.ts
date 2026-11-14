@@ -57,7 +57,8 @@ function validateProvider(provider: string): asserts provider is V22Connector {
 function hasCredentials(provider: V22Connector): boolean {
   if (provider === "notion") return Boolean(config.NOTION_TOKEN);
   if (provider === "gmail") return Boolean(config.GMAIL_CLIENT_ID && config.GMAIL_CLIENT_SECRET && config.GMAIL_REFRESH_TOKEN);
-  return Boolean(config.NALLPUTER_URL && config.NALLPUTER_TOKEN);
+  // Live NallPuter kernel: URL is enough; token optional until auth is enabled on the computer service.
+  return Boolean(config.NALLPUTER_URL);
 }
 
 function writesAllowed(provider: V22Connector): boolean {
@@ -270,5 +271,89 @@ export async function callV22Operation(provider: string, name: string, args: Rec
   if (!operation.readOnly && (!writesAllowed(provider) || !approved)) throw new Error(`${provider} write operations require the provider write gate and explicit approval.`);
   if (provider === "notion") return callNotion(name, args);
   if (provider === "gmail") return callGmail(name, args);
+  if (provider === "nallputer") return callNallputer(name, args, approved);
   throw new Error(`${provider} adapter is not implemented yet. No external action was taken.`);
+}
+
+const DEFAULT_NALLPUTER_URL = "https://nallycomputer.onrender.com";
+
+function nallputerBaseUrl(): string {
+  return (config.NALLPUTER_URL || DEFAULT_NALLPUTER_URL).replace(/\/$/, "");
+}
+
+async function nallputerFetch(path: string, init?: { method?: string; body?: unknown }): Promise<unknown> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (config.NALLPUTER_TOKEN) headers.Authorization = `Bearer ${config.NALLPUTER_TOKEN}`;
+  let body: string | undefined;
+  if (init?.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(init.body);
+  }
+  const response = await fetch(`${nallputerBaseUrl()}${path}`, {
+    method: init?.method ?? "GET",
+    headers,
+    body,
+    signal: AbortSignal.timeout(config.NALLPUTER_TIMEOUT_MS)
+  });
+  const text = await response.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    /* keep text */
+  }
+  if (!response.ok) {
+    const detail = typeof data === "object" && data && "error" in data ? String((data as { error: unknown }).error) : text.slice(0, 300);
+    throw new Error(`NallPuter ${path} failed (${response.status}): ${detail}`);
+  }
+  return data;
+}
+
+async function callNallputer(name: string, args: Record<string, unknown>, approved: boolean): Promise<unknown> {
+  const sessionId = optionalString(args, "session_id") ?? optionalString(args, "sessionId");
+
+  if (name === "health") {
+    return nallputerFetch("/health");
+  }
+
+  if (name === "list_workspace") {
+    const path = optionalString(args, "path") ?? ".";
+    const body: Record<string, unknown> = { name: "list_files", input: { path } };
+    if (sessionId) body.sessionId = sessionId;
+    return nallputerFetch("/v1/tool", { method: "POST", body });
+  }
+
+  if (name === "read_file") {
+    const path = stringArg(args, "path", 500);
+    const body: Record<string, unknown> = { name: "read_file", input: { path } };
+    if (sessionId) body.sessionId = sessionId;
+    return nallputerFetch("/v1/tool", { method: "POST", body });
+  }
+
+  if (name === "write_file") {
+    if (!config.NALLPUTER_ALLOW_WRITES || !approved) {
+      throw new Error("nallputer write_file requires NALLPUTER_ALLOW_WRITES and explicit approved=true.");
+    }
+    const path = stringArg(args, "path", 500);
+    const content = stringArg(args, "content", 200_000);
+    const body: Record<string, unknown> = { name: "write_file", input: { path, content } };
+    if (sessionId) body.sessionId = sessionId;
+    return nallputerFetch("/v1/tool", { method: "POST", body });
+  }
+
+  if (name === "run_command") {
+    if (!config.NALLPUTER_ALLOW_COMMANDS || !approved) {
+      throw new Error("nallputer run_command requires NALLPUTER_ALLOW_COMMANDS and explicit approved=true.");
+    }
+    const command = stringArg(args, "command", 2000);
+    const body: Record<string, unknown> = { name: "run_command", input: { command } };
+    if (sessionId) body.sessionId = sessionId;
+    return nallputerFetch("/v1/tool", { method: "POST", body });
+  }
+
+  if (name === "get_processes" || name === "get_logs" || name === "run_tests" || name === "run_build" || name === "restart_service") {
+    throw new Error(`nallputer operation "${name}" is reserved for a fuller VM profile; the live kernel supports health, list_workspace, read_file, write_file, and gated run_command.`);
+  }
+
+  throw new Error(`Unknown nallputer operation: ${name}`);
 }
