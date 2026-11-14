@@ -22,4 +22,5 @@ RUN useradd --create-home --uid 10001 nallputer \
 USER nallputer
 VOLUME ["/data"]
 # tsc rootDir is repo root, so cli emits to dist/src/cli.js
-ENTRYPOINT ["node", "dist/src/cli.js", "--workspace", "/data"]
+ENV NALLPUTER_WORKSPACE=/data
+ENTRYPOINT ["node", "dist/src/cli.js", "--workspace", "/data", "--http"]

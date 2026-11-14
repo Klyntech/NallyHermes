@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test --import tsx tests/*.test.ts",
     "dev": "tsx src/cli.ts",
-    "start": "node dist/src/cli.js"
+    "start": "node dist/src/cli.js --http"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
