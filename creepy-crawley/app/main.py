@@ -55,6 +55,12 @@ class SearchResult(BaseModel):
     extracted_content_truncated: bool = False
     score: float | None = None
     published_date: str | None = None
+    rank: int | None = None
+    score_origin: Literal["searxng"] = "searxng"
+    relevance_status: Literal["relevant", "uncertain", "low_relevance"] = "uncertain"
+    quality_flags: list[str] = Field(default_factory=list)
+    published_date_source: Literal["source_reported"] = "source_reported"
+    published_date_verified: bool = False
 
 
 class ContextItem(BaseModel):
@@ -63,6 +69,8 @@ class ContextItem(BaseModel):
     url: HttpUrl
     text: str
     content_type: Literal["extracted", "snippet"]
+    relevance_status: Literal["relevant", "uncertain", "low_relevance"] = "uncertain"
+    quality_flags: list[str] = Field(default_factory=list)
 
 
 class SourceItem(BaseModel):
@@ -73,6 +81,12 @@ class SourceItem(BaseModel):
     published_date: str | None = None
     extraction_status: Literal["success", "unavailable", "skipped"]
     content_truncated: bool = False
+    rank: int
+    score_origin: Literal["searxng"] = "searxng"
+    relevance_status: Literal["relevant", "uncertain", "low_relevance"] = "uncertain"
+    quality_flags: list[str] = Field(default_factory=list)
+    published_date_source: Literal["source_reported"] = "source_reported"
+    published_date_verified: bool = False
 
 
 class SearchResponse(BaseModel):
@@ -198,6 +212,26 @@ async def enrich_result(
 
 
 
+def assess_relevance(query: str, title: str, text: str) -> tuple[str, list[str]]:
+    """Conservative lexical relevance hints; these are heuristics, not confidence scores."""
+    stopwords = {"the", "and", "for", "with", "from", "that", "this", "how", "what", "when", "where", "why", "are", "was", "were", "does", "work"}
+    terms = {t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", query)} - stopwords
+    title_terms = {t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", title)}
+    text_terms = {t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", text)}
+    if not terms:
+        return "uncertain", ["query_has_no_discriminative_terms"]
+    title_hits = terms & title_terms
+    text_hits = terms & text_terms
+    ratio = len(text_hits) / len(terms)
+    flags: list[str] = []
+    if not title_hits and not text_hits:
+        return "low_relevance", ["low_query_overlap"]
+    if ratio >= 0.25:
+        return "relevant", flags
+    flags.append("limited_query_overlap")
+    return "uncertain", flags
+
+
 def build_context(
     query: str,
     results: list[SearchResult],
@@ -215,6 +249,13 @@ def build_context(
     remaining = max_total_chars
 
     for index, result in enumerate(results):
+        candidate_text = result.extracted_content or result.content
+        relevance, flags = assess_relevance(query, result.title, candidate_text)
+        if len(candidate_text.strip()) < 100:
+            flags.append("short_content")
+        result.rank = index + 1
+        result.relevance_status = relevance
+        result.quality_flags = flags
         sources.append(SourceItem(
             index=index,
             title=result.title,
@@ -223,6 +264,10 @@ def build_context(
             published_date=result.published_date,
             extraction_status=result.extraction_status,
             content_truncated=result.extracted_content_truncated,
+            rank=index + 1,
+            score_origin="searxng",
+            relevance_status=relevance,
+            quality_flags=flags,
         ))
         if remaining <= 0:
             continue
@@ -239,7 +284,7 @@ def build_context(
                 source_text = result.content
                 content_type = "snippet"
 
-        if not source_text or not content_type:
+        if not source_text or not content_type or relevance == "low_relevance":
             continue
 
         budget = min(per_source_chars, remaining)
@@ -277,6 +322,8 @@ def build_context(
                 url=result.url,
                 text=excerpt,
                 content_type=content_type,
+                relevance_status=relevance,
+                quality_flags=flags,
             ))
             remaining -= len(excerpt)
 
