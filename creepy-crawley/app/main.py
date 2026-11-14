@@ -43,6 +43,9 @@ class CrawlRequest(BaseModel):
     url: HttpUrl
     max_pages: int = Field(default=5, ge=1, le=20)
     max_depth: int = Field(default=1, ge=0, le=2)
+    allow_domains: list[str] = Field(default_factory=list, max_length=50)
+    deny_domains: list[str] = Field(default_factory=list, max_length=50)
+    use_sitemap: bool = True
 
 
 class SearchRequest(BaseModel):
