@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, HttpUrl
 
 from .config import get_settings
-from .crawler import crawl_site, metrics_snapshot, scrape_url
+from .crawler import canonical_url, crawl_site, metrics_snapshot, scrape_url
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -64,6 +64,7 @@ class SearchResult(BaseModel):
     extracted_content: str | None = None
     extraction_status: Literal["success", "unavailable", "skipped"] = "skipped"
     extracted_content_truncated: bool = False
+    structured: dict = Field(default_factory=dict)
     score: float | None = None
     published_date: str | None = None
     rank: int | None = None
@@ -213,7 +214,13 @@ async def enrich_result(
     semaphore: asyncio.Semaphore,
 ) -> None:
     async with semaphore:
-        extracted, truncated = await fetch_page_text(client, str(result.url))
+        try:
+            page = await scrape_url(str(result.url))
+            extracted = page.get("content") or ""
+            truncated = bool(page.get("content_truncated"))
+            result.structured = page.get("structured") or {}
+        except (httpx.HTTPError, ValueError, UnicodeError):
+            extracted, truncated = None, False
     if extracted:
         result.extracted_content = extracted
         result.extracted_content_truncated = truncated
@@ -429,10 +436,10 @@ async def search(payload: SearchRequest) -> SearchResponse:
             continue
         if payload.exclude_domains and domain_matches(host, payload.exclude_domains):
             continue
-        canonical_url = parsed._replace(fragment="").geturl().rstrip("/")
-        if canonical_url in seen_urls:
+        normalized_key = canonical_url(raw_url)
+        if normalized_key in seen_urls:
             continue
-        seen_urls.add(canonical_url)
+        seen_urls.add(normalized_key)
         try:
             normalized.append(SearchResult(
                 title=title,
