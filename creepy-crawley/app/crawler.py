@@ -174,20 +174,24 @@ async def _store(url: str, value: dict) -> None:
 
 
 def _extract_pdf(data: bytes) -> tuple[str, dict]:
-    reader = PdfReader(BytesIO(data), strict=False)
-    chunks = [(page.extract_text() or "").strip() for page in reader.pages[:100]]
-    text = "\\n\\n".join(chunk for chunk in chunks if chunk)
-    metadata = reader.metadata
-    structured = {
-        "author": str(metadata.author) if metadata and metadata.author else None,
-        "published_date": str(metadata.creation_date) if metadata and metadata.creation_date else None,
-        "page_count": len(reader.pages),
-        "headings": [],
-        "tables": [],
-        "links": [],
-        "content_type": "application/pdf",
-    }
-    return text[:MAX_TEXT_CHARS], {**structured, "content_truncated": len(text) > MAX_TEXT_CHARS}
+    try:
+        reader = PdfReader(BytesIO(data), strict=False)
+        page_count = len(reader.pages)
+        chunks = [(page.extract_text() or "").strip() for page in reader.pages[:100]]
+        text = "\\n\\n".join(chunk for chunk in chunks if chunk)
+        metadata = reader.metadata
+        structured = {
+            "author": str(metadata.author) if metadata and metadata.author else None,
+            "published_date": str(metadata.creation_date) if metadata and metadata.creation_date else None,
+            "page_count": page_count,
+            "headings": [],
+            "tables": [],
+            "links": [],
+            "content_type": "application/pdf",
+        }
+        return text[:MAX_TEXT_CHARS], {**structured, "content_truncated": len(text) > MAX_TEXT_CHARS}
+    except Exception as exc:
+        raise ValueError("PDF could not be safely parsed") from exc
 
 
 async def _render_javascript(client: httpx.AsyncClient, url: str) -> bytes | None:
