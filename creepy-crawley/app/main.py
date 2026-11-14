@@ -213,23 +213,38 @@ async def enrich_result(
 
 
 def assess_relevance(query: str, title: str, text: str) -> tuple[str, list[str]]:
-    """Conservative lexical relevance hints; these are heuristics, not confidence scores."""
+    """Conservative passage-first lexical hints; not a confidence score."""
     stopwords = {"the", "and", "for", "with", "from", "that", "this", "how", "what", "when", "where", "why", "are", "was", "were", "does", "work"}
-    terms = {t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", query)} - stopwords
-    title_terms = {t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", title)}
-    text_terms = {t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", text)}
+    tokenize = lambda value: {
+        token.lower() for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]{2,}", value)
+    }
+    terms = tokenize(query) - stopwords
+    title_hits = terms & tokenize(title)
+    text_hits = terms & tokenize(text)
     if not terms:
         return "uncertain", ["query_has_no_discriminative_terms"]
-    title_hits = terms & title_terms
-    text_hits = terms & text_terms
+
+    # Require meaningful overlap in the passage itself. A matching title alone
+    # must never promote unrelated page text into the agent context.
     ratio = len(text_hits) / len(terms)
+    sentences = [part for part in re.split(r"(?<=[.!?])\\s+|\\n+", text) if part.strip()]
+    best_sentence_hits = max((len(terms & tokenize(sentence)) for sentence in sentences), default=0)
+    minimum_hits = 1 if len(terms) == 1 else 2
     flags: list[str] = []
-    if not title_hits and not text_hits:
-        return "low_relevance", ["low_query_overlap"]
-    if ratio >= 0.25:
-        return "relevant", flags
-    flags.append("limited_query_overlap")
-    return "uncertain", flags
+    if len(text.strip()) < 100:
+        flags.append("short_content")
+    if not text_hits:
+        flags.append("title_only_match" if title_hits else "low_query_overlap")
+        return "low_relevance", flags
+    if len(text_hits) < minimum_hits or best_sentence_hits < minimum_hits:
+        flags.append("weak_passage_overlap")
+        if title_hits:
+            flags.append("title_match_does_not_confirm_passage")
+        return "low_relevance", flags
+    if ratio < 0.5:
+        flags.append("limited_query_overlap")
+        return "uncertain", flags
+    return "relevant", flags
 
 
 def build_context(
@@ -284,7 +299,7 @@ def build_context(
                 source_text = result.content
                 content_type = "snippet"
 
-        if not source_text or not content_type or relevance == "low_relevance":
+        if not source_text or not content_type or relevance != "relevant":
             continue
 
         budget = min(per_source_chars, remaining)
