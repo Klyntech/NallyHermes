@@ -109,3 +109,30 @@ The crawler follows links only on the starting hostname. Limits are 1–20 pages
 - HTML downloads are capped at 2 MB per page.
 - Extracted text is capped at 20,000 characters per page.
 - Crawls are bounded by page count and depth; no off-site link following.
+
+
+## Advanced crawling and extraction
+
+- Sitemap discovery reads same-host sitemap declarations from `robots.txt` and common sitemap locations. Sitemap index files are supported; crawl page/depth limits still apply.
+- Optional JavaScript-rendered extraction is supported through a separately configured, trusted renderer endpoint. Set `JS_RENDER_URL` to its HTTP API URL and optionally `JS_RENDER_TOKEN`; the backend calls it only when ordinary HTML extraction yields very little text. No browser process or extra Render service is installed in this container.
+- PDF pages are extracted locally with PyPDF. PDF extraction is bounded by the existing 2 MB download limit, 100 pages, and 20,000 output characters.
+- Structured metadata accompanies scrape, crawl, and search results: author, reported publication date, description, headings, tables, links, and content type where available. Dates remain source-reported, not independently verified.
+- URL canonicalization removes fragments and normalizes hostnames. A bounded in-memory cache reuses fetched page data for five minutes (up to 128 pages per process).
+- Crawl requests accept `allow_domains`, `deny_domains`, and `use_sitemap`. The start URL and discovered pages must satisfy the domain rules; crawling remains same-host.
+- Crawl responses report attempted, successful, and failed page counts. `GET /metrics` (Bearer-authenticated) exposes lightweight process counters for fetches, cache hits, failures, crawled pages, and PDF extraction.
+- Relevance labels are conservative lexical hints, not confidence probabilities. A matching page title alone cannot promote an unrelated passage into agent context. Low-relevance results remain visible in `results` but are excluded from `context`.
+
+Example crawl request:
+
+```json
+{
+  "url": "https://example.com/",
+  "max_pages": 10,
+  "max_depth": 2,
+  "use_sitemap": true,
+  "allow_domains": ["example.com"],
+  "deny_domains": ["private.example.com"]
+}
+```
+
+JavaScript rendering is optional. Only configure `JS_RENDER_URL` to a renderer you trust; the target page URL is sent to that service for rendering. Keep any renderer token in Render Environment Variables, never in source control.
