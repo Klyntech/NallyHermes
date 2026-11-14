@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { Bot, InputFile } from "grammy";
+import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
@@ -18,8 +18,46 @@ import type { ProgressEvent } from "./agent/progress.js";
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { ingestAcademicDocument } from "./academic/ingestion.js";
 import { updateAcademicDocumentMetadata } from "./academic/store.js";
+import {
+  getPendingApproval,
+  grantAlwaysAllow,
+  markPending
+} from "./agent/approvals.js";
+import { callV22Operation } from "./connectors/v22.js";
+import { fileIO, memoryTool, scheduleTool, workflowTool } from "./agent/tools/extended.js";
+import { calendarTool } from "./agent/calendar.js";
+import { callGitHubOperation } from "./connectors/github.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
+
+async function notifyApprovalIfNeeded(chatId: number | undefined, event: ProgressEvent): Promise<boolean> {
+  if (!chatId) return false;
+  const stage = (event as { stage?: string }).stage;
+  if (stage !== "approval_required") return false;
+  const pendingId = (event as { pending_id?: string }).pending_id;
+  if (!pendingId) return false;
+  await sendApprovalKeyboard(chatId, pendingId, (event as { summary?: string }).summary ?? "Write operation");
+  return true;
+}
+
+async function sendApprovalKeyboard(
+  chatId: number,
+  pendingId: string,
+  summary: string
+): Promise<void> {
+  const keyboard = new InlineKeyboard()
+    .text("Deny", `appr:deny:${pendingId}`)
+    .text("Allow", `appr:allow:${pendingId}`)
+    .text("Always Allow", `appr:always:${pendingId}`);
+  await bot.api.sendMessage(
+    chatId,
+    `Approval needed
+${summary}`,
+    { reply_markup: keyboard }
+  );
+}
+
+
 const histories = new Map<string, ChatCompletionMessageParam[]>();
 const MAX_ACTIVE_CONVERSATIONS = 1_000;
 const processedDocumentUpdates = new Map<string, number>();
@@ -119,6 +157,78 @@ async function applyPendingLabel(
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
 const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
+
+
+bot.on("callback_query:data", async (ctx) => {
+  const data = ctx.callbackQuery.data ?? "";
+  if (!data.startsWith("appr:")) return;
+  const telegramId = String(ctx.from?.id ?? "");
+  const parts = data.split(":");
+  // appr:deny|allow|always:<pendingId>
+  if (parts.length < 3) {
+    await ctx.answerCallbackQuery({ text: "Invalid approval action." });
+    return;
+  }
+  const decision = parts[1] as "deny" | "allow" | "always";
+  const pendingId = parts.slice(2).join(":");
+  const pending = await getPendingApproval(pendingId);
+  if (!pending || pending.telegramId !== telegramId) {
+    await ctx.answerCallbackQuery({ text: "Approval not found or not yours." });
+    return;
+  }
+  if (pending.status !== "pending") {
+    await ctx.answerCallbackQuery({ text: `Already ${pending.status}.` });
+    return;
+  }
+
+  if (decision === "deny") {
+    await markPending(pendingId, "denied");
+    await ctx.answerCallbackQuery({ text: "Denied." });
+    await ctx.editMessageText(`Denied: ${pending.summary}`);
+    return;
+  }
+
+  if (decision === "always") {
+    await grantAlwaysAllow(telegramId, pending.provider, pending.operation);
+  }
+
+  try {
+    const args = { ...pending.arguments, approved: true };
+    const tool = typeof args.tool === "string" ? args.tool : pending.provider;
+    const { tool: _t, ...rest } = args as Record<string, unknown> & { tool?: string };
+    let result: unknown;
+    if (tool === "notion" || tool === "gmail" || tool === "nallputer") {
+      const name = String(rest.name ?? pending.operation);
+      const callArgs = (rest.arguments as Record<string, unknown>) ?? rest;
+      result = await callV22Operation(tool, name, callArgs, true);
+    } else if (tool === "github") {
+      result = await callGitHubOperation(String(rest.name ?? pending.operation), (rest.arguments as Record<string, unknown>) ?? {}, true);
+    } else if (tool === "file_io") {
+      result = await fileIO(telegramId, rest as Parameters<typeof fileIO>[1]);
+    } else if (tool === "memory") {
+      result = await memoryTool(telegramId, rest as Parameters<typeof memoryTool>[1]);
+    } else if (tool === "schedule") {
+      result = await scheduleTool(telegramId, rest as Parameters<typeof scheduleTool>[1]);
+    } else if (tool === "workflow") {
+      result = await workflowTool(telegramId, rest as Parameters<typeof workflowTool>[1]);
+    } else if (tool === "calendar") {
+      result = await calendarTool(telegramId, rest as Parameters<typeof calendarTool>[1]);
+    } else {
+      throw new Error(`Cannot execute approved tool: ${tool}`);
+    }
+    await markPending(pendingId, "executed", { result: result as Record<string, unknown> });
+    await ctx.answerCallbackQuery({ text: decision === "always" ? "Always allowed." : "Allowed." });
+    const preview = typeof result === "object" ? JSON.stringify(result).slice(0, 500) : String(result).slice(0, 500);
+    await ctx.editMessageText(
+      `${decision === "always" ? "Always allow saved." : "Allowed."} Ran ${pending.summary}\n\n${preview}`
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await markPending(pendingId, "failed", { error: message });
+    await ctx.answerCallbackQuery({ text: "Failed after approval." });
+    await ctx.editMessageText(`Approved but failed: ${pending.summary}\n${message}`);
+  }
+});
 
 bot.command("start", async (ctx) => {
   await replyFormatted({
@@ -505,6 +615,7 @@ bot.on("message:text", async (ctx) => {
         await progressQueue;
       };
       const onProgress = async (event: ProgressEvent): Promise<void> => {
+        if (await notifyApprovalIfNeeded(ctx.chat?.id, event)) return;
         const display = displayProgress(event);
         if (display) await showProgress(display.text, display.animateThinking);
       };

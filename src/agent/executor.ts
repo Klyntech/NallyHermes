@@ -9,6 +9,7 @@ import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { classifyFailure } from "./failure.js";
 import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from "../connectors/github.js";
 import { callV22Operation, getV22Operation, listV22Operations, type V22Connector } from "../connectors/v22.js";
+import { gateWriteOrPending } from "./approvals.js";
 
 export interface ToolCallInput {
   id: string;
@@ -126,6 +127,30 @@ async function executeToolCallOnce(
     const args = parseToolArguments(call.function.name, call.function.arguments);
     await onProgress?.({ type: "tool_start", tool: call.function.name, args });
     const reportToolProgress: ToolProgressReporter = (event) => onProgress?.(event);
+
+    const alreadyApproved = args.approved === true;
+    const gated = await gateWriteOrPending({
+      telegramId,
+      toolName: call.function.name,
+      args,
+      alreadyApproved
+    });
+    if (gated) {
+      await onProgress?.({
+        type: "tool_progress",
+        tool: call.function.name,
+        stage: "approval_required",
+        pending_id: gated.pending_id,
+        summary: gated.summary,
+        provider: gated.provider,
+        operation: gated.operation
+      } as Parameters<NonNullable<typeof onProgress>>[0]);
+      return { role: "tool", tool_call_id: call.id, content: JSON.stringify(gated) };
+    }
+    if (alreadyApproved || shouldForceApprovedFlag(call.function.name, args)) {
+      args.approved = true;
+    }
+
     let result: unknown;
 
     switch (call.function.name) {
@@ -312,4 +337,13 @@ export async function executeToolCalls(
     results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress))));
   }
   return results;
+}
+
+
+function shouldForceApprovedFlag(toolName: string, args: Record<string, unknown>): boolean {
+  // Always-allow path already returned null from gate; mark approved for connectors that check the flag.
+  if (toolName === "notion" || toolName === "gmail" || toolName === "nallputer" || toolName === "github") {
+    return args.operation === "call_operation" || Boolean(args.name);
+  }
+  return false;
 }

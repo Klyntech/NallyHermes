@@ -153,3 +153,32 @@ export const workflowRuns = pgTable("workflow_runs", {
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("workflow_runs_workflow_id_idx").on(table.workflowId)]);
+
+/** Persisted "Always Allow" scopes for write-capable connectors (per Telegram user). */
+export const approvalGrants = pgTable("approval_grants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  telegramId: text("telegram_id").notNull(),
+  provider: text("provider").notNull(),
+  scope: text("scope").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("approval_grants_user_provider_idx").on(table.telegramId, table.provider),
+  index("approval_grants_scope_idx").on(table.telegramId, table.provider, table.scope)
+]);
+
+/** Write actions waiting on Telegram Deny / Allow / Always Allow. */
+export const pendingApprovals = pgTable("pending_approvals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  telegramId: text("telegram_id").notNull(),
+  provider: text("provider").notNull(),
+  operation: text("operation").notNull(),
+  arguments: jsonb("arguments").$type<Record<string, unknown>>().default({}).notNull(),
+  summary: text("summary").notNull(),
+  status: text("status").notNull().default("pending"),
+  result: jsonb("result").$type<Record<string, unknown>>(),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true })
+}, (table) => [
+  index("pending_approvals_user_status_idx").on(table.telegramId, table.status),
+]);
