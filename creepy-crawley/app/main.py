@@ -227,7 +227,7 @@ def assess_relevance(query: str, title: str, text: str) -> tuple[str, list[str]]
     # Require meaningful overlap in the passage itself. A matching title alone
     # must never promote unrelated page text into the agent context.
     ratio = len(text_hits) / len(terms)
-    sentences = [part for part in re.split(r"(?<=[.!?])\\s+|\\n+", text) if part.strip()]
+    sentences = [part for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
     best_sentence_hits = max((len(terms & tokenize(sentence)) for sentence in sentences), default=0)
     minimum_hits = 1 if len(terms) == 1 else 2
     flags: list[str] = []
