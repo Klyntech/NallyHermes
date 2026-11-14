@@ -43,6 +43,28 @@ export class NallPuter {
     return session;
   }
 
+  /** Direct tool execution for tests and supervisors (still policy-gated). */
+  async runTool(request: {
+    sessionId?: string;
+    name: import("./types.js").ToolName;
+    input?: Record<string, unknown>;
+  }): Promise<ComputerResponse> {
+    const session = request.sessionId ? await this.sessions.load(request.sessionId) : await this.newSession();
+    const workspace = new Workspace(session.workspace);
+    const tools = createTools(workspace, this.policy);
+    const toolResults = await this.executeCalls(
+      [{ name: request.name, input: request.input ?? {} }],
+      tools,
+      session
+    );
+    const updated = await this.sessions.recordEvent(session);
+    return {
+      session: updated,
+      message: toolResults[0]?.ok ? `Tool ${request.name} completed.` : `Tool ${request.name} failed.`,
+      toolResults
+    };
+  }
+
   private async executeCalls(calls: NonNullable<Awaited<ReturnType<AgentBrain["respond"]>>["toolCalls"]>, tools: ToolDefinition[], session: SessionRecord): Promise<ToolResult[]> {
     const available = new Map(tools.map((tool) => [tool.name, tool]));
     const results: ToolResult[] = [];

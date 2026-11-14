@@ -42,6 +42,26 @@ if (httpMode) {
         return;
       }
 
+      if (req.method === "POST" && (req.url === "/v1/tool" || req.url === "/tool")) {
+        const body = await readJsonBody(req);
+        const name = body.name;
+        if (name !== "list_files" && name !== "read_file" && name !== "write_file" && name !== "run_command") {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "name must be list_files | read_file | write_file | run_command" }));
+          return;
+        }
+        const response = await computer.runTool({
+          sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
+          name,
+          input: typeof body.input === "object" && body.input && !Array.isArray(body.input)
+            ? (body.input as Record<string, unknown>)
+            : {}
+        });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(response));
+        return;
+      }
+
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
     } catch (error) {
@@ -53,7 +73,7 @@ if (httpMode) {
   server.listen(port, "0.0.0.0", () => {
     console.error(`NallPuter HTTP listening on 0.0.0.0:${port}`);
     console.error(`Data root: ${dataRoot}`);
-    console.error("GET /health  POST /v1/handle  body: {\"message\":\"list my files\"}");
+    console.error("GET /health  POST /v1/handle  POST /v1/tool");
   });
 } else {
   console.error(`NallPuter ready. Data root: ${dataRoot}`);
