@@ -1,130 +1,159 @@
 # Changelog
 
-Notable changes to NallyHermes are recorded here.
+Notable changes to NallyHermes are recorded here. Entries are based on commits present on the referenced development branch; they do not imply that a release has been tagged or that every external integration has been production-verified.
+
+## [Unreleased] — v3.1-Emotions development branch (through 2026-11-14)
+
+Branch head: `cdacc2af858221fc1f89db1470a09688c8fb829e`.
+
+The v3.1 affect work was branched from `Voice-v3`. The commits below are grouped by feature area and ordered from earlier work to the latest stabilization where practical.
+
+### Affect and conversational policy
+
+- **v3.1 dual-track affect layer** (`bd2c404`, 2026-11-14): introduced separate `userAffect` (inferred from the current message) and `agentAffect` (updated by events and time decay); added topic-change decay to reduce cross-task mood carry-over; added meaningful-shift prompt hints; connected tool/task outcomes to agent state; added `AFFECT_ENABLED` (default true) and an in-memory store keyed by Telegram user ID.
+- **Reply policies** (`4d5bb92`, 2026-11-14): added `urgent`, `stress`, `confuse` and `warm` policy selection with priority urgent > stress > confuse > warm; separated user confusion from frustration; applied acknowledge-align-act guidance, no intensity matching and concise practical responses.
+- **Affect stabilization** (`cdacc2af`, 2026-11-14): fixed affect prompt phrase leakage and tightened the emotional prompt behavior.
+- Added affect regression coverage for frustration non-mirroring, confusion response, warm greetings, topic-change decay and baseline no-hint behavior (`tests/affect.test.ts`).
+
+### Universal write approvals
+
+- **Universal Telegram approval gate** (`053ccce`, 2026-11-14): added Deny, Allow and Always Allow actions for write-capable tools across file I/O, memory, schedule, workflow, Calendar, GitHub, Notion, Gmail and NallPuter.
+- Added Neon-backed `pending_approvals` and `approval_grants` persistence.
+- Executor pauses mutations and emits an `approval_required` progress event; Allow executes the pending operation once; Always Allow persists the operation scope before executing.
+- The model receives a `needs_approval` result so it can stop repeating approval requests.
+- Approval callbacks validate Telegram ownership of the pending operation. Provider-specific write configuration remains a separate gate.
+
+### NallPuter computer-kernel connector
+
+- **Live NallPuter adapter** (`69c4d72`, 2026-11-14): connected the Hermes NallPuter tool to the live computer kernel.
+- Added health, workspace listing, file read/write, process inspection, log retrieval, test/build execution, bounded command execution and service restart operations.
+- Kept local `file_io` distinct from NallPuter session-computer operations.
+- Added separate write and command gates. The connector is unavailable without `NALLPUTER_URL`.
+- The adapter currently permits `NALLPUTER_TOKEN` to be absent until kernel-side authentication is enabled; this is a deployment security caveat, not evidence that the remote service is authenticated.
+- **Fail-closed configuration stabilization** (`cdacc2af`, 2026-11-14): corrected NallPuter configuration handling so an unset endpoint does not silently trigger an unintended service call.
+
+### Research and web retrieval
+
+- **Hybrid search** (`03b53d9`, 2026-11-14): merged Nally Creepy Crawley and Tavily to improve coverage; deduplicates by URL, prefers extracted body content and sorts by source tier. Added `hybrid`, `creepy_crawley` and `tavily` modes; hybrid is the default.
+- Added Nally Creepy Crawley as the primary search/fetch backend (`92ba3cf`, 2026-11-14), with a configured default service URL (`fac37d8`).
+- Existing research behavior was retained: basic/advanced depth, research query planning, source tiers, extracted content and the evaluator's bounded claim-audit rewrite path (see the 2026-11-13 alpha.2 entry below).
+
+### Runtime skills
+
+- **Proven runtime skill library** (`f331f3c`, 2026-11-14): added a skills registry/library so relevant skill instructions can be discovered and selectively injected for matching work rather than loading every full skill body on every request.
+- Skill provenance is recorded in `skills/PROVENANCE.md`.
+
+### Voice and response channels
+
+- **Production Telegram voice notes** (`d2ad8bc`, 2026-11-13): completed the Telegram voice-note integration using Deepgram STT and ElevenLabs TTS.
+- Added audio normalization and bounded processing using FFmpeg; configured audio size, duration, provider timeout and retry limits.
+- **Dual spoken/text response contract** (`df58c85`, 2026-11-13): split responses into `SPOKEN` content for TTS and `TEXT` content for links, sources, tables and other text-only material; set the default speech rate to 0.9 and allow an empty text section when there is nothing additional to show.
+- **Voice context and partial response support** (`0e8c096`, 2026-11-13): added context-pack plumbing, partial-result synthesis and Deepgram/ElevenLabs integration boundaries.
+- **Adaptive routing and response style** (`8a51871`, 2026-11-13): carried interaction channel and response style through the orchestra and introduced adaptive routing behavior.
+- Fixed strict TypeScript issues in voice response splitting and progress-event handling (`15eb9fc`, `7b8e30f`).
+
+### Telegram presentation and progress
+
+- **Rich-message transport** (`8c73340`, `bb8bf23`, 2026-11-13): prefers Telegram Bot API rich Markdown messages for native headings, lists and tables, with existing HTML fallback and message splitting.
+- Added connector progress labels, Telegram table presentation and GitHub batch-push behavior (`b9a38df`, 2026-11-13).
+- Fixed progress event typing and approval callback payload typing in the latest branch stabilization commit (`cdacc2af`).
+
+### Academic companion and connectors
+
+- Added academic tool operations for indexed course PDFs and notes, including list/search/get/delete/rename (`0615028`, `cee5649`, 2026-11-13).
+- Improved Telegram document metadata capture and structured Course/Title labeling without requiring a reply-to (`ace5f62`, `94186a2`, `0c8a832`, `9e0593`).
+- Hardened LightRAG error handling and restored executor/LightRAG wiring after intermediate placeholder regressions (`e53288f`, `840e5d8`).
+- Earlier V2.2 commits added Notion and Gmail adapters, typed memory/context, and the adaptive custom-orchestra foundation (`4a2238f`, `acbd3bd`, `638d099`).
+
+### Earlier V2.2 alpha.2 work
 
 ## [2.2.0-alpha.2] - 2026-11-13
 
-Work landed on `Manus-Work-NallyHermes-v2.2` after alpha.1. Domain tools for exact GitHub metrics and the full research eval harness remain planned polish (P3–P5).
+Work landed on `Manus-Work-NallyHermes-v2.2` after alpha.1. Domain tools for exact GitHub metrics and the full research eval harness remained deferred at that point.
 
 ### Accuracy and research
-- Added an **accuracy contract** to the system prompt: restate the measurable ask, tool-backed numbers and dates, primary-source preference, **Not verified** / **Partial** labeling, and bans on confident `~` / "not disclosed" without a primary check.
-- Extended table/proof rules so factual tables include proof (link, id/SHA, date) and a **Source / Last checked** line.
-- Upgraded `web_search`: `depth` (`basic` | `advanced`), `research` mode with a lightweight query planner, source tiering (`primary` / `secondary` / `aggregator` / `unknown`), primary-first ranking, and raw content on advanced/research hits.
-- Tool payloads now include verification guidance so quantitative answers require a follow-up `fetch` on a primary URL.
-- Added a deterministic **claim audit** in the evaluator (approximate numbers, not-disclosed language, tables without proof, numeric claims without research tools) and wired it into the controller so a failed audit triggers one rewrite round before the answer is accepted.
-- Added `tests/accuracy-contract.test.ts` for audit, tiering, and query-planner behavior.
+- Added an accuracy contract: restate the measurable ask, use tool-backed numbers and dates, prefer primary sources, label **Not verified** / **Partial**, and avoid unsupported approximate or “not disclosed” claims.
+- Extended proof rules so factual tables include links, IDs/SHAs or dates and a **Source / Last checked** line.
+- Upgraded `web_search` with basic/advanced depth, research query planning, source tiering and raw content on deeper hits.
+- Added a deterministic claim audit for weak numerical claims, unsupported not-disclosed language, tables without proof and numeric claims without research evidence; a failed audit can trigger one rewrite.
+- Added `tests/accuracy-contract.test.ts`.
 
 ### Telegram presentation
-- Prefer Telegram **rich messages** (`rich_message.markdown`) when the Bot API / grammY build supports them so headings, lists, and tables can render natively instead of HTML approximations.
-- Kept the existing Markdown→Telegram HTML converter and message splitting as a fallback path.
-- Wired `replyFormatted` / `editFormatted` in `src/index.ts` to try rich transport first, then HTML.
+- Preferred Telegram rich Markdown messages when supported, retaining Markdown-to-HTML fallback and message splitting.
 
-### Academic companion
-- Registered the `academic` agent tool for indexed course PDFs and notes (`list`, `search`, `get`, `delete`, `rename`).
-- Stabilized Telegram document ingestion: structured Course/Title labels without requiring a reply-to, decoupled caption metadata, and stronger LightRAG error handling.
-- Raised PDF ingestion reliability (Poppler in the image, large-PDF streaming extraction, clearer diagnostics).
-
-### Connectors and workflows
-- Connector progress labels and GitHub batch push behavior as NallyHermes.
-- Notion and Gmail V2.2 adapters and the hand-built orchestra remaining model-led and adaptive.
-- GitHub repo enumeration fixes and tighter workflow allowlists.
+### Academic companion and connectors
+- Registered academic list/search/get/delete/rename operations.
+- Stabilized Telegram PDF ingestion, metadata labels, Poppler-based extraction and large-PDF streaming.
+- Added Notion and Gmail adapters, connector progress labels and GitHub repository enumeration fixes.
 
 ### Bug fixes
-- Restored `src/index.ts` after accidental placeholder writes and completed rich-message wiring.
-- Restored executor / LightRAG wiring after earlier placeholder commits on the branch.
+- Restored `src/index.ts`, executor and LightRAG wiring after intermediate placeholder regressions.
 
-### Documentation
-- Changelog and README updated for alpha.2 (this release).
-
-### Deferred (later polish)
-- P3: GitHub domain tool for exact multi-branch commit counts and similar pinpoint metrics.
-- P4: Stronger proof UX in presentation beyond rich-message support.
-- P5: Golden research eval harness in CI.
+### Deferred at alpha.2
+- Exact multi-branch GitHub metrics.
+- Stronger proof UX beyond rich-message support.
+- A golden research evaluation harness in CI.
 
 ## [2.2.0-alpha.1] - 2026-11-11
 
 ### Bug fixes
-- Fixed LightRAG's 2,048-dimension PostgreSQL HNSW warning by selecting pgvector's `HNSW_HALFVEC` index type, and extended the bounded LightRAG request timeout to 30 minutes for long academic documents.
-- Updated the production image to Node 22 and made Debian package installation noninteractive, removing the deployment's Node engine and debconf warnings.
-- Fixed Render/Docker PDF extraction failures caused by a missing `pdftotext` binary by installing `poppler-utils` and adding a startup dependency check.
-- Fixed large-PDF extraction failures caused by Node child-process stdout buffering; extraction now streams through a temporary file and reports actionable diagnostics.
-- Made explicit durable user facts and preferences trigger a real memory remember operation before acknowledgement.
-- Prevented scheduled workflow runs from mutating reminders, calendars, files, or connectors merely because their policy says `confirm_mutations`; automated runs now stop and report that interactive user confirmation is required.
+- Fixed LightRAG's 2,048-dimensional PostgreSQL HNSW warning by selecting pgvector's `HNSW_HALFVEC` index type, and extended the bounded LightRAG request timeout to 30 minutes for long academic documents.
+- Updated the production image to Node 22 and made Debian package installation noninteractive.
+- Fixed PDF extraction deployment failures by installing `poppler-utils`, streaming large-PDF extraction through a temporary file and improving diagnostics.
+- Made explicit durable user facts and preferences trigger a memory remember operation before acknowledgement.
+- Prevented scheduled workflow runs from mutating reminders, calendars, files or connectors merely because their policy says `confirm_mutations`; interactive confirmation is required.
 - Clarified that recurring schedules are not live event monitors and cannot claim to watch changing conditions between runs.
-- Added Telegram document-update idempotency protection to suppress duplicate ingestion and completion messages after webhook retries.
-- Improved PDF diagnostics with scanned/image-only detection and extraction exit-code, signal, and stderr details.
-- Raised the default Telegram PDF ingestion limit from 10 MB to 20 MB across runtime configuration, templates, and documentation.
-
-### Planned
-- Opened the V2.2 capability track for the improved custom orchestra, coding mode, general assistant abilities, law-student companion, active memory application, and the `notion`, `gmail`, and `nallputer` connectors.
-- Added the [V2.2 roadmap](./V2.2_ROADMAP.md), including connector security boundaries, typed memory, entity continuity, and phased release criteria.
+- Added Telegram document-update idempotency protection.
+- Raised the default Telegram PDF ingestion limit to 20 MB.
 
 ### Implemented in alpha.1
-- Added typed memory fields for facts, preferences, projects, commitments, entities, and episodes, including confidence, source, expiry, and confirmation timestamps.
-- Added bounded active-memory context before model routing so relevant durable facts can resolve incomplete references while current facts still require live verification.
-- Added dynamic dispatcher contracts for `notion`, `gmail`, and `nallputer`, with fail-closed credentials, explicit write gates, and no fake success from unavailable operations.
-- Implemented the Notion REST adapter for bounded search, page reads, block reads, database queries, page creation, block appends, and page-property updates.
-- Implemented the Gmail OAuth adapter for bounded message/thread search and reads, labels, drafts, approved sends, and approved label/archive mutations.
-- Replaced regex-led intent routing with one model-led adaptive orchestra path; deterministic code now focuses on safety, budgets, ownership, and evidence instead of guessing user intent.
-- Removed keyword-based short follow-up classification and replaced it with context supplied to the model for interpretation against recent conversation.
-- Added V2.2 connector configuration, executor validation, workflow allowlist support, and regression coverage.
+- Added typed memory categories and bounded active-memory context.
+- Added dynamic Notion, Gmail and NallPuter connector contracts with fail-closed credentials and explicit write gates.
+- Implemented Notion REST and Gmail OAuth adapters.
+- Replaced regex-led intent routing with a model-led adaptive orchestra path.
+- Added connector configuration, executor validation, workflow allowlists and regression coverage.
 
 ## [2.1.0] - 2026-11-11
 
 ### Added
 - Connected Telegram PDF academic ingestion to the existing LightRAG pipeline through an authenticated `/v1/academic/insert` endpoint.
-- Indexed extracted academic text into the same per-Telegram-user LightRAG workspace used for semantic memory retrieval, with the Neon academic document ID as the source identity.
-- Recorded `indexed` and `extracted_index_failed` statuses so the system never presents a failed semantic index as searchable content.
+- Indexed extracted academic text into the same per-Telegram-user LightRAG workspace used for semantic memory retrieval.
+- Recorded `indexed` and `extracted_index_failed` statuses.
 
 ### Changed
-- Neon remains the source of truth for academic document metadata and extracted text; LightRAG provides semantic retrieval and reranking over the document content.
+- Neon remains the source of truth for academic document metadata and extracted text; LightRAG provides semantic and graph retrieval.
 
 ## [2.0.0-alpha.1] - 2026-11-08
 
 ### Added
-- Started the V2 line on the `Manus-Work-NallyHermes-v2` branch.
-- Added a reproducible npm lockfile.
-- Added durable conversation persistence in Neon, scoped by Telegram user and chat.
-- Added startup migration and indexing for the Telegram chat conversation scope.
-- Added durable recurring workflows with triggers, bounded instructions, allowed tools, approval policy, Telegram delivery, retry policy and run history.
-- Added opt-in Neon integration coverage for conversation isolation and workflow persistence.
-- Added orchestration tests for workflow tool policies and timezone-aware recurrence.
-- Added a provider-neutral connector contract for Calendar and future services.
-- Added strict Calendar list/create/update/cancel operations with fail-closed behavior when no provider is configured.
-- Added LLM-generated natural-language wording for due reminders, with a safe concise fallback when model composition is unavailable.
-- Added active-topic follow-up guidance so short confirmations such as `Confirm time` resolve against the current event instead of the current clock.
-- Added explicit routing guidance to keep event-triggered requests separate from fixed-time reminders.
-- Sanitized internal reminder instructions before user-facing composition.
-- Tuned Nally's default voice to avoid unsolicited AI disclaimers, capability tours, and support-script phrasing; added context-aware emotional responses and concise result-first examples.
-- Started the hand-built orchestra improvement track with adaptive routing, execution state, phase telemetry, typed failures, event-monitoring primitives, and voice-ready interface types—without adding an external framework.
-- Started Academic Companion milestones 1–5 with durable academic profile, PDF/document ingestion, extracted-text storage, timetable and assessment persistence, a dark minimal `/ingestion` web console, and a today/next dashboard foundation.
-- Added the GitHub tool foundation: one dynamic dispatcher, PAT-only environment authentication, repository allowlisting, fail-closed behavior, and a separate explicit write gate.
-- Consolidated V2 around Telegram: PDF academic ingestion now accepts labeled Telegram documents; GitHub defaults to all repositories with delete operations denied; schedule and workflow creation enforce bounded dates, policies, ownership, and event-vs-reminder routing; Calendar overlap checks and date validation are part of scheduling.
+- Started the V2 line on `Manus-Work-NallyHermes-v2`.
+- Added a reproducible npm lockfile and durable conversation persistence in Neon, scoped by Telegram user and chat.
+- Added durable recurring workflows with triggers, bounded instructions, tool allowlists, approval policy, Telegram delivery, retries and run history.
+- Added a provider-neutral Calendar connector boundary and strict Calendar list/create/update/cancel operations.
+- Added natural-language reminder composition and active-topic follow-up guidance.
+- Started the hand-built orchestra improvement track with adaptive routing, execution state, phase telemetry, typed failures, event-monitoring primitives and voice-ready interfaces.
+- Started Academic Companion ingestion and structured academic data.
+- Added the GitHub dynamic dispatcher foundation with server-side PAT authentication, repository allowlisting and a separate write gate.
 
 ### Changed
-- Telegram requests now load prior user/assistant history from Neon and persist each completed exchange.
-- Workflow runs are executed through the bounded orchestra and cannot request tools outside their allowlist.
-- Calendar can be explicitly allowlisted by a workflow but is never treated as connected without provider credentials.
-- Reminder task text is passed to the model as untrusted user data and cannot change Nally's instructions or permissions.
-
-### Security
-- Upgraded `drizzle-orm`, `openai` and `zod` to patched versions; `npm audit --audit-level=high` reports zero vulnerabilities.
+- Telegram requests load and persist prior user/assistant history.
+- Workflow runs execute through bounded orchestration and cannot request tools outside their allowlist.
+- Calendar is never treated as connected without provider credentials.
+- Reminder task text is untrusted input and cannot change system instructions or permissions.
 
 ## [1.0.0-beta.1] - 2026-11-06
 
 ### Added
 - Custom model-led agent orchestra with smart planning, dependency tracking, bounded execution and evidence-based reporting.
-- Five native agent tools: web search, fetch, file I/O, memory and scheduling.
-- Neon-backed user memory and schedules with optional LightRAG semantic and graph retrieval.
-- User timezone awareness and recurring local-time reminders.
-- Telegram progress-message editing and Markdown presentation.
-- Natural communication guidance in the system prompt.
-- Initial automated Telegram presentation regression tests and GitHub Actions CI.
+- Initial web search, fetch, file I/O, memory and scheduling tools.
+- Neon-backed user memory and schedules with optional LightRAG retrieval.
+- User timezone awareness, recurring reminders and Telegram progress-message editing.
+- Initial automated Telegram presentation tests and GitHub Actions CI.
 
 ### Improved
 - Conversation history isolation by Telegram chat and participant.
-- Workspace path validation to reject symbolic-link escapes.
+- Workspace path validation rejects symbolic-link escapes.
 - LightRAG startup is conditional on `LIGHTRAG_ENABLED`.
 
 ### Notes
-- This is a beta release. See the README for known limitations and release validation requirements.
+- This was an early beta snapshot. See the current branch documentation and release checklist for present capabilities and outstanding release gates.
