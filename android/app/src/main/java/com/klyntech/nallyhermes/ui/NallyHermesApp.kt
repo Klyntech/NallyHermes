@@ -1,6 +1,11 @@
 package com.klyntech.nallyhermes.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,11 +75,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -86,9 +93,7 @@ private data class AppDestination(val route: String, val label: String, val icon
 
 private val destinations = listOf(
     AppDestination("chat", "Chat", Icons.Default.ChatBubbleOutline),
-    AppDestination("tasks", "Tasks", Icons.Default.TaskAlt),
-    AppDestination("memory", "Memory", Icons.Default.Memory),
-    AppDestination("tools", "Tools", Icons.Default.Widgets),
+    AppDestination("voice", "Voice", Icons.Default.GraphicEq),
     AppDestination("settings", "Settings", Icons.Default.Settings)
 )
 
@@ -101,27 +106,66 @@ fun NallyHermesApp() {
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 4.dp
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .shadow(20.dp, RoundedCornerShape(34.dp))
+                    .clip(RoundedCornerShape(34.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.78f))
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f), RoundedCornerShape(34.dp))
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 destinations.forEach { destination ->
                     val selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(destination.icon, contentDescription = destination.label) },
-                        label = { Text(destination.label) },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (selected) 1.12f else 1f,
+                        label = "navigation icon scale"
                     )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)
+                                else Color.Transparent
+                            )
+                            .clickable {
+                                navController.navigate(destination.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                            .animateContentSize()
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            destination.icon,
+                            contentDescription = destination.label,
+                            tint = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            }
+                        )
+                        AnimatedVisibility(visible = selected) {
+                            Text(
+                                destination.label,
+                                modifier = Modifier.padding(start = 8.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -132,11 +176,74 @@ fun NallyHermesApp() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("chat") { ChatScreen() }
+            composable("voice") { VoiceScreen() }
             composable("tasks") { TasksScreen() }
             composable("memory") { MemoryScreen() }
             composable("tools") { ToolsScreen() }
             composable("settings") { SettingsScreen() }
         }
+    }
+}
+
+
+@Composable
+private fun VoiceScreen() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("Voice", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "Talk with NallyHermes",
+            modifier = Modifier.padding(top = 6.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(42.dp))
+        Box(
+            modifier = Modifier
+                .size(184.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(132.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.GraphicEq,
+                    contentDescription = "Voice activity",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(64.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+        Text("Ready when you are", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Voice interaction will connect to your NallyHermes assistant.",
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(Modifier.height(28.dp))
+        FilledIconButton(
+            onClick = { },
+            modifier = Modifier.size(68.dp)
+        ) {
+            Icon(Icons.Default.GraphicEq, contentDescription = "Start voice session", modifier = Modifier.size(30.dp))
+        }
+        Text(
+            "Voice interface preview",
+            modifier = Modifier.padding(top = 12.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
