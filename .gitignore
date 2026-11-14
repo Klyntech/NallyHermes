@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.nallputer/
+*.log
+.env
+.env.*
+!.env.example

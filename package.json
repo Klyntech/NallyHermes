@@ -1,0 +1,21 @@
+{
+  "name": "nallputer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nally Virtual Computer: a secure runtime for AI agents, tools, sessions, and isolated workspaces.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test --import tsx tests/*.test.ts",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
