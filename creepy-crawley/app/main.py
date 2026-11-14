@@ -17,7 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, HttpUrl
 
 from .config import get_settings
-from .crawler import crawl_site, scrape_url
+from .crawler import crawl_site, metrics_snapshot, scrape_url
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -366,18 +366,18 @@ async def scrape(payload: ScrapeRequest) -> dict:
         raise HTTPException(status_code=502, detail=f"Page returned HTTP {exc.response.status_code}") from exc
     except (httpx.HTTPError, ValueError, UnicodeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)[:240]) from exc
-    return {"url": page["url"], "title": page["title"], "content": page["content"], "content_truncated": page["content_truncated"]}
+    return {"url": page["url"], "title": page["title"], "content": page["content"], "content_truncated": page["content_truncated"], "structured": page.get("structured", {})}
 
 
 @app.post("/v1/crawl", dependencies=[Depends(require_api_key)])
 async def crawl(payload: CrawlRequest) -> dict:
     try:
-        pages = await crawl_site(str(payload.url), payload.max_pages, payload.max_depth)
+        pages = await crawl_site(str(payload.url), payload.max_pages, payload.max_depth, payload.allow_domains, payload.deny_domains, payload.use_sitemap)
     except (httpx.TimeoutException, httpx.HTTPError) as exc:
         raise HTTPException(status_code=502, detail="Crawl request failed") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)[:240]) from exc
-    return {"start_url": str(payload.url), "max_pages": payload.max_pages, "max_depth": payload.max_depth, "pages_crawled": sum(1 for page in pages if page.get("status") != "error"), "pages": pages}
+    return {"start_url": str(payload.url), "max_pages": payload.max_pages, "max_depth": payload.max_depth, "sitemap_discovery": payload.use_sitemap, "pages_attempted": len(pages), "pages_crawled": sum(1 for page in pages if page.get("status") != "error"), "pages_failed": sum(1 for page in pages if page.get("status") == "error"), "pages": pages}
 
 
 @app.get("/health")
@@ -390,7 +390,7 @@ async def health() -> dict:
         search_status = "ok"
     except (httpx.HTTPError, ValueError):
         search_status = "unavailable"
-    return {"status": "ok" if search_status == "ok" else "degraded", "search_backend": search_status}
+    return {"status": "ok" if search_status == "ok" else "degraded", "search_backend": search_status, "crawler": "available"}
 
 
 @app.post("/v1/search", response_model=SearchResponse, dependencies=[Depends(require_api_key)])
