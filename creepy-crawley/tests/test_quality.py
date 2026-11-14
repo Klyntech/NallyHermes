@@ -35,7 +35,7 @@ def test_one_relevant_term_in_long_passage_is_not_enough():
     status, flags = assess_relevance(
         "how do large language models work",
         "Large language models overview",
-        "Large language models are discussed briefly. The rest covers unrelated exercise routines and sports.",
+        "Models are discussed briefly. The rest covers unrelated exercise routines and sports.",
     )
     assert status == "low_relevance"
     assert "weak_passage_overlap" in flags
