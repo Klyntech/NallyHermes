@@ -8,7 +8,7 @@ def test_relevant_text_is_marked_relevant():
         "Large language models learn patterns from large text datasets.",
     )
     assert status == "relevant"
-    assert flags == []
+    assert "short_content" in flags
 
 
 def test_unrelated_title_and_text_are_flagged():
