@@ -8,7 +8,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Discover current or time-sensitive information via Nally Creepy Crawley (primary) with Tavily fallback. Prefer depth=advanced or research=true for prices, counts, dates, or inventories. Results are source-tiered. Extracted page text may be present on top hits; still fetch a primary URL when numbers must be exact.",
+      description: "Discover current or time-sensitive information. Default mode merges Creepy Crawley (depth/extract) with Tavily (coverage). Prefer depth=advanced or research=true for prices, counts, dates, or inventories. Results are source-tiered. Extracted page text may be present on top hits; still fetch a primary URL when numbers must be exact.",
       parameters: {
         type: "object",
         properties: {

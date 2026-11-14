@@ -13,6 +13,8 @@ const envSchema = z.object({
   CREEPY_CRAWLEY_URL: z.string().url().default("https://nallycreepycrawley.onrender.com"),
   CREEPY_CRAWLEY_API_KEY: z.string().optional(),
   CREEPY_CRAWLEY_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
+  /** hybrid = CC + Tavily merge (best coverage); creepy_crawley or tavily = single backend. */
+  WEB_SEARCH_MODE: z.enum(["hybrid", "creepy_crawley", "tavily"]).default("hybrid"),
   WEBHOOK_URL: z.string().url(),
   WEBHOOK_SECRET: z.string().min(32).regex(/^[A-Za-z0-9_-]+$/),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),

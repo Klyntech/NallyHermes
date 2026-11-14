@@ -248,7 +248,7 @@ function sortResults(results: NormalizedHit[]): NormalizedHit[] {
   });
 }
 
-/** Search the web via Creepy Crawley (primary) or Tavily (fallback). */
+/** Search the web: hybrid CC + Tavily when both are configured (closes coverage gap). */
 export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const parsed = searchInput.parse(input);
   const research = parsed.research;
@@ -256,6 +256,9 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
   const extract = research || depth === "advanced";
   const queries = planSearchQueries(parsed.query, research);
   const perQuery = Math.max(3, Math.ceil(parsed.max_results / queries.length));
+  const mode = config.WEB_SEARCH_MODE;
+  const useCc = isCreepyCrawleyConfigured() && mode !== "tavily";
+  const useTavily = Boolean(config.TAVILY_API_KEY) && mode !== "creepy_crawley";
 
   await onProgress?.({
     type: "tool_progress",
@@ -265,13 +268,45 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
     depth
   });
 
+  if (!useCc && !useTavily) {
+    throw new Error(
+      "Web search is not configured. Set CREEPY_CRAWLEY_API_KEY and/or TAVILY_API_KEY (WEB_SEARCH_MODE=" +
+        mode +
+        ")."
+    );
+  }
+
   const retrievedAt = new Date();
   const merged = new Map<string, NormalizedHit>();
   let answer: string | null = null;
-  let provider: "creepy_crawley" | "tavily" = "creepy_crawley";
-  let lastError: unknown;
+  const providersUsed: string[] = [];
+  const errors: string[] = [];
 
-  if (isCreepyCrawleyConfigured()) {
+  const mergeHit = (mapped: NormalizedHit) => {
+    const existing = merged.get(mapped.url);
+    if (!existing) {
+      merged.set(mapped.url, mapped);
+      return;
+    }
+    // Prefer the hit with extracted/raw body; then higher score; keep best tier via later sort
+    const existingBody = (existing.extracted_content || existing.raw_content || "").length;
+    const nextBody = (mapped.extracted_content || mapped.raw_content || "").length;
+    if (nextBody > existingBody || (nextBody === existingBody && (mapped.score ?? 0) > (existing.score ?? 0))) {
+      merged.set(mapped.url, {
+        ...existing,
+        ...mapped,
+        // Keep the stronger body fields
+        content: mapped.content || existing.content,
+        extracted_content: mapped.extracted_content || existing.extracted_content,
+        raw_content: mapped.raw_content || existing.raw_content,
+        extraction_status: mapped.extraction_status || existing.extraction_status,
+        score: Math.max(existing.score ?? 0, mapped.score ?? 0)
+      });
+    }
+  };
+
+  // 1) Creepy Crawley — depth + extract on official pages
+  if (useCc) {
     try {
       for (const q of queries) {
         const data = await creepySearch({
@@ -286,56 +321,64 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
         if (!answer && data.answer) answer = data.answer;
         for (const hit of data.results) {
           const mapped = mapHit(hit, retrievedAt);
-          if (!mapped) continue;
-          const existing = merged.get(mapped.url);
-          if (!existing || (mapped.score ?? 0) > (existing.score ?? 0)) {
-            merged.set(mapped.url, mapped);
-          }
+          if (mapped) mergeHit(mapped);
         }
       }
-      provider = "creepy_crawley";
+      providersUsed.push("creepy_crawley");
     } catch (error) {
-      lastError = error;
-      console.warn("Creepy Crawley search failed; trying Tavily fallback:", error);
-      merged.clear();
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`creepy_crawley: ${msg}`);
+      console.warn("Creepy Crawley search failed:", error);
+    }
+  }
+
+  // 2) Tavily — broader coverage (always in hybrid when key present, or sole backend)
+  // In hybrid, also run when CC returned thin results OR always merge for coverage.
+  const thin = merged.size < Math.min(3, parsed.max_results);
+  const shouldTavily = useTavily && (mode === "tavily" || mode === "hybrid" || thin || !providersUsed.includes("creepy_crawley"));
+
+  if (shouldTavily) {
+    try {
+      // Slightly wider net from Tavily to close coverage gap
+      const tavilyPerQuery = mode === "hybrid" ? Math.max(perQuery, Math.min(8, parsed.max_results + 2)) : perQuery;
+      for (const q of queries) {
+        const data = await tavilySearch(q, tavilyPerQuery, depth, extract && !useCc);
+        if (!answer && data.answer) answer = data.answer;
+        for (const hit of data.results ?? []) {
+          const mapped = mapHit(
+            {
+              title: String(hit.title ?? ""),
+              url: String(hit.url ?? ""),
+              content: String(hit.content ?? ""),
+              score: typeof hit.score === "number" ? hit.score : 0,
+              published_date: (hit.published_date as string | null) ?? null,
+              raw_content: (hit.raw_content as string | null) ?? null
+            },
+            retrievedAt
+          );
+          if (mapped) mergeHit(mapped);
+        }
+      }
+      providersUsed.push("tavily");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`tavily: ${msg}`);
+      console.warn("Tavily search failed:", error);
     }
   }
 
   if (merged.size === 0) {
-    if (!config.TAVILY_API_KEY) {
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(
-            "Web search is not configured. Set CREEPY_CRAWLEY_API_KEY (preferred; URL defaults to nallycreepycrawley.onrender.com) or TAVILY_API_KEY."
-          );
-    }
-    provider = "tavily";
-    for (const q of queries) {
-      const data = await tavilySearch(q, perQuery, depth, extract);
-      if (!answer && data.answer) answer = data.answer;
-      for (const hit of data.results ?? []) {
-        const mapped = mapHit(
-          {
-            title: String(hit.title ?? ""),
-            url: String(hit.url ?? ""),
-            content: String(hit.content ?? ""),
-            score: typeof hit.score === "number" ? hit.score : 0,
-            published_date: (hit.published_date as string | null) ?? null,
-            raw_content: (hit.raw_content as string | null) ?? null
-          },
-          retrievedAt
-        );
-        if (!mapped) continue;
-        const existing = merged.get(mapped.url);
-        if (!existing || (mapped.score ?? 0) > (existing.score ?? 0)) {
-          merged.set(mapped.url, mapped);
-        }
-      }
-    }
+    throw new Error(
+      errors.length
+        ? `Web search failed. ${errors.join(" | ")}`
+        : "Web search returned no results."
+    );
   }
 
   const results = sortResults([...merged.values()]).slice(0, parsed.max_results);
   const primaryCount = results.filter((r) => r.source_tier === "primary").length;
+  const provider =
+    providersUsed.length > 1 ? "hybrid" : providersUsed[0] === "tavily" ? "tavily" : "creepy_crawley";
 
   await onProgress?.({
     type: "tool_progress",
@@ -347,6 +390,8 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
   return {
     answer,
     provider,
+    providers_used: providersUsed,
+    provider_errors: errors.length ? errors : undefined,
     searched_at: retrievedAt.toISOString(),
     depth_used: depth,
     queries_used: queries,
