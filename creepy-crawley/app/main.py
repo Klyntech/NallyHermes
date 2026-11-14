@@ -17,14 +17,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, HttpUrl
 
 from .config import get_settings
+from .crawler import crawl_site, scrape_url
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI(
     title="Nally Creepy Crawley",
-    description="Private, self-hosted web search and page extraction API backed by SearXNG.",
-    version="0.2.0",
+    description="Private, self-hosted search, scraping, and bounded site crawling API backed by SearXNG.",
+    version="0.3.0",
 )
 
 MAX_PAGE_BYTES = 2_000_000
@@ -32,6 +33,16 @@ MAX_EXTRACTED_CHARS = 12_000
 MAX_REDIRECTS = 4
 PAGE_FETCH_TIMEOUT = 8.0
 PAGE_FETCH_CONCURRENCY = 4
+
+
+class ScrapeRequest(BaseModel):
+    url: HttpUrl
+
+
+class CrawlRequest(BaseModel):
+    url: HttpUrl
+    max_pages: int = Field(default=5, ge=1, le=20)
+    max_depth: int = Field(default=1, ge=0, le=2)
 
 
 class SearchRequest(BaseModel):
@@ -343,6 +354,30 @@ def build_context(
             remaining -= len(excerpt)
 
     return context, sources
+
+
+@app.post("/v1/scrape", dependencies=[Depends(require_api_key)])
+async def scrape(payload: ScrapeRequest) -> dict:
+    try:
+        page = await scrape_url(str(payload.url))
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Page fetch timed out") from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"Page returned HTTP {exc.response.status_code}") from exc
+    except (httpx.HTTPError, ValueError, UnicodeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)[:240]) from exc
+    return {"url": page["url"], "title": page["title"], "content": page["content"], "content_truncated": page["content_truncated"]}
+
+
+@app.post("/v1/crawl", dependencies=[Depends(require_api_key)])
+async def crawl(payload: CrawlRequest) -> dict:
+    try:
+        pages = await crawl_site(str(payload.url), payload.max_pages, payload.max_depth)
+    except (httpx.TimeoutException, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail="Crawl request failed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)[:240]) from exc
+    return {"start_url": str(payload.url), "max_pages": payload.max_pages, "max_depth": payload.max_depth, "pages_crawled": sum(1 for page in pages if page.get("status") != "error"), "pages": pages}
 
 
 @app.get("/health")
