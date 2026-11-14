@@ -365,7 +365,7 @@ async def crawl_site(
     seen: set[str] = set()
     pages: list[dict] = []
     async with httpx.AsyncClient(timeout=timeout, limits=limits, follow_redirects=False, headers={"User-Agent": USER_AGENT}) as client:
-        if use_sitemap:
+        if use_sitemap and max_depth >= 1:
             for sitemap_url in await discover_sitemap_urls(client, start, max_urls=max_pages * 5):
                 if sitemap_url != start:
                     queue.append((sitemap_url, 1))
