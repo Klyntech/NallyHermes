@@ -2,6 +2,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { SYSTEM_PROMPT } from "./definitions.js";
 import { buildClockContext } from "./clock.js";
 import { buildFollowUpContext } from "./followUpContext.js";
+import { buildSkillContext } from "./skills/registry.js";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { memories, users } from "../db/schema.js";
@@ -66,9 +67,11 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Asse
   const clockContext = await buildClockContext(input.telegramId);
   const followUpContext = buildFollowUpContext(input.history, input.userMessage);
   const activeMemoryContext = await buildActiveMemoryContext(input.telegramId, input.userMessage);
+  const skillContext = await buildSkillContext(input.userMessage);
   return {
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: skillContext },
       { role: "system", content: clockContext },
       ...(activeMemoryContext ? [{ role: "system" as const, content: activeMemoryContext }] : []),
       ...(followUpContext ? [{ role: "system" as const, content: followUpContext }] : []),

@@ -7,7 +7,7 @@ Nally uses a custom TypeScript orchestration layer. The model interprets user in
 ## Request lifecycle
 
 1. **Telegram adapter** receives a webhook update and creates or retrieves the participant's conversation history.
-2. **Context manager** combines the system prompt, trusted clock snapshot, recent conversation and current message.
+2. **Context manager** combines the system prompt, relevant repository skill instructions, trusted clock snapshot, recent conversation and current message.
 3. **Planner** asks whether the task benefits from decomposition. Simple requests use the direct model/tool loop.
 4. **Plan validator** validates step IDs, dependencies, limits and acyclic ordering.
 5. **Execution controller** runs dependency-ready steps within configured time and tool-round budgets.
@@ -41,6 +41,9 @@ Telegram progress events and internal service endpoints are implementation detai
 The Python FastAPI process is an optional sidecar. When enabled, it binds to `127.0.0.1:9621`, authenticates requests with a bearer token and maps each Telegram user to a separate LightRAG workspace. Neon PostgreSQL stores the LightRAG data.
 
 ## Execution safety
+
+- Repository skills use `skills/*/SKILL.md` metadata and concise task procedures. The registry always exposes the catalog, but injects full skill bodies only for relevant requests.
+- Skill instructions are guidance, not permission to bypass safety, privacy, approval, tool, or budget rules. Retrieved and user-provided content remains untrusted.
 
 - Strict runtime schemas reject malformed or unknown tool arguments.
 - Read-only calls may execute concurrently within configured limits.
