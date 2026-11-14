@@ -10,6 +10,7 @@ import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from 
 import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
 import { buildAdaptiveContextPack, formatContextPackForModel } from "./contextPack.js";
 import { composePartialAnswer } from "./partial.js";
+import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -492,11 +493,39 @@ export async function runAgent(
   state.status = "running";
   const reportProgress = async (event: ProgressEvent): Promise<void> => {
     if (event.type === "tool_start") state.toolCalls++;
-    if (event.type === "tool_error") state.failures++;
+    if (event.type === "tool_error") {
+      state.failures++;
+      if (config.AFFECT_ENABLED) noteToolOutcome(telegramId, false);
+    }
+    if (event.type === "tool_complete") {
+      if (config.AFFECT_ENABLED) noteToolOutcome(telegramId, true);
+    }
     await onProgress?.(event);
   };
 
   beginPhase(state, "context");
+  const affect =
+    config.AFFECT_ENABLED
+      ? beginTurnAffect({
+          telegramId,
+          userMessage,
+          channel: state.channel,
+          injectPrompt: true
+        })
+      : null;
+  if (affect) {
+    console.info(
+      "orchestra.affect",
+      JSON.stringify({
+        request_id: state.requestId,
+        user_frustration: affect.user.frustration,
+        agent_confidence: affect.agent.confidence,
+        agent_frustration: affect.agent.frustration,
+        prompt_injected: Boolean(affect.promptHint),
+        prefer_clarify: affect.params.preferClarify
+      })
+    );
+  }
   const pack = await buildAdaptiveContextPack({
     telegramId,
     userMessage,
@@ -518,6 +547,9 @@ export async function runAgent(
   messages.push({ role: "system", content: formatContextPackForModel(pack) });
   if (state.responseStyle === "spoken") {
     messages.push({ role: "system", content: SPOKEN_STYLE_GUIDANCE });
+  }
+  if (affect?.promptHint) {
+    messages.push({ role: "system", content: affect.promptHint });
   }
   endPhase(state, "context");
   console.info("orchestra.context_pack", JSON.stringify({
@@ -546,6 +578,7 @@ export async function runAgent(
     const answer = await runPlannedRequest(messages, plan.steps, telegramId, reportProgress, workflowAllowedTools);
     endPhase(state, "execution");
     completeExecution(state, "completed");
+  if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
     console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
     await reportProgress({ type: "response_ready" });
     return answer;
@@ -657,6 +690,7 @@ export async function runAgent(
   }
   endPhase(state, "response");
   completeExecution(state, "partial");
+  if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "partial");
   console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason, stop: stopReason }));
   await reportProgress({ type: "response_ready" });
   return answer;
