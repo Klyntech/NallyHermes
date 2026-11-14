@@ -194,21 +194,35 @@ def _extract_pdf(data: bytes) -> tuple[str, dict]:
         raise ValueError("PDF could not be safely parsed") from exc
 
 
-async def _render_javascript(client: httpx.AsyncClient, url: str) -> bytes | None:
-    renderer = os.getenv("JS_RENDER_URL", "").strip()
-    if not renderer:
+def lightpanda_command(url: str) -> list[str]:
+    """Build a bounded Lightpanda CLI invocation without a shell."""
+    wait_ms = min(max(int(os.getenv("LIGHTPANDA_WAIT_MS", "1000")), 0), 5000)
+    binary = os.getenv("LIGHTPANDA_BIN", "/usr/local/bin/lightpanda")
+    return [
+        binary, "fetch", "--obey-robots", "--dump", "html",
+        "--wait-ms", str(wait_ms), "--log-level", "error", url,
+    ]
+
+
+async def _render_javascript(url: str) -> bytes | None:
+    # Browser navigation is opt-in until outbound network egress is restricted.
+    if os.getenv("LIGHTPANDA_ENABLED", "false").lower() not in {"1", "true", "yes"}:
         return None
-    headers = {"Content-Type": "application/json"}
-    token = os.getenv("JS_RENDER_TOKEN", "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    process = None
     try:
-        response = await client.post(renderer, json={"url": url, "wait_until": "networkidle"}, headers=headers, timeout=FETCH_TIMEOUT)
-        response.raise_for_status()
-        payload = response.json()
-        html = payload.get("html")
-        return html.encode("utf-8") if isinstance(html, str) else None
-    except (httpx.HTTPError, ValueError):
+        process = await asyncio.create_subprocess_exec(
+            *lightpanda_command(url),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=12.0)
+        if process.returncode != 0 or not stdout or len(stdout) > MAX_PAGE_BYTES:
+            return None
+        return stdout
+    except (OSError, asyncio.TimeoutError, ValueError):
+        if process and process.returncode is None:
+            process.kill()
+            await process.wait()
         return None
 
 
@@ -260,17 +274,15 @@ async def fetch_document(client: httpx.AsyncClient, url: str, use_cache: bool = 
             parser.feed(html)
             text = trafilatura.extract(html, url=current, include_comments=False, include_tables=True, favor_precision=True) or ""
 
-            # Optional JavaScript renderer: configured externally, so no browser
-            # process or extra Render service is required in this container.
-            if len(text.strip()) < 160 and os.getenv("JS_RENDER_URL", "").strip():
-                rendered = await _render_javascript(client, current)
+            # Use the locally installed Lightpanda browser only when explicitly enabled.
+            if len(text.strip()) < 160:
+                rendered = await _render_javascript(current)
                 if rendered:
-                    rendered_html = rendered[:MAX_PAGE_BYTES].decode("utf-8", errors="replace")
+                    rendered_html = rendered.decode("utf-8", errors="replace")
                     rendered_text = trafilatura.extract(rendered_html, url=current, include_comments=False, include_tables=True, favor_precision=True) or ""
                     if len(rendered_text) > len(text):
                         html, text = rendered_html, rendered_text
                         parser = PageParser()
-                        parser.feed(html)
 
             metadata = trafilatura.extract_metadata(html, default_url=current)
             structured = {
