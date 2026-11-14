@@ -387,6 +387,12 @@ async def crawl(payload: CrawlRequest) -> dict:
     return {"start_url": str(payload.url), "max_pages": payload.max_pages, "max_depth": payload.max_depth, "sitemap_discovery": payload.use_sitemap, "pages_attempted": len(pages), "pages_crawled": sum(1 for page in pages if page.get("status") != "error"), "pages_failed": sum(1 for page in pages if page.get("status") == "error"), "pages": pages}
 
 
+@app.get("/metrics", dependencies=[Depends(require_api_key)])
+async def metrics() -> dict:
+    """Lightweight in-process counters for basic service monitoring."""
+    return {"service": "nally-creepy-crawley", "metrics": metrics_snapshot()}
+
+
 @app.get("/health")
 async def health() -> dict:
     settings = get_settings()
