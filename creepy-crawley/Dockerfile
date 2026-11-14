@@ -1,8 +1,3 @@
-FROM searxng/searxng:latest
-
-USER root
-WORKDIR /app
-
 # Download the official x86-64 Lightpanda headless browser in a build stage.
 # Its binary is copied into the existing API/SearXNG container; no extra
 # Render service or Chromium installation is created.
