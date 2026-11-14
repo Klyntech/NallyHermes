@@ -306,7 +306,7 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
       throw lastError instanceof Error
         ? lastError
         : new Error(
-            "Web search is not configured. Set CREEPY_CRAWLEY_URL + CREEPY_CRAWLEY_API_KEY (preferred) or TAVILY_API_KEY."
+            "Web search is not configured. Set CREEPY_CRAWLEY_API_KEY (preferred; URL defaults to nallycreepycrawley.onrender.com) or TAVILY_API_KEY."
           );
     }
     provider = "tavily";

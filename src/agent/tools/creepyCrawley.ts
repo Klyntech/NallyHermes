@@ -32,9 +32,10 @@ export type CreepyScrapeResponse = {
   fetched_at: string;
 };
 
+const DEFAULT_CREEPY_CRAWLEY_URL = "https://nallycreepycrawley.onrender.com";
+
 function baseUrl(): string {
-  const url = config.CREEPY_CRAWLEY_URL?.replace(/\/$/, "");
-  if (!url) throw new Error("CREEPY_CRAWLEY_URL is not configured.");
+  const url = (config.CREEPY_CRAWLEY_URL || DEFAULT_CREEPY_CRAWLEY_URL).replace(/\/$/, "");
   return url;
 }
 
@@ -45,7 +46,7 @@ function apiKey(): string {
 }
 
 export function isCreepyCrawleyConfigured(): boolean {
-  return Boolean(config.CREEPY_CRAWLEY_URL?.trim() && config.CREEPY_CRAWLEY_API_KEY?.trim());
+  return Boolean(config.CREEPY_CRAWLEY_API_KEY?.trim());
 }
 
 async function ccFetch(path: string, body: unknown): Promise<unknown> {
