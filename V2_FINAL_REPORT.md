@@ -1,3 +1,5 @@
+> **Historical document:** This report records the V2/V2.1 state at the time of the `0b1332a` V2.1 release. It is intentionally retained as a historical release report and does not describe the current `v3.1-Emotions` branch. For current implementation details, see [README](README.md), [Architecture](docs/architecture.md), [Operations](docs/operations.md), and [CHANGELOG](CHANGELOG.md).
+
 # NallyHermes V2 / V2.1 Final Report
 
 ## Release status
