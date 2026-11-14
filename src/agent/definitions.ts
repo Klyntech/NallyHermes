@@ -8,14 +8,17 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "web_search",
-      description: "Discover current or time-sensitive information and find public sources. Prefer depth=advanced or research=true for prices, counts, dates, or complete inventories. Results are source-tiered (primary/secondary/aggregator). For numbers, always follow up with fetch on a primary URL before stating values.",
+      description: "Discover current or time-sensitive information via Nally Creepy Crawley (primary) with Tavily fallback. Prefer depth=advanced or research=true for prices, counts, dates, or inventories. Results are source-tiered. Extracted page text may be present on top hits; still fetch a primary URL when numbers must be exact.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "A focused search query that matches the measurable ask." },
           max_results: { type: "integer", minimum: 1, maximum: 10, description: "Number of results (default 5)." },
           depth: { type: "string", enum: ["basic", "advanced"], description: "basic for casual discovery; advanced for factual research (default basic)." },
-          research: { type: "boolean", description: "When true, expand into a few focused queries, use advanced depth, and include raw content on hits for verification." }
+          research: { type: "boolean", description: "When true, expand queries, use advanced depth, and extract full page text on top hits." },
+          topic: { type: "string", enum: ["general", "news"], description: "Search topic bias (default general)." },
+          include_domains: { type: "array", items: { type: "string" }, description: "Optional hostname allowlist (e.g. anthropic.com)." },
+          exclude_domains: { type: "array", items: { type: "string" }, description: "Optional hostname blocklist." }
         },
         required: ["query"],
         additionalProperties: false
@@ -26,7 +29,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "fetch",
-      description: "Read a specific public HTTP(S) webpage or text resource when its contents are needed. Usually use a URL discovered through web_search; does not access private networks or binary files.",
+      description: "Read a specific public HTTP(S) page. Uses Creepy Crawley scrape when configured (readable article text), otherwise direct fetch. Use after web_search for primary URLs; does not access private networks.",
       parameters: {
         type: "object",
         properties: { url: { type: "string", description: "Public HTTP(S) URL to retrieve." } },

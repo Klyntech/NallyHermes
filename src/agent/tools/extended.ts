@@ -12,6 +12,7 @@ import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezo
 import { cancelWorkflow, createWorkflow, listWorkflows, pauseWorkflow } from "../workflows.js";
 import { composeReminderMessage } from "../reminderMessage.js";
 import { calendarTool } from "../calendar.js";
+import { creepyScrape, isCreepyCrawleyConfigured } from "./creepyCrawley.js";
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_FETCH_BYTES = 40_000;
@@ -154,6 +155,27 @@ async function validatePublicUrl(raw: string): Promise<URL> {
 }
 
 export async function fetchUrl(input: { url: string }, onProgress?: ToolProgressReporter): Promise<unknown> {
+  // Prefer Creepy Crawley scrape for readable article text when configured.
+  if (isCreepyCrawleyConfigured()) {
+    try {
+      await onProgress?.({ type: "tool_progress", tool: "fetch", stage: "fetch_reading" });
+      const scraped = await creepyScrape(input.url);
+      return {
+        url: scraped.url,
+        title: scraped.title,
+        status: 200,
+        contentType: "text/plain",
+        fetched_at: scraped.fetched_at,
+        provider: scraped.provider,
+        content_truncated: scraped.content_truncated ?? false,
+        structured: scraped.structured,
+        content: (scraped.content || "").slice(0, MAX_FETCH_BYTES)
+      };
+    } catch (error) {
+      console.warn("Creepy Crawley scrape failed; falling back to direct fetch:", error);
+    }
+  }
+
   let url = await validatePublicUrl(input.url);
   for (let redirects = 0; redirects <= 3; redirects++) {
     const response = await fetch(url, {
@@ -181,6 +203,7 @@ export async function fetchUrl(input: { url: string }, onProgress?: ToolProgress
       contentType: type,
       fetched_at: new Date().toISOString(),
       last_modified: response.headers.get("last-modified"),
+      provider: "direct",
       content: text.slice(0, MAX_FETCH_BYTES)
     };
   }

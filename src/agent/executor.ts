@@ -21,7 +21,10 @@ const schemas = {
     query: z.string().trim().min(1).max(400),
     max_results: z.number().int().min(1).max(10).optional(),
     depth: z.enum(["basic", "advanced"]).optional(),
-    research: z.boolean().optional()
+    research: z.boolean().optional(),
+    topic: z.enum(["general", "news"]).optional(),
+    include_domains: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+    exclude_domains: z.array(z.string().trim().min(1).max(200)).max(20).optional()
   }).strict(),
   fetch: z.object({ url: z.string().url().max(2048) }).strict(),
   file_io: z.object({
@@ -127,7 +130,7 @@ async function executeToolCallOnce(
 
     switch (call.function.name) {
       case "web_search":
-        result = await searchWeb(args as { query: string; max_results?: number; depth?: "basic" | "advanced"; research?: boolean }, reportToolProgress);
+        result = await searchWeb(args as { query: string; max_results?: number; depth?: "basic" | "advanced"; research?: boolean; topic?: "general" | "news"; include_domains?: string[]; exclude_domains?: string[] }, reportToolProgress);
         break;
       case "fetch":
         result = await fetchUrl(args as { url: string }, reportToolProgress);

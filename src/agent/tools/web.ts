@@ -1,14 +1,21 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import type { ToolProgressReporter } from "../progress.js";
+import {
+  creepySearch,
+  isCreepyCrawleyConfigured
+} from "./creepyCrawley.js";
 
 const searchInput = z.object({
   query: z.string().min(1).max(400),
   max_results: z.number().int().min(1).max(10).default(5),
   /** basic = fast discovery; advanced = deeper research (preferred for numbers, prices, dates). */
   depth: z.enum(["basic", "advanced"]).default("basic"),
-  /** When true, prefer advanced depth and include raw content on top hits for verification. */
-  research: z.boolean().default(false)
+  /** When true, prefer advanced depth and extract full page text on top hits. */
+  research: z.boolean().default(false),
+  topic: z.enum(["general", "news"]).default("general"),
+  include_domains: z.array(z.string().min(1).max(200)).max(20).optional(),
+  exclude_domains: z.array(z.string().min(1).max(200)).max(20).optional()
 });
 
 export type WebSearchInput = z.input<typeof searchInput>;
@@ -43,7 +50,9 @@ const PRIMARY_HOST_MARKERS = [
   "ai.meta.com",
   "x.ai",
   "telegram.org",
-  "core.telegram.org"
+  "core.telegram.org",
+  "claude.com",
+  "platform.claude.com"
 ];
 
 const AGGREGATOR_HOST_MARKERS = [
@@ -63,7 +72,6 @@ const AGGREGATOR_HOST_MARKERS = [
   "toolify.ai",
   "therundown.ai",
   "futuretools.io",
-  "there's an ai for that",
   "aitools",
   "top10",
   "best-ai"
@@ -84,7 +92,6 @@ export function classifySourceTier(url: string): SourceTier {
   if (PRIMARY_HOST_MARKERS.some((m) => host === m || host.endsWith(`.${m}`) || hay.includes(m))) {
     return "primary";
   }
-  // docs.* and official API hosts are usually primary
   if (host.startsWith("docs.") || host.startsWith("api.") || host.startsWith("developer.")) {
     return "primary";
   }
@@ -105,7 +112,6 @@ export function planSearchQueries(query: string, research: boolean): string[] {
   const variants = new Set<string>([q]);
   const lower = q.toLowerCase();
 
-  // Bias official docs when the topic looks product/pricing related
   if (/\b(price|pricing|cost|token|model|api|launch|release|changelog)\b/i.test(q)) {
     variants.add(`${q} official documentation`);
     variants.add(`${q} site:docs OR changelog OR "pricing"`);
@@ -113,8 +119,8 @@ export function planSearchQueries(query: string, research: boolean): string[] {
   if (/\b(github|commit|branch|repo|repository)\b/i.test(q)) {
     variants.add(`${q} site:github.com`);
   }
-  if (/\banthropic\b/i.test(lower)) {
-    variants.add(`${q} site:anthropic.com`);
+  if (/\banthropic\b|\bclaude\b/i.test(lower)) {
+    variants.add(`${q} site:anthropic.com OR site:platform.claude.com`);
   }
   if (/\b(aws|amazon)\b/i.test(lower)) {
     variants.add(`${q} site:aws.amazon.com OR site:docs.aws.amazon.com`);
@@ -129,19 +135,25 @@ export function planSearchQueries(query: string, research: boolean): string[] {
   return [...variants].slice(0, 3);
 }
 
-type TavilyHit = {
+type NormalizedHit = {
   title: string;
   url: string;
   content: string;
   score: number;
-  published_date?: string | null;
-  raw_content?: string | null;
+  published_date: string | null;
+  publication_age_days: number | null;
+  freshness: string;
+  source_tier: SourceTier;
+  extracted_content?: string;
+  extraction_status?: string;
+  relevance_status?: string;
+  raw_content?: string;
 };
 
-function mapHit(hit: TavilyHit, retrievedAt: Date) {
-  const publishedAt = hit.published_date ? new Date(hit.published_date) : null;
-  const validPublicationDate = publishedAt && Number.isFinite(publishedAt.getTime());
-  const publicationAgeDays = validPublicationDate
+function freshnessFields(published_date: string | null | undefined, retrievedAt: Date) {
+  const publishedAt = published_date ? new Date(published_date) : null;
+  const valid = publishedAt && Number.isFinite(publishedAt.getTime());
+  const publicationAgeDays = valid
     ? Math.floor((retrievedAt.getTime() - publishedAt!.getTime()) / 86_400_000)
     : null;
   const freshness =
@@ -152,17 +164,41 @@ function mapHit(hit: TavilyHit, retrievedAt: Date) {
         : publicationAgeDays <= 30
           ? "published_within_30_days"
           : "older_than_30_days";
-  const source_tier = classifySourceTier(hit.url);
   return {
-    title: hit.title,
-    url: hit.url,
-    content: hit.content,
-    score: hit.score,
-    published_date: hit.published_date ?? null,
+    published_date: published_date ?? null,
     publication_age_days: publicationAgeDays,
-    freshness,
-    source_tier,
-    raw_content: hit.raw_content ? String(hit.raw_content).slice(0, 12_000) : undefined
+    freshness
+  };
+}
+
+function mapHit(
+  hit: {
+    title?: string;
+    url?: string;
+    content?: string;
+    score?: number | null;
+    published_date?: string | null;
+    extracted_content?: string | null;
+    extraction_status?: string;
+    relevance_status?: string;
+    raw_content?: string | null;
+  },
+  retrievedAt: Date
+): NormalizedHit | null {
+  if (!hit.url) return null;
+  const fresh = freshnessFields(hit.published_date, retrievedAt);
+  const extracted = hit.extracted_content ? String(hit.extracted_content).slice(0, 12_000) : undefined;
+  return {
+    title: hit.title ?? hit.url,
+    url: hit.url,
+    content: hit.content ?? "",
+    score: typeof hit.score === "number" ? hit.score : 0,
+    ...fresh,
+    source_tier: classifySourceTier(hit.url),
+    extracted_content: extracted,
+    extraction_status: hit.extraction_status,
+    relevance_status: hit.relevance_status,
+    raw_content: extracted ?? (hit.raw_content ? String(hit.raw_content).slice(0, 12_000) : undefined)
   };
 }
 
@@ -171,9 +207,9 @@ async function tavilySearch(
   max_results: number,
   depth: "basic" | "advanced",
   includeRaw: boolean
-): Promise<{ answer?: string; results?: TavilyHit[] }> {
+): Promise<{ answer?: string; results?: Array<Record<string, unknown>> }> {
   if (!config.TAVILY_API_KEY) {
-    throw new Error("Web search is not configured. Add TAVILY_API_KEY to the environment.");
+    throw new Error("Tavily is not configured (fallback). Add TAVILY_API_KEY or configure Creepy Crawley.");
   }
 
   const response = await fetch("https://api.tavily.com/search", {
@@ -195,15 +231,29 @@ async function tavilySearch(
     throw new Error(`Tavily search failed (${response.status}): ${detail.slice(0, 300)}`);
   }
 
-  return (await response.json()) as { answer?: string; results?: TavilyHit[] };
+  return (await response.json()) as { answer?: string; results?: Array<Record<string, unknown>> };
 }
 
-/** Search the web with Tavily and return concise, source-tiered, source-linked results. */
+function sortResults(results: NormalizedHit[]): NormalizedHit[] {
+  const tierRank: Record<SourceTier, number> = {
+    primary: 0,
+    secondary: 1,
+    unknown: 2,
+    aggregator: 3
+  };
+  return [...results].sort((a, b) => {
+    const tr = tierRank[a.source_tier] - tierRank[b.source_tier];
+    if (tr !== 0) return tr;
+    return (b.score ?? 0) - (a.score ?? 0);
+  });
+}
+
+/** Search the web via Creepy Crawley (primary) or Tavily (fallback). */
 export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const parsed = searchInput.parse(input);
   const research = parsed.research;
   const depth = research ? "advanced" : parsed.depth;
-  const includeRaw = research || depth === "advanced";
+  const extract = research || depth === "advanced";
   const queries = planSearchQueries(parsed.query, research);
   const perQuery = Math.max(3, Math.ceil(parsed.max_results / queries.length));
 
@@ -216,36 +266,76 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
   });
 
   const retrievedAt = new Date();
-  const merged = new Map<string, ReturnType<typeof mapHit>>();
+  const merged = new Map<string, NormalizedHit>();
   let answer: string | null = null;
+  let provider: "creepy_crawley" | "tavily" = "creepy_crawley";
+  let lastError: unknown;
 
-  for (const q of queries) {
-    const data = await tavilySearch(q, perQuery, depth, includeRaw);
-    if (!answer && data.answer) answer = data.answer;
-    for (const hit of data.results ?? []) {
-      if (!hit?.url) continue;
-      const mapped = mapHit(hit, retrievedAt);
-      const existing = merged.get(mapped.url);
-      if (!existing || (mapped.score ?? 0) > (existing.score ?? 0)) {
-        merged.set(mapped.url, mapped);
+  if (isCreepyCrawleyConfigured()) {
+    try {
+      for (const q of queries) {
+        const data = await creepySearch({
+          query: q,
+          max_results: perQuery,
+          topic: parsed.topic,
+          extract_content: extract,
+          max_content_results: extract ? Math.min(5, perQuery) : 0,
+          include_domains: parsed.include_domains,
+          exclude_domains: parsed.exclude_domains
+        });
+        if (!answer && data.answer) answer = data.answer;
+        for (const hit of data.results) {
+          const mapped = mapHit(hit, retrievedAt);
+          if (!mapped) continue;
+          const existing = merged.get(mapped.url);
+          if (!existing || (mapped.score ?? 0) > (existing.score ?? 0)) {
+            merged.set(mapped.url, mapped);
+          }
+        }
+      }
+      provider = "creepy_crawley";
+    } catch (error) {
+      lastError = error;
+      console.warn("Creepy Crawley search failed; trying Tavily fallback:", error);
+      merged.clear();
+    }
+  }
+
+  if (merged.size === 0) {
+    if (!config.TAVILY_API_KEY) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(
+            "Web search is not configured. Set CREEPY_CRAWLEY_URL + CREEPY_CRAWLEY_API_KEY (preferred) or TAVILY_API_KEY."
+          );
+    }
+    provider = "tavily";
+    for (const q of queries) {
+      const data = await tavilySearch(q, perQuery, depth, extract);
+      if (!answer && data.answer) answer = data.answer;
+      for (const hit of data.results ?? []) {
+        const mapped = mapHit(
+          {
+            title: String(hit.title ?? ""),
+            url: String(hit.url ?? ""),
+            content: String(hit.content ?? ""),
+            score: typeof hit.score === "number" ? hit.score : 0,
+            published_date: (hit.published_date as string | null) ?? null,
+            raw_content: (hit.raw_content as string | null) ?? null
+          },
+          retrievedAt
+        );
+        if (!mapped) continue;
+        const existing = merged.get(mapped.url);
+        if (!existing || (mapped.score ?? 0) > (existing.score ?? 0)) {
+          merged.set(mapped.url, mapped);
+        }
       }
     }
   }
 
-  // Prefer primary sources in the returned order
-  const tierRank: Record<SourceTier, number> = {
-    primary: 0,
-    secondary: 1,
-    unknown: 2,
-    aggregator: 3
-  };
-  const results = [...merged.values()]
-    .sort((a, b) => {
-      const tr = tierRank[a.source_tier] - tierRank[b.source_tier];
-      if (tr !== 0) return tr;
-      return (b.score ?? 0) - (a.score ?? 0);
-    })
-    .slice(0, parsed.max_results);
+  const results = sortResults([...merged.values()]).slice(0, parsed.max_results);
+  const primaryCount = results.filter((r) => r.source_tier === "primary").length;
 
   await onProgress?.({
     type: "tool_progress",
@@ -254,10 +344,9 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
     resultCount: results.length
   });
 
-  const primaryCount = results.filter((r) => r.source_tier === "primary").length;
-
   return {
     answer,
+    provider,
     searched_at: retrievedAt.toISOString(),
     depth_used: depth,
     queries_used: queries,
@@ -265,7 +354,7 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
     freshness_guidance:
       "searched_at is retrieval time, not publication time. Publication dates may be absent. The 30-day age label is only a rough heuristic, not proof of currentness; fast-changing topics can become outdated much sooner.",
     verification_guidance:
-      "Prefer source_tier=primary. For prices, counts, dates, or complete inventories, call fetch on at least one primary URL before stating numbers. Do not fill table cells from snippets alone. If a field is missing on the primary page, write Not verified — not 'not disclosed' from memory.",
+      "Prefer source_tier=primary. For prices, counts, dates, or complete inventories, call fetch on at least one primary URL before stating numbers when extracted_content is missing or thin. Do not fill table cells from snippets alone. If a field is missing on the primary page, write Not verified — not 'not disclosed' from memory.",
     results
   };
 }
