@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import logging
 import secrets
+import socket
 import time
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
+import trafilatura
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, HttpUrl
@@ -18,9 +22,15 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI(
     title="Nally Creepy Crawley",
-    description="Private, self-hosted web search API backed by SearXNG.",
-    version="0.1.0",
+    description="Private, self-hosted web search and page extraction API backed by SearXNG.",
+    version="0.2.0",
 )
+
+MAX_PAGE_BYTES = 2_000_000
+MAX_EXTRACTED_CHARS = 12_000
+MAX_REDIRECTS = 4
+PAGE_FETCH_TIMEOUT = 8.0
+PAGE_FETCH_CONCURRENCY = 4
 
 
 class SearchRequest(BaseModel):
@@ -29,12 +39,16 @@ class SearchRequest(BaseModel):
     topic: Literal["general", "news"] = "general"
     include_domains: list[str] = Field(default_factory=list)
     exclude_domains: list[str] = Field(default_factory=list)
+    extract_content: bool = True
+    max_content_results: int = Field(default=5, ge=0, le=10)
 
 
 class SearchResult(BaseModel):
     title: str
     url: HttpUrl
     content: str = ""
+    extracted_content: str | None = None
+    extraction_status: Literal["success", "unavailable", "skipped"] = "skipped"
     score: float | None = None
     published_date: str | None = None
 
@@ -56,7 +70,6 @@ def require_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(b
     supplied = credentials.credentials.strip() if credentials else ""
     matches = bool(supplied) and secrets.compare_digest(supplied, expected)
     if not matches:
-        # Never log either key; lengths and presence are enough to isolate header/config mismatches.
         logger.warning(
             "API key auth failed: bearer_credential_present=%s credential_scheme=%s "
             "supplied_length=%d configured_key_present=%s expected_length=%d",
@@ -71,7 +84,92 @@ def require_api_key(credentials: HTTPAuthorizationCredentials | None = Depends(b
 
 def domain_matches(host: str, domains: list[str]) -> bool:
     host = host.lower().rstrip(".")
-    return any(host == d.lower().strip().lstrip(".") or host.endswith("." + d.lower().strip().lstrip(".")) for d in domains)
+    return any(
+        host == domain.lower().strip().lstrip(".")
+        or host.endswith("." + domain.lower().strip().lstrip("."))
+        for domain in domains
+    )
+
+
+async def validate_public_url(url: str) -> bool:
+    """Reject local/private destinations before fetching search-result URLs."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return False
+        if parsed.username or parsed.password:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if port not in {80, 443}:
+            return False
+
+        host = parsed.hostname.rstrip(".")
+        try:
+            addresses = [ipaddress.ip_address(host)]
+        except ValueError:
+            records = await asyncio.to_thread(
+                socket.getaddrinfo, host, port, type=socket.SOCK_STREAM
+            )
+            addresses = list({ipaddress.ip_address(record[4][0]) for record in records})
+        return bool(addresses) and all(address.is_global for address in addresses)
+    except (OSError, ValueError):
+        return False
+
+
+async def fetch_page_text(client: httpx.AsyncClient, url: str) -> str | None:
+    current_url = url
+    for redirect_count in range(MAX_REDIRECTS + 1):
+        if not await validate_public_url(current_url):
+            return None
+
+        try:
+            async with client.stream("GET", current_url, headers={"Accept": "text/html,application/xhtml+xml;q=0.9"}) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location or redirect_count >= MAX_REDIRECTS:
+                        return None
+                    current_url = urljoin(current_url, location)
+                    continue
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+                    return None
+
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_PAGE_BYTES:
+                        return None
+                    chunks.append(chunk)
+                html = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+                extracted = trafilatura.extract(
+                    html,
+                    url=current_url,
+                    include_comments=False,
+                    include_tables=True,
+                    favor_precision=True,
+                )
+                if not extracted:
+                    return None
+                return extracted[:MAX_EXTRACTED_CHARS].strip() or None
+        except (httpx.HTTPError, UnicodeError, LookupError, ValueError):
+            return None
+    return None
+
+
+async def enrich_result(
+    result: SearchResult,
+    client: httpx.AsyncClient,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    async with semaphore:
+        extracted = await fetch_page_text(client, str(result.url))
+    if extracted:
+        result.extracted_content = extracted
+        result.extraction_status = "success"
+    else:
+        result.extraction_status = "unavailable"
 
 
 @app.get("/health")
@@ -109,6 +207,7 @@ async def search(payload: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=502, detail="Search backend request failed") from exc
 
     normalized: list[SearchResult] = []
+    seen_urls: set[str] = set()
     for item in data.get("results", []):
         raw_url = item.get("url")
         title = (item.get("title") or "").strip()
@@ -122,6 +221,10 @@ async def search(payload: SearchRequest) -> SearchResponse:
             continue
         if payload.exclude_domains and domain_matches(host, payload.exclude_domains):
             continue
+        canonical_url = parsed._replace(fragment="").geturl().rstrip("/")
+        if canonical_url in seen_urls:
+            continue
+        seen_urls.add(canonical_url)
         try:
             normalized.append(SearchResult(
                 title=title,
@@ -134,6 +237,21 @@ async def search(payload: SearchRequest) -> SearchResponse:
             continue
         if len(normalized) >= limit:
             break
+
+    if payload.extract_content and payload.max_content_results:
+        selected = normalized[:payload.max_content_results]
+        semaphore = asyncio.Semaphore(PAGE_FETCH_CONCURRENCY)
+        timeout = httpx.Timeout(PAGE_FETCH_TIMEOUT, connect=3.0)
+        limits = httpx.Limits(max_connections=PAGE_FETCH_CONCURRENCY, max_keepalive_connections=2)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            limits=limits,
+            follow_redirects=False,
+            headers={"User-Agent": "NallyCreepyCrawley/0.2 (+page text extraction)"},
+        ) as client:
+            await asyncio.gather(
+                *(enrich_result(result, client, semaphore) for result in selected)
+            )
 
     return SearchResponse(
         query=payload.query,
