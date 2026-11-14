@@ -141,12 +141,18 @@ async def crawl_site(start_url: str, max_pages: int = 5, max_depth: int = 1) -> 
             seen.add(normalized)
             try:
                 page = await fetch_document(client, normalized)
+                page_host = (urlparse(page["url"]).hostname or "").lower()
+                if page_host != start_host:
+                    raise ValueError("Crawl redirects must remain on the starting host")
+                page_links = page.pop("links")
                 page["depth"] = depth
-                page["links_found"] = len(page.pop("links"))
+                page["links_found"] = len(page_links)
                 pages.append(page)
                 if depth < max_depth:
-                    # Re-fetching is avoided: links are captured before being removed above.
-                    pass
+                    for href in page_links:
+                        candidate = normalize_url(href)
+                        if candidate and (urlparse(candidate).hostname or "").lower() == start_host and candidate not in seen:
+                            queue.append((candidate, depth + 1))
             except (httpx.HTTPError, ValueError, UnicodeError) as exc:
                 pages.append({"url": normalized, "depth": depth, "status": "error", "error": str(exc)[:240]})
     return pages
