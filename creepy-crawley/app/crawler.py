@@ -215,10 +215,21 @@ async def _render_javascript(url: str) -> bytes | None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=12.0)
-        if process.returncode != 0 or not stdout or len(stdout) > MAX_PAGE_BYTES:
-            return None
-        return stdout
+        async def collect_bounded_output() -> bytes | None:
+            output = bytearray()
+            assert process and process.stdout
+            while True:
+                chunk = await process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                output.extend(chunk)
+                if len(output) > MAX_PAGE_BYTES:
+                    process.kill()
+                    await process.wait()
+                    return None
+            return bytes(output) if await process.wait() == 0 and output else None
+
+        return await asyncio.wait_for(collect_bounded_output(), timeout=12.0)
     except (OSError, asyncio.TimeoutError, ValueError):
         if process and process.returncode is None:
             process.kill()
