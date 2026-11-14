@@ -114,7 +114,7 @@ The crawler follows links only on the starting hostname. Limits are 1–20 pages
 ## Advanced crawling and extraction
 
 - Sitemap discovery reads same-host sitemap declarations from `robots.txt` and common sitemap locations. Sitemap index files are supported; crawl page/depth limits still apply.
-- Optional JavaScript-rendered extraction is supported through a separately configured, trusted renderer endpoint. Set `JS_RENDER_URL` to its HTTP API URL and optionally `JS_RENDER_TOKEN`; the backend calls it only when ordinary HTML extraction yields very little text. No browser process or extra Render service is installed in this container.
+- Optional JavaScript-rendered extraction uses the locally installed [Lightpanda headless browser](https://github.com/lightpanda-io/browser), not Chromium and not a separate Render service. It is invoked only when ordinary extraction yields very little text. The binary is installed in the existing container; set `LIGHTPANDA_ENABLED=true` to activate it and optionally tune `LIGHTPANDA_WAIT_MS` (0–5000, default 1000). Rendering is disabled by default until outbound browser requests are constrained, because page scripts and redirects can make additional network requests. Lightpanda is AGPL-3.0 licensed; review its licence obligations before offering the service to third parties.
 - PDF pages are extracted locally with PyPDF. PDF extraction is bounded by the existing 2 MB download limit, 100 pages, and 20,000 output characters.
 - Structured metadata accompanies scrape, crawl, and search results: author, reported publication date, description, headings, tables, links, and content type where available. Dates remain source-reported, not independently verified.
 - URL canonicalization removes fragments and normalizes hostnames. A bounded in-memory cache reuses fetched page data for five minutes (up to 128 pages per process).
@@ -135,4 +135,4 @@ Example crawl request:
 }
 ```
 
-JavaScript rendering is optional. Only configure `JS_RENDER_URL` to a renderer you trust; the target page URL is sent to that service for rendering. Keep any renderer token in Render Environment Variables, never in source control.
+JavaScript rendering uses the local Lightpanda binary. It is installed in the same Docker container and is disabled by default pending outbound-network restrictions. No renderer URL or renderer API token is needed.
