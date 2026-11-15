@@ -105,10 +105,7 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
   const timezone = input.timezone ?? await getUserTimezone(telegramId);
   if (!isValidTimezone(timezone)) throw new Error("Invalid IANA timezone.");
   const supportedTools = new Set(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"]);
-  const allowedTools = [...new Set((input.allowedTools ?? [
-    "web_search", "fetch", "memory", "academic", "file_io", "schedule",
-    "calendar", "github", "notion", "gmail", "nallputer"
-  ]).slice(0, 12))];
+  const allowedTools = [...new Set((input.allowedTools ?? ["web_search", "fetch", "memory"]).slice(0, 10))];
   if (allowedTools.some((tool) => !supportedTools.has(tool))) throw new Error("Workflow contains an unsupported tool.");
   const approvalPolicy = input.approvalPolicy ?? "confirm_mutations";
   if (!["read_only", "confirm_mutations"].includes(approvalPolicy)) throw new Error("Approval policy must be read_only or confirm_mutations.");

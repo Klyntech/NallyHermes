@@ -69,7 +69,7 @@ const schemas = {
     run_at: z.string().max(64).optional(),
     recurrence: z.enum(["daily", "weekly", "monthly"]).optional(),
     timezone: z.string().max(100).optional(),
-    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"])).max(12).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"])).max(10).optional(),
     approval_policy: z.string().trim().min(1).max(100).optional(),
     output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()

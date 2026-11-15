@@ -115,7 +115,7 @@ export const agentTools: ChatCompletionTool[] = [
           run_at: { type: "string", description: "First run as ISO-8601 with explicit timezone." },
           recurrence: { type: "string", enum: ["daily", "weekly", "monthly"] },
           timezone: { type: "string", description: "IANA timezone for recurring wall-clock behavior." },
-          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"] }, maxItems: 12 },
+          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"] }, maxItems: 10 },
           approval_policy: { type: "string", description: "Policy label such as confirm_mutations or read_only." },
           output_destination: { type: "string", enum: ["telegram"] },
           id: { type: "string", description: "Workflow ID for pause or cancel." }
