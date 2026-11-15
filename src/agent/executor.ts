@@ -121,7 +121,8 @@ function parseToolArguments(name: string, raw: string): Record<string, unknown> 
 async function executeToolCallOnce(
   call: ToolCallInput,
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  resumeRequest?: string
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
   try {
     const args = parseToolArguments(call.function.name, call.function.arguments);
@@ -133,7 +134,8 @@ async function executeToolCallOnce(
       telegramId,
       toolName: call.function.name,
       args,
-      alreadyApproved
+      alreadyApproved,
+      resumeRequest
     });
     if (gated) {
       await onProgress?.({
@@ -226,11 +228,12 @@ function isTransientToolFailure(result: Extract<ChatCompletionMessageParam, { ro
 export async function executeToolCall(
   call: ToolCallInput,
   telegramId: string,
-  onProgress?: (event: ProgressEvent) => Promise<void> | void
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  resumeRequest?: string
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>> {
   const retryable = isReadOnlyCall(call);
   const maxAttempts = retryable ? config.AGENT_MAX_READ_RETRIES + 1 : 1;
-  let result = await executeToolCallOnce(call, telegramId, onProgress);
+  let result = await executeToolCallOnce(call, telegramId, onProgress, resumeRequest);
   for (let attempt = 2; attempt <= maxAttempts && isTransientToolFailure(result); attempt++) {
     await onProgress?.({
       type: "recovery_retry",
@@ -240,7 +243,7 @@ export async function executeToolCall(
     });
     const delayMs = Math.min(1_000 * 2 ** (attempt - 2), 4_000);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-    result = await executeToolCallOnce(call, telegramId, onProgress);
+    result = await executeToolCallOnce(call, telegramId, onProgress, resumeRequest);
   }
   return result;
 }
@@ -265,7 +268,11 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
       case "calendar":
         return args.operation === "list";
       case "github":
-        return args.operation === "list_operations" || args.operation === "get_operation";
+        if (args.operation === "list_operations" || args.operation === "get_operation") return true;
+        if (args.operation === "call_operation" && typeof args.name === "string") {
+          try { return getGitHubOperation(args.name).readOnly; } catch { return false; }
+        }
+        return false;
       case "notion":
       case "gmail":
       case "nallputer":
@@ -290,7 +297,8 @@ export async function executeToolCalls(
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
   allowedTools?: ReadonlySet<string>,
-  readOnlyOnly = false
+  readOnlyOnly = false,
+  resumeRequest?: string
 ): Promise<Extract<ChatCompletionMessageParam, { role: "tool" }>[]> {
   let progressQueue: Promise<void> = Promise.resolve();
   const reportProgress = onProgress
@@ -324,7 +332,7 @@ export async function executeToolCalls(
       continue;
     }
     if (!isReadOnlyCall(calls[index]!)) {
-      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress));
+      results.push(await executeToolCall(calls[index]!, telegramId, reportProgress, resumeRequest));
       index++;
       continue;
     }
@@ -334,7 +342,7 @@ export async function executeToolCalls(
       batch.push(calls[index]!);
       index++;
     }
-    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress))));
+    results.push(...await Promise.all(batch.map((call) => executeToolCall(call, telegramId, reportProgress, resumeRequest))));
   }
   return results;
 }

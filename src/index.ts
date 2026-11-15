@@ -190,7 +190,27 @@ bot.on("callback_query:data", async (ctx) => {
 
   if (decision === "deny") {
     await markPending(pendingId, "denied");
-    await ctx.editMessageText(`Denied: ${pending.summary}`);
+    const resumeRequest = typeof pending.arguments.__resume_request === "string"
+      ? pending.arguments.__resume_request
+      : undefined;
+    if (!resumeRequest) {
+      await ctx.editMessageText(`Denied: ${pending.summary}`);
+      return;
+    }
+    await ctx.editMessageText("Denied. Continuing your request…");
+    const continuation = await respond(
+      [],
+      [
+        "Continue the user's previously paused request through the orchestra.",
+        "The requested mutation was denied. Do not retry or re-execute it.",
+        `Original request: ${resumeRequest}`,
+        `Denied operation: ${pending.summary}`,
+        "Explain the limitation briefly and finish the request using only safe verified information."
+      ].join("\n\n"),
+      telegramId,
+      async (event) => { await notifyApprovalIfNeeded(ctx.chat?.id, event); }
+    );
+    if (continuation !== null) await ctx.reply(continuation);
     return;
   }
 
@@ -205,9 +225,12 @@ bot.on("callback_query:data", async (ctx) => {
 
   try {
     const pendingArguments = pending.arguments as Record<string, unknown>;
+    const resumeRequest = typeof pendingArguments.__resume_request === "string"
+      ? pendingArguments.__resume_request
+      : undefined;
     const args: Record<string, unknown> = { ...pendingArguments, approved: true };
     const tool = typeof args.tool === "string" ? args.tool : pending.provider;
-    const { tool: _t, ...rest } = args as Record<string, unknown> & { tool?: string };
+    const { tool: _t, __resume_request: _resume, ...rest } = args as Record<string, unknown> & { tool?: string; __resume_request?: string };
     let result: unknown;
     if (tool === "notion" || tool === "gmail" || tool === "nallputer") {
       const name = String(rest.name ?? pending.operation);
@@ -229,6 +252,23 @@ bot.on("callback_query:data", async (ctx) => {
       throw new Error(`Cannot execute approved tool: ${tool}`);
     }
     await markPending(pendingId, "executed", { result: result as Record<string, unknown> });
+    if (resumeRequest) {
+      await ctx.editMessageText(`${decision === "always" ? "Always allow saved. " : "Allowed. "}Continuing your request…`);
+      const continuation = await respond(
+        [],
+        [
+          "Continue the user's previously paused request through the orchestra.",
+          "The requested mutation has already been approved and executed successfully. Do not repeat or re-execute that mutation.",
+          `Original request: ${resumeRequest}`,
+          `Verified approved-operation result: ${JSON.stringify(result).slice(0, 6_000)}`,
+          "Use the verified result to finish the request and give the user the concise final answer."
+        ].join("\n\n"),
+        telegramId,
+        async (event) => { await notifyApprovalIfNeeded(ctx.chat?.id, event); }
+      );
+      if (continuation !== null) await ctx.reply(continuation);
+      return;
+    }
     const preview = typeof result === "object" ? JSON.stringify(result).slice(0, 500) : String(result).slice(0, 500);
     await ctx.editMessageText(
       `${decision === "always" ? "Always allow saved." : "Allowed."} Ran ${pending.summary}\n\n${preview}`
@@ -492,11 +532,17 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
       const persistedHistory = await loadConversationHistory(conversationId);
       const history = persistedHistory.length ? persistedHistory : getHistory(historyKey);
 
-      const answer = await respond(history, transcriptText, telegramId, undefined, undefined, undefined, {
+      const answer = await respond(history, transcriptText, telegramId, async (event) => {
+        await notifyApprovalIfNeeded(ctx.chat?.id, event);
+      }, undefined, undefined, {
         channel: "voice",
         responseStyle: "spoken",
         conversationId
       });
+      if (answer === null) {
+        await ctx.api.editMessageText(ctx.chat.id, statusId, "Approval needed. Use the buttons in Telegram to continue.");
+        return;
+      }
 
       await appendConversationExchange(conversationId, transcriptText, answer);
       history.push({ role: "user", content: transcriptText }, { role: "assistant", content: answer });
@@ -645,6 +691,10 @@ bot.on("message:text", async (ctx) => {
       const persistedHistory = await loadConversationHistory(conversationId);
       const history = persistedHistory.length ? persistedHistory : getHistory(historyKey);
       const answer = await respond(history, ctx.message.text, telegramId, onProgress);
+      if (answer === null) {
+        await closeProgress();
+        return;
+      }
       await closeProgress();
       await appendConversationExchange(conversationId, ctx.message.text, answer);
       history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
@@ -771,7 +821,7 @@ await new Promise<void>((resolve, reject) => {
 const webhookUrl = `${config.WEBHOOK_URL.replace(/\/$/, "")}${webhookPath}`;
 await bot.api.setWebhook(webhookUrl, {
   secret_token: config.WEBHOOK_SECRET,
-  allowed_updates: ["message"]
+  allowed_updates: ["message", "callback_query"]
 });
 
 console.info(`Telegram webhook listening on port ${config.PORT}`);
@@ -791,7 +841,8 @@ startWorkflowWorker(
       "Produce a concise report of completed work, evidence, and any limitation.",
       workflow.instructions
     ].join("\n\n");
-    return respond([], policy, workflow.telegramId, undefined, allowedTools, workflow.approvalPolicy as "read_only" | "confirm_mutations");
+    return (await respond([], policy, workflow.telegramId, undefined, allowedTools, workflow.approvalPolicy as "read_only" | "confirm_mutations"))
+      ?? "This workflow is waiting for interactive approval and was not executed automatically.";
   },
   async (telegramId, message) => {
     await bot.api.sendMessage(Number(telegramId), "Workflow report\n\n" + message);

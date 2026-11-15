@@ -6,6 +6,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { approvalGrants, pendingApprovals } from "../db/schema.js";
+import { getGitHubOperation } from "../connectors/github.js";
 
 export type ApprovalDecision = "deny" | "allow" | "always";
 
@@ -63,9 +64,14 @@ export function isWriteOperation(toolName: string, args: Record<string, unknown>
   if (toolName === "github") {
     if (args.operation === "list_operations" || args.operation === "get_operation") return false;
     if (args.operation === "call_operation") {
-      // GitHub connector marks readOnly per op; without lookup treat call_operation as needing approval
-      // unless explicitly approved or always-allow for github:*
-      return true;
+      const name = typeof args.name === "string" ? args.name : "";
+      try {
+        return !getGitHubOperation(name).readOnly;
+      } catch {
+        // Unknown operations fail closed and require approval before the connector
+        // gets a chance to reject them with its own schema/operation error.
+        return true;
+      }
     }
   }
 
@@ -239,6 +245,7 @@ export async function gateWriteOrPending(input: {
   toolName: string;
   args: Record<string, unknown>;
   alreadyApproved?: boolean;
+  resumeRequest?: string;
 }): Promise<ApprovalNeededResult | null> {
   if (input.alreadyApproved) return null;
   if (!isWriteOperation(input.toolName, input.args)) return null;
@@ -254,7 +261,11 @@ export async function gateWriteOrPending(input: {
     telegramId: input.telegramId,
     provider,
     operation,
-    arguments: { tool: input.toolName, ...input.args },
+    arguments: {
+      tool: input.toolName,
+      ...input.args,
+      ...(input.resumeRequest ? { __resume_request: input.resumeRequest } : {})
+    },
     summary: summarizeWriteRequest(provider, operation, {
       ...input.args,
       ...((input.args.arguments as Record<string, unknown>) ?? {})

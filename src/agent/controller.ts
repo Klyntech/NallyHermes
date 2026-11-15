@@ -470,7 +470,7 @@ export async function runAgent(
   workflowAllowedTools?: ReadonlySet<string>,
   workflowApprovalPolicy?: "read_only" | "confirm_mutations",
   requestOptions?: RunAgentOptions
-): Promise<string> {
+): Promise<string | null> {
   const channel = requestOptions?.channel ?? "telegram";
   const responseStyle = requestOptions?.responseStyle;
   const route = routeRequest(userMessage, { channel, responseStyle });
@@ -643,7 +643,8 @@ export async function runAgent(
       telegramId,
       reportProgress,
       workflowAllowedTools,
-      Boolean(workflowApprovalPolicy)
+      Boolean(workflowApprovalPolicy),
+      userMessage
     );
     const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
     let hadToolErrors = false;
@@ -661,6 +662,21 @@ export async function runAgent(
           content: JSON.stringify({ error: "Unsupported tool call type." })
         });
       }
+    }
+    const approval = results
+      .map((result) => {
+        try { return JSON.parse(String(result.content)) as { status?: string; pending_id?: string }; } catch { return null; }
+      })
+      .find((result) => result?.status === "needs_approval" && result.pending_id);
+    if (approval?.pending_id) {
+      endPhase(state, "execution");
+      completeExecution(state, "waiting_for_approval");
+      console.info("orchestra.execution", JSON.stringify({
+        ...summarizeExecution(state),
+        route: route.reason,
+        pending_approval: approval.pending_id
+      }));
+      return null;
     }
     if (hadToolErrors) {
       await reportProgress({ type: "recovery_adjusting" });

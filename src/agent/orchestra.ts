@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 export type InteractionChannel = "telegram" | "voice" | "api";
 export type ExecutionMode = "adaptive" | "workflow";
-export type ExecutionStatus = "created" | "running" | "waiting_for_tool" | "completed" | "partial" | "failed";
+export type ExecutionStatus = "created" | "running" | "waiting_for_tool" | "waiting_for_approval" | "completed" | "partial" | "failed";
 export type ResponseStyle = "text" | "spoken";
 export type RouteComplexity = "simple" | "standard" | "complex";
 
