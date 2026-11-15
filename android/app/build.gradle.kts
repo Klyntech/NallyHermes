@@ -10,8 +10,8 @@ android {
         applicationId = "com.klyntech.nallyhermes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "3.1.0-alpha.1"
+        versionCode = 32
+        versionName = "3.1.0-alpha.2"
         buildConfigField("String", "API_BASE_URL", "\"\"")
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -33,7 +33,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("com.composables:icons-lucide-android:2.2.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
