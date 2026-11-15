@@ -1,28 +1,31 @@
 # NallyHermes Android
 
-Native Android client for the existing NallyHermes backend API. Telegram remains a supported interface; this app is an additional client and does not introduce a second agent runtime.
+A native Android client for NallyHermes, written in Kotlin and Jetpack Compose. The app is designed to use the existing Render-hosted agent; it does not embed model or provider credentials and does not create a second agent runtime.
 
-## Stack
-- Kotlin
-- Jetpack Compose + Material 3
-- Navigation Compose
-- OkHttp (transport dependency; API client implementation follows in the next milestone)
+## Current client
+
+- Native Compose chat-first interface with Chat, History, and Settings tabs.
+- Light/dark system theme support.
+- Visible connection-state and offline/error messaging.
+- Local UI state only; this client does not claim to send or persist chat messages.
+
+## Backend integration status
+
+The `v3.1-Emotions` Render service currently exposes `/health` and the Telegram webhook route. It does not yet expose a protected native chat/auth API. The Android app therefore cannot send messages or load Telegram conversation history until the backend adds authentication and native chat endpoints. Do not place Telegram bot tokens, Render secrets, or model-provider keys in the APK.
 
 ## Requirements
+
 - Android Studio Ladybug or newer
 - JDK 17
 - Android SDK 35
 - Gradle 8.9+
 
-## Open and run
-Open the `android/` directory in Android Studio, allow Gradle sync, then run the `app` configuration on an Android emulator or device.
+## Build
 
-Configure the backend base URL through `BuildConfig.API_BASE_URL` before wiring authentication and chat. Do not put API secrets or provider credentials in the application.
+Open the `android/` directory in Android Studio and run the `app` configuration, or build a debug APK with:
 
-## Current scaffold
-- Material 3 app theme
-- Five-tab navigation shell: Chat, Tasks, Memory, Tools, Settings
-- Placeholder screens for each destination
-- Internet permission and cleartext traffic disabled by default
+```bash
+gradle --no-daemon :app:assembleDebug
+```
 
-No backend endpoints are called yet. The next implementation step is to connect this client to the same authenticated API used by Telegram, beginning with session/auth and chat.
+The output is `app/build/outputs/apk/debug/app-debug.apk`. The GitHub Actions workflow at `.github/workflows/android-apk.yml` builds a debug APK artifact.

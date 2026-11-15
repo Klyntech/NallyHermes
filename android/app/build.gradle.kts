@@ -10,9 +10,9 @@ android {
         applicationId = "com.klyntech.nallyhermes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
-        buildConfigField("String", "API_BASE_URL", "\"https://api.example.com\"")
+        versionCode = 31
+        versionName = "3.1.0-alpha.1"
+        buildConfigField("String", "API_BASE_URL", "\"\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
