@@ -1,18 +1,19 @@
 # NallyHermes Android
 
-A native Android client for NallyHermes, written in Kotlin and Jetpack Compose. The app is designed to use the existing Render-hosted agent; it does not embed model or provider credentials and does not create a second agent runtime.
+A native Android client for NallyHermes, written in Kotlin and Jetpack Compose. The client is intended to use the existing Render-hosted agent; it does not embed provider or model credentials and does not create a second agent runtime.
 
 ## Current client
 
 - Chat, Voice, and Settings destinations in a compact floating navigation bar.
-- Lucide outline icons and the existing olive palette and typography.
-- User-supplied portrait image, blurred and subdued behind the app interface.
-- Light/dark system theme support and visible connection-state messaging.
-- Local UI state only; the app does not currently send or persist chat messages.
+- A two-row message composer inspired by the supplied reference, with prompt-tool shortcuts and Lucide controls.
+- Rounded, Claude-inspired user-message treatment while preserving the existing typography, olive palette, and blurred portrait backdrop.
+- A reusable, animated activity card designed to render real thinking and tool-progress events when a native progress stream is available. It is deliberately not driven by simulated activity.
+- GitHub, Notion, and Gmail SVG source marks, converted to native Android vector drawables for crisp display. The source SVGs are from Simple Icons, licensed CC0; brand names and marks remain the property of their respective owners.
+- Local UI state only; this client does not currently send or persist chat messages.
 
 ## Backend integration status
 
-The `v3.1-Emotions` Render service currently exposes `/health` and the Telegram webhook route. It does not yet expose a protected native chat/auth API or a native voice endpoint. The Android app therefore cannot send chat messages, load Telegram conversation history, or start voice conversations until the backend adds authentication and native endpoints. Do not place Telegram bot tokens, Render secrets, or model-provider keys in the APK.
+The V3.1 agent already emits thinking and tool-progress events for Telegram, including GitHub, Notion, Gmail, web search, calendar, memory, files, and other tools. Those events currently do not reach a native Android client. The Render service still needs a protected native chat/auth API and a streaming or event endpoint for the app to send requests, receive replies, and display live activity. Voice also needs a native endpoint and microphone-permission flow. The UI does not claim that a request or tool action is running when no server event has been received. Do not place Telegram bot tokens, Render secrets, or model-provider keys in the APK.
 
 ## Requirements
 
