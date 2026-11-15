@@ -2,6 +2,8 @@
 
 # NallyHermes V2 / V2.1 Final Report
 
+> **Historical report.** This document records the V2/V2.1 release line. The current development line is `3.1.0-alpha.1` on `v3.1-Emotions`; consult the root README, current architecture guide, and changelog for post-V2 features and status.
+
 ## Release status
 
 V2 is complete and V2.1 is the academic retrieval increment on the `Manus-Work-NallyHermes-v2` branch. The release keeps the custom NallyHermes orchestra and adds companion persistence, Telegram-native academic ingestion, LightRAG-backed document indexing, token-authenticated GitHub operations, Calendar-aware scheduling, and stricter workflow execution boundaries.

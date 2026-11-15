@@ -5,14 +5,14 @@ Thanks for helping improve Nally.
 ## Before changing code
 
 - Read the architecture and operating principles in the README.
-- Keep the five-tool interface unchanged unless the maintainer explicitly approves a change.
+- Treat the current twelve-tool interface and dynamic connector contracts as public architecture. Any tool-boundary change needs maintainer approval, tests, and documentation.
 - Preserve user isolation across Telegram chats, files, memories and schedules.
 - Prefer deterministic controls for validation, permissions, limits and state transitions. Use the model for interpretation and planning.
 - Do not introduce a new agent framework or duplicate an existing subsystem without a clear reason.
 
 ## Development setup
 
-1. Use Node.js 20 or newer.
+1. Use Node.js 22 or newer, matching the production Docker image and `package.json` engine.
 2. Install dependencies with `npm install`.
 3. Copy `.env.example` to `.env` and configure the services needed for the feature.
 4. Run `npm run typecheck`, `npm test` and `npm run build`.

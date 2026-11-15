@@ -1,91 +1,82 @@
-# v3.1 Release Checklist
+# 3.1 Alpha Release Checklist
 
-This checklist applies to the `v3.1-Emotions` development line. A branch name is not a release declaration. Do not mark an item complete until it has been checked against the release candidate.
+Use this checklist before promoting the `v3.1-Emotions` line to a staging or production deployment. This is an alpha checklist; it does not declare the project stable.
 
-## Repository and versioning
+## Repository and version
 
-- [ ] Confirm the intended release version and update `package.json`, changelog and release notes together.
-- [ ] Decide whether `v3.1-Emotions` is a development branch or release branch; create a release tag only after sign-off.
-- [ ] Review the full Git diff and confirm no secrets, user data, tokens or generated runtime data are included.
-- [ ] Confirm the npm lockfile is committed and the deployment install strategy is reproducible.
-- [ ] Select and add a repository license.
-- [ ] Review dependency advisories and resolve or explicitly accept high/critical findings.
-- [ ] Review environment-variable documentation against `src/config.ts` and `.env.example`.
-
-## Build and automated tests
-
+- [ ] Confirm `package.json` and `package-lock.json` report the intended version.
+- [ ] Confirm the changelog and README describe the same branch and release line.
+- [ ] Review the diff for secrets, user data, generated artifacts, and stale documentation.
+- [ ] Run `npm ci` from the committed lockfile.
 - [ ] Run `npm run typecheck`.
 - [ ] Run `npm test`.
 - [ ] Run `npm run build`.
-- [ ] Run `npm run check` and retain the result for the release candidate.
-- [ ] Run `python -m compileall -q memory-service`.
-- [ ] Run the opt-in Neon integration test against a dedicated test database.
-- [ ] Confirm affect tests cover user/agent state separation, policy priority, topic decay and no-hint baseline.
-- [ ] Confirm orchestration tests cover simple/direct routing, complex planning, budgets, typed failures and partial results.
-- [ ] Confirm approval tests cover Deny, Allow once, Always Allow, ownership checks and provider write gates.
-- [ ] Confirm connector tests cover missing credentials, bounded arguments and read/write operation classification.
-- [ ] Confirm voice tests cover audio normalization boundaries, dual-channel splitting and provider failure handling.
-- [ ] Confirm workspace and Telegram isolation regression tests pass.
+- [ ] Review dependency advisories and document any accepted risk.
+- [ ] Keep the repository license decision explicit; public visibility does not grant reuse rights.
 
-## Affect and conversational behavior
+## Runtime and Telegram
 
-- [ ] Verify `AFFECT_ENABLED=false` disables affect injection.
-- [ ] Verify user frustration does not cause agent anger mirroring.
-- [ ] Verify confusion policy favors a plain explanation and a check for understanding.
-- [ ] Verify topic changes reduce carry-over frustration.
-- [ ] Verify urgent policy takes precedence over stress, confusion and warmth.
-- [ ] Verify affect remains a soft hint and cannot change permissions, safety rules or tool budgets.
-- [ ] Verify the user-facing assistant does not claim human feelings or present heuristic affect inference as diagnosis.
+- [ ] Telegram private-chat text smoke test.
+- [ ] Group-chat participant and conversation isolation test.
+- [ ] Natural conversation, short follow-up, and timezone tests.
+- [ ] Simple request uses the direct path; a genuinely complex request uses bounded planning.
+- [ ] Progress message edits, rich-message fallback, HTML fallback, and long-message splitting work.
+- [ ] Webhook secret validation rejects incorrect headers.
+- [ ] Duplicate webhook delivery does not duplicate voice or academic ingestion work.
 
-## Approval and connector safety
+## Academic ingestion
 
-- [ ] Verify each configured write-capable tool pauses for approval unless a matching persisted grant exists.
-- [ ] Verify approval callbacks only accept the Telegram user who owns the pending record.
-- [ ] Verify Always Allow is scoped to the intended provider/operation.
-- [ ] Verify provider write flags remain required even when an approval grant exists.
-- [ ] Verify GitHub writes are disabled unless explicitly configured; confirm delete operations remain unavailable.
-- [ ] Verify Notion and Gmail credentials are server-side only and writes are separately gated.
-- [ ] Verify Google Calendar is restricted to the configured Telegram user allowlist.
-- [ ] Verify NallPuter URL, authentication, network access and command restrictions. Do not expose an unauthenticated kernel publicly.
-- [ ] Verify workflow allowlists cannot expand during a scheduled run and background work cannot silently approve interactive mutations.
+- [ ] `/ingest` explains the current caption format.
+- [ ] PDF with `Course: ... | Title: ...` stores the expected metadata.
+- [ ] Follow-up structured labels work without relying on Telegram reply-to.
+- [ ] Oversized files are rejected before processing.
+- [ ] Text PDF reaches `extracted` or `indexed` as appropriate.
+- [ ] Scanned/image-only PDF reaches `stored_no_text` with an actionable message.
+- [ ] Extraction failure reaches `stored_extraction_failed` and preserves diagnostics.
+- [ ] LightRAG failure reaches `extracted_index_failed` and is not presented as searchable content.
+- [ ] Academic delete removes only the requesting user’s document and bounded local file.
 
-## Runtime and integration validation
+## Voice
 
-- [ ] Telegram private-chat smoke test.
-- [ ] Group-chat participant-isolation test.
-- [ ] Conversation persistence and follow-up continuity test.
-- [ ] Simple request bypasses planner; complex request uses a validated bounded plan.
-- [ ] Independent eligible reads run concurrently; mutations remain sequential.
-- [ ] Partial and failed work is reported honestly.
-- [ ] Memory recall remains user-scoped and relevant.
-- [ ] LightRAG indexing, retrieval, reranking and fallback behavior are verified when enabled.
-- [ ] PDF extraction handles normal, large and scanned/image-only documents with accurate status reporting.
-- [ ] One-time and recurring reminders deliver at the intended local time.
-- [ ] Event-triggered monitoring requests are not silently converted into guessed clock-time reminders.
-- [ ] Hybrid search is tested with both providers and each single-provider mode.
-- [ ] Voice STT/TTS is tested when enabled.
-- [ ] Telegram progress editing, approval keyboards, rich-message fallback and long-message splitting work.
-- [ ] Workspace traversal and symlink protections pass.
+- [ ] Voice remains disabled when `VOICE_ENABLED=false`.
+- [ ] Enabled voice configuration includes Deepgram, ElevenLabs, and voice ID values.
+- [ ] Accepted Telegram voice/audio input is byte-limited and FFmpeg-normalized.
+- [ ] Overlong or oversized notes are rejected.
+- [ ] Deepgram and ElevenLabs timeout/retry behavior is bounded.
+- [ ] Spoken output is clipped to `VOICE_TTS_MAX_CHARS`; detailed links and sources remain in text.
+- [ ] Duplicate Telegram voice updates produce one response.
+
+## Skills, affect, and orchestration
+
+- [ ] Relevant repository skills are selected without loading unrelated full bodies.
+- [ ] Skill instructions do not override tool, privacy, approval, or budget boundaries.
+- [ ] Stress, confusion, warm, and urgent affect policies remain concise and do not narrate internal emotions.
+- [ ] Claim audit rejects or rewrites unsupported quantitative claims.
+- [ ] Read-only concurrency stays within configured limits; mutations are sequential and not automatically replayed.
+
+## Inline approvals and connectors
+
+- [ ] Startup creates `approval_grants`, `pending_approvals`, and their indexes on a staging database.
+- [ ] File, memory, schedule, calendar, connector, and NallPuter mutations pause before execution.
+- [ ] Telegram displays Deny / Allow / Always Allow buttons.
+- [ ] Callback queries are acknowledged before slow provider work.
+- [ ] Deny records `denied` and performs no mutation.
+- [ ] Allow executes once and records `executed` or `failed`.
+- [ ] Always Allow persists only the intended provider/operation scope.
+- [ ] Repeated taps cannot execute the same pending mutation twice.
+- [ ] Ownership checks prevent another Telegram user from approving the request.
+- [ ] GitHub, Notion, Gmail, Calendar, and NallPuter fail closed when credentials or write gates are absent.
 
 ## Deployment and operations
 
-- [ ] Render Docker build and startup pass on Node 22.
-- [ ] Poppler and FFmpeg are present in the deployed image.
-- [ ] Public health endpoint responds after startup; dependency readiness is checked separately.
-- [ ] Webhook HTTPS and secret-token validation are confirmed.
-- [ ] LightRAG remains private and starts only when enabled.
-- [ ] Persistent disk is configured if local user files must survive deploys.
-- [ ] Database backup and recovery expectations are documented.
-- [ ] Logs do not expose tokens, secrets or unnecessary personal content.
+- [ ] Docker build uses Node 22 and includes Poppler and FFmpeg.
+- [ ] `GET /health` responds after startup.
+- [ ] If LightRAG is enabled, the sidecar passes its private health check and binds only to localhost.
+- [ ] Persistent disk is configured when local workspace files must survive deploys.
+- [ ] Neon backup and recovery expectations are documented.
+- [ ] Logs do not expose tokens, secrets, full authorization headers, or unnecessary personal content.
 - [ ] Rollback to the previous deployment is available.
-- [ ] Provider-specific smoke tests pass for every connector advertised as enabled.
 
-## Known release caveats to resolve or accept
+## Stable-release blockers
 
-- Affect state is in-memory and resets on process restart.
-- Affect inference is heuristic and must not be described as clinical assessment.
-- NallPuter's current adapter permits an absent token; service/network authentication must be enforced externally.
-- The repository currently has no selected license.
-- The current development branch's package metadata is still `2.2.0-alpha.1`; release versioning has not yet been aligned to v3.1.
-
-Do not call v3.1 stable while required build, security, approval, connector, data-isolation or deployment checks remain unverified.
+Do not call this line stable while live integration coverage, dependency review, license selection, secret-handling review, approval smoke tests, or production rollback procedures remain unresolved.

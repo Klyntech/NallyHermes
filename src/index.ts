@@ -19,6 +19,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { ingestAcademicDocument } from "./academic/ingestion.js";
 import { updateAcademicDocumentMetadata } from "./academic/store.js";
 import {
+  claimPendingApproval,
   getPendingApproval,
   grantAlwaysAllow,
   markPending
@@ -169,22 +170,32 @@ bot.on("callback_query:data", async (ctx) => {
     await ctx.answerCallbackQuery({ text: "Invalid approval action." });
     return;
   }
-  const decision = parts[1] as "deny" | "allow" | "always";
+  const decision = parts[1];
+  if (decision !== "deny" && decision !== "allow" && decision !== "always") {
+    await ctx.answerCallbackQuery({ text: "Invalid approval action." });
+    return;
+  }
   const pendingId = parts.slice(2).join(":");
+  // Acknowledge before database/provider work. Telegram expires callback queries quickly.
+  await ctx.answerCallbackQuery({ text: decision === "deny" ? "Denying…" : "Processing approval…" });
   const pending = await getPendingApproval(pendingId);
   if (!pending || pending.telegramId !== telegramId) {
-    await ctx.answerCallbackQuery({ text: "Approval not found or not yours." });
+    await ctx.editMessageText("Approval not found or not yours.");
     return;
   }
   if (pending.status !== "pending") {
-    await ctx.answerCallbackQuery({ text: `Already ${pending.status}.` });
+    await ctx.editMessageText(`Already ${pending.status}.`);
     return;
   }
 
   if (decision === "deny") {
     await markPending(pendingId, "denied");
-    await ctx.answerCallbackQuery({ text: "Denied." });
     await ctx.editMessageText(`Denied: ${pending.summary}`);
+    return;
+  }
+
+  if (!(await claimPendingApproval(pendingId))) {
+    await ctx.editMessageText("This approval was already processed.");
     return;
   }
 
@@ -218,7 +229,6 @@ bot.on("callback_query:data", async (ctx) => {
       throw new Error(`Cannot execute approved tool: ${tool}`);
     }
     await markPending(pendingId, "executed", { result: result as Record<string, unknown> });
-    await ctx.answerCallbackQuery({ text: decision === "always" ? "Always allowed." : "Allowed." });
     const preview = typeof result === "object" ? JSON.stringify(result).slice(0, 500) : String(result).slice(0, 500);
     await ctx.editMessageText(
       `${decision === "always" ? "Always allow saved." : "Allowed."} Ran ${pending.summary}\n\n${preview}`
@@ -226,7 +236,6 @@ bot.on("callback_query:data", async (ctx) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await markPending(pendingId, "failed", { error: message });
-    await ctx.answerCallbackQuery({ text: "Failed after approval." });
     await ctx.editMessageText(`Approved but failed: ${pending.summary}\n${message}`);
   }
 });

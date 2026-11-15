@@ -167,6 +167,29 @@ export async function ensureDatabase(): Promise<void> {
     ,"CREATE INDEX IF NOT EXISTS workflows_user_id_idx ON workflows(user_id)"
     ,"CREATE INDEX IF NOT EXISTS workflows_due_idx ON workflows(status, run_at)"
     ,"CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_idx ON workflow_runs(workflow_id)"
+    ,`CREATE TABLE IF NOT EXISTS approval_grants (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      telegram_id text NOT NULL,
+      provider text NOT NULL,
+      scope text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`
+    ,`CREATE TABLE IF NOT EXISTS pending_approvals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      telegram_id text NOT NULL,
+      provider text NOT NULL,
+      operation text NOT NULL,
+      arguments jsonb NOT NULL DEFAULT '{}'::jsonb,
+      summary text NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      result jsonb,
+      error text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      resolved_at timestamptz
+    )`
+    ,"CREATE INDEX IF NOT EXISTS approval_grants_user_provider_idx ON approval_grants(telegram_id, provider)"
+    ,"CREATE INDEX IF NOT EXISTS approval_grants_scope_idx ON approval_grants(telegram_id, provider, scope)"
+    ,"CREATE INDEX IF NOT EXISTS pending_approvals_user_status_idx ON pending_approvals(telegram_id, status)"
   ];
 
   for (const statement of statements) {

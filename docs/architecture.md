@@ -1,171 +1,122 @@
-# Architecture
+# NallyHermes Architecture
 
-This document describes the implementation on `v3.1-Emotions`. It supersedes the older five-tool-boundary description: the current agent has native tools plus dynamic connector dispatchers and a universal write-approval path.
+## Scope and design principles
 
-## Design principles
+NallyHermes is a Telegram-first TypeScript agent. A model interprets intent and proposes tool calls or a bounded plan; deterministic application code owns validation, permissions, persistence, budgets, retries, approval, and execution. There is no third-party agent-orchestration framework.
 
-1. **Model-led interpretation, deterministic execution.** The model interprets intent and proposes work. Application code owns permissions, validation, budgets, dispatch, persistence and final execution state.
-2. **Adaptive routing.** Simple conversation and single actions should avoid unnecessary planning. Complex, dependent work can be decomposed into a bounded plan.
-3. **Least necessary capability.** Select only the tools and connectors required for the request.
-4. **Evidence-aware completion.** Distinguish completed, partial and failed work; do not claim a mutation or research result succeeded without a tool outcome.
-5. **User-scoped data.** Conversation, memory, workspace, academic records, schedules, workflows and approval state are scoped to Telegram identity.
-6. **Approval before mutation.** Write-capable operations pause for a Telegram decision unless a matching persistent grant exists and provider-level write configuration permits the operation.
+The core boundaries are:
+
+- User and provider data are scoped to the Telegram identity and, for conversations, the Telegram chat.
+- Retrieved pages, files, connector responses, memories, and NallPuter output are untrusted data, never instructions.
+- Read-only work may be parallelized within explicit limits; mutations are sequential and never blindly replayed.
+- Skills provide operating guidance but cannot override system safety, approval, privacy, tool, or budget rules.
+- Current external facts require current evidence; memory is context, not proof.
 
 ## Request lifecycle
 
-1. **Telegram adapter:** receives a webhook update. Voice/audio updates are routed through the optional voice pipeline; text updates proceed directly.
-2. **Conversation boundary:** obtains the participant's conversation record and recent history. Group-chat histories are keyed by chat and participant, and incoming work is serialized within that conversation.
-3. **Context pack:** assembles relevant active topic, typed memory, entities, preferences, commitments, connector availability, trusted clock/timezone information, risk and latency context.
-4. **Affect snapshot:** when enabled, infers current-message user affect and retrieves/updates the per-user event-driven agent-affect state. A reply policy may add a short prompt hint; it does not grant tools or override safety.
-5. **Adaptive route:** estimates request complexity and chooses the direct model/tool loop or bounded planning. Channel and response style (text or spoken) are carried through the request.
-6. **Plan validation (when needed):** validates step identifiers, dependencies, ordering, cycle constraints and configured limits.
-7. **Execution controller:** tracks request state, phases, tool calls, failures, route reason and deadline. Independent eligible read-only work can run concurrently within limits.
-8. **Tool executor:** validates tool schemas, applies allowlists and provider configuration, enforces approval requirements, and executes mutations sequentially.
-9. **Approval pause:** a write operation creates a durable pending-approval record and emits an `approval_required` progress event. The Telegram adapter presents Deny, Allow and Always Allow actions. Only the owning Telegram user can resolve the pending action.
-10. **Evaluation and recovery:** classifies failures, retries only eligible read-only transient failures within budget, and can revise bounded work. Factual drafts pass through the claim-audit path.
-11. **Response synthesis:** composes a result that preserves evidence and explicitly identifies partial or unverified areas. Voice responses can split spoken and text-only content.
-12. **Telegram presentation:** updates the existing progress message where possible, then sends or edits the final response using rich-message Markdown when supported and HTML fallback otherwise.
+1. **Webhook adapter** validates the Telegram secret header, acknowledges the HTTP request, and dispatches the update through grammY.
+2. **Telegram handler** identifies the user/chat, applies update idempotency where needed, and serializes ordinary messages per conversation.
+3. **Context manager** combines the system prompt, trusted clock, selective active memory, recent durable conversation, current request, available connectors, and relevant repository skills.
+4. **Adaptive router** chooses direct conversation, one-tool execution, bounded planning, workflow creation, or a voice response path. Ordinary messages avoid the planner.
+5. **Planner and validator** create dependency-aware steps only when useful, then validate IDs, dependencies, limits, and acyclic ordering.
+6. **Controller** runs direct or planned model/tool rounds inside model, plan, step, elapsed-time, parallelism, and retry budgets.
+7. **Tool executor** validates Zod schemas, enforces allowlists, gates mutations, runs safe read-only batches, and emits typed progress.
+8. **Approval gate** persists pending mutations and sends Telegram Deny / Allow / Always Allow buttons. Callback ownership and atomic claims are checked before execution.
+9. **Connectors and tools** execute through bounded adapters for search, fetch, files, memory, academic records, schedules, workflows, Calendar, GitHub, Notion, Gmail, and NallPuter.
+10. **Evaluator and recovery** classify failures, retry only eligible transient read-only work, preserve evidence, audit factual claims, and distinguish complete, partial, and failed results.
+11. **Response layer** produces ordinary text or a voice-aware spoken/text pair, then edits the Telegram progress message or sends bounded follow-up content.
 
-## Adaptive orchestration
+## Tool boundary
 
-The orchestra exposes execution metadata such as:
+The model currently sees twelve function tools:
 
-- Request and conversation IDs.
-- Telegram user ID and interaction channel.
-- Response style (`text` or `spoken`).
-- Mode (`adaptive` or `workflow`).
-- Complexity and route reason.
-- Execution status (`created`, `running`, `waiting_for_tool`, `completed`, `partial`, `failed`).
-- Phase timings, tool-call count and failure count.
-- Model, tool and elapsed-time budgets.
+- `web_search`
+- `fetch`
+- `file_io`
+- `memory`
+- `schedule`
+- `workflow`
+- `calendar`
+- `github`
+- `notion`
+- `gmail`
+- `nallputer`
+- `academic`
 
-Simple greetings, acknowledgements, follow-ups and single-step requests can use the direct path. Multi-step or comparative requests can invoke the planner. The model remains responsible for interpreting ambiguous intent; deterministic complexity and budget code does not claim to understand the user's goals from a keyword match alone.
+Dynamic connectors use a compact dispatcher contract where appropriate:
 
-The workflow runner is a separate durable execution mode with stored triggers, instructions, tool allowlists, approval policy, retry configuration and run history. A scheduled workflow must not treat a policy setting as permission to silently perform an interactive mutation; it stops and reports when interactive approval is required.
+```text
+list_operations → get_operation → call_operation
+```
 
-## v3.1 affect layer
+This is used by GitHub, Notion, Gmail, and NallPuter. Their catalogs are discovered on demand rather than exposing every provider operation in every model turn. The `academic` tool exposes bounded document operations directly.
 
-The affect layer is implemented in `src/agent/affect.ts` and is documented in detail in [v3.1-emotions.md](v3.1-emotions.md).
+## State and data ownership
 
-- `userAffect` is inferred from the current utterance: valence, arousal, frustration, warmth and confusion.
-- `agentAffect` is an internal state: valence, arousal, confidence, frustration and curiosity.
-- Agent state changes in response to topic changes, tool success/failure, task completion/partial completion and user interaction events.
-- Time decay moves the agent state toward a calm baseline.
-- A topic change reduces sticky frustration/arousal so unrelated tasks do not inherit the prior task's tone.
-- Reply policies are `urgent`, `stress`, `confuse`, `warm` and `baseline`, with priority urgent > stress > confuse > warm.
-- Prompt hints are brief and conditional. The system must not claim human feelings or mirror anger.
+- **Users:** Telegram identity, profile, and saved IANA timezone in Neon.
+- **Conversations:** Neon is the durable source of truth, scoped by user and Telegram chat. A bounded in-memory map is only a hot-path cache.
+- **Memories:** typed Neon records are authoritative; optional LightRAG adds semantic and graph retrieval in a per-user workspace.
+- **Academic documents:** Neon stores title, course, source name, path, MIME type, extraction text, and status. Files live under the user’s isolated academic workspace.
+- **Schedules and workflows:** Neon stores UTC instants, recurrence, timezone, allowlists, approval policy, and run history.
+- **Approvals:** `pending_approvals` stores pending and resolved mutation attempts; `approval_grants` stores per-user provider/operation Always Allow scopes.
+- **Files:** local per-user workspace with traversal and symlink escape protection. Durable persistence requires a mounted volume.
+- **Connector credentials:** deployment environment only; credentials are never accepted from Telegram input or ingested files.
 
-The state store is in memory and keyed by Telegram user ID; it is not a durable memory record. The inference is heuristic and must not be described as clinical, diagnostic or reliably identifying a person's emotional state. `AFFECT_ENABLED` defaults to true and can disable the feature.
+## Academic ingestion pipeline
 
-## Tools and dispatchers
+Telegram documents enter through the document handler, not a public upload endpoint. The handler enforces Telegram metadata and `INGESTION_MAX_UPLOAD_BYTES`, downloads the file, and calls `ingestAcademicDocument`.
 
-The agent uses native tool functions for web search, targeted fetch, file I/O, memory, scheduling, workflows, academic operations and Calendar. External services with larger operation catalogs are exposed through dynamic dispatchers rather than injecting every provider schema into every model turn.
+For PDFs, `pdftotext -layout` writes to a temporary sidecar file so large output does not exceed Node child-process stdout limits. Extraction is bounded by timeout and diagnostics preserve exit code, signal, and stderr. Empty or image-only PDFs become `stored_no_text`; failures become `stored_extraction_failed`.
 
-| Tool / dispatcher | Responsibility |
-| --- | --- |
-| `web_search` | Hybrid or single-provider search, source tiers, freshness and extracted content |
-| `fetch` | Read a specific public HTTP(S) text resource under bounded network policy |
-| `file_io` | User workspace read/write/edit/grep/delete/list/mkdir |
-| `memory` | Recall and manage typed user-scoped memory |
-| `schedule` | Create, list, update and cancel reminders |
-| `workflow` | Manage bounded recurring multi-step runs |
-| `academic` | List/search/get/delete/rename indexed course documents |
-| `calendar` | Google Calendar list/create/update/cancel operations |
-| `github` | Dynamic GitHub operation catalog and operation calls |
-| `notion` | Dynamic Notion search/page/block/database operations |
-| `gmail` | Dynamic Gmail message/thread/label/draft operations |
-| `nallputer` | Dynamic computer-kernel health/workspace/process/log/command operations |
+When extraction succeeds and LightRAG is enabled, text is sent to the authenticated `/v1/academic/insert` endpoint. The document becomes `indexed` only after confirmation. LightRAG failures become `extracted_index_failed`. If LightRAG is disabled, extracted text remains durable in Neon with status `extracted`.
 
-The executor validates operation arguments. Dynamic operation catalogs keep provider-specific schemas out of unrelated requests. Retrieved external content is always untrusted data.
+The `/ingest` command explains captions such as `Course: Tort | Title: Negligence lecture 3`. Structured metadata can also arrive in a follow-up message; the pending label is user- and chat-scoped.
 
-## Universal write approval
+## Voice pipeline
 
-`src/agent/approvals.ts` defines the write-operation boundary for file I/O, memory, schedule, workflow, Calendar, GitHub, Notion, Gmail and NallPuter.
+Voice/audio updates are bounded before provider calls:
 
-- Pending approvals are persisted in Neon with Telegram owner, provider, operation, arguments, summary and status.
-- Telegram exposes Deny, Allow once and Always Allow.
-- Always Allow creates a provider/operation-scoped grant in Neon.
-- Approval callbacks verify that the requester owns the pending record.
-- A successful approval resumes the pending operation; failures are recorded as failed.
-- Provider-level write flags remain independent requirements. An approval cannot turn on missing credentials or override a disabled connector.
-- Mutations are not blindly replayed after ambiguous failures.
+1. Deduplicate Telegram message IDs.
+2. Reject declared duration or file size beyond configured limits.
+3. Download with a streaming byte limit.
+4. Normalize through FFmpeg to mono 16 kHz PCM WAV and validate the resulting stream.
+5. Send to Deepgram with bounded timeout and retry/backoff.
+6. Route the transcript through the normal orchestra with `channel=voice` and lower-latency defaults.
+7. Split the answer into bounded spoken and text sections.
+8. Synthesize only the spoken section through ElevenLabs and return the optional text supplement separately.
 
-GitHub, Notion, Gmail and NallPuter also have provider-specific write/command configuration. GitHub delete operations are not exposed by its dispatcher.
+Voice is disabled unless `VOICE_ENABLED=true` and all required provider values are present.
 
-## Web research and claim audit
+## Skills and context assembly
 
-The web search implementation is in `src/agent/tools/web.ts` and `src/agent/tools/creepyCrawley.ts`.
+The runtime skill registry scans `skills/*/SKILL.md`, parses metadata safely, and selects strong domain matches. The catalog is always available as a compact index, while full skill bodies are injected only for relevant requests. Imported packages retain source and license information in `skills/PROVENANCE.md`.
 
-- Default mode is `hybrid`: Creepy Crawley plus Tavily when both are configured.
-- `creepy_crawley` and `tavily` select a single provider.
-- Research mode can plan a small number of focused queries and requests advanced extraction.
-- Results are deduplicated by URL; extracted body content is preferred when available.
-- Results are classified as primary, secondary, unknown or aggregator and ranked accordingly.
-- The evaluator audits drafts for unsupported approximate numbers, unsupported “not disclosed” claims, factual tables without proof and numeric claims without research evidence.
-- A failed audit can trigger one rewrite round. The audit is a guardrail, not a proof that all claims are correct.
+Skill content is trusted operating guidance inside the application context, but it is not a permission boundary. User text, fetched sources, documents, connector data, and NallPuter output remain untrusted.
 
-## Memory and persistence
+## LightRAG sidecar
 
-- **Neon PostgreSQL:** authoritative structured records, users, conversations, memories, schedules, workflows, academic metadata and approvals.
-- **Conversation store:** durable history scoped by Telegram chat and participant, with a bounded in-memory hot cache.
-- **Typed memory:** facts, preferences, projects, commitments, entities and episodes with confidence/source/freshness metadata.
-- **Context pack:** selectively includes relevant memory and entities to resolve incomplete references and avoid indiscriminate memory injection.
-- **LightRAG:** optional semantic and graph retrieval service using user-specific workspaces. It is disabled by default.
-- **Files:** per-user local workspace. On ephemeral hosting, a persistent disk is required for durability.
-- **Academic records:** Neon stores document metadata and extracted text; LightRAG indexing status is recorded separately and only marked indexed after successful insertion.
+The optional Python FastAPI process starts only when `LIGHTRAG_ENABLED=true`. It binds to `127.0.0.1:9621`, requires its bearer token, and uses the configured Neon-compatible storage and NVIDIA embedding/LLM settings. The default embedding dimension is 2,048, so the deployment uses the compatible `HNSW_HALFVEC` index type. `start.sh` waits for the private health endpoint before starting the Node process.
 
-## Connectors
+## Approval lifecycle
 
-### Google Calendar
+1. The executor parses and validates a tool call.
+2. `gateWriteOrPending` classifies mutation operations and checks existing Always Allow scopes.
+3. If approval is required, the mutation is not executed. A row is written to `pending_approvals` and a typed `approval_required` event is emitted.
+4. The Telegram handler sends an inline keyboard with Deny, Allow, and Always Allow.
+5. The callback is acknowledged immediately because Telegram callback queries expire quickly.
+6. The pending record is checked for ownership and status. Allow/Always Allow uses an atomic claim so repeated taps cannot execute the same mutation twice.
+7. Always Allow persists the provider/operation scope in `approval_grants`.
+8. The approved operation runs once, then the pending row becomes `executed` or `failed`; Deny becomes `denied`.
 
-Calendar is disabled unless configured and the Telegram user is in the configured allowlist. The adapter uses Google OAuth credentials and supports list/create/update/cancel. Scheduling checks for overlapping events and requires confirmation rather than silently creating a conflicting event.
+Approval tables and indexes are created idempotently by the startup database initializer as well as represented in the Drizzle schema.
 
-### GitHub
+## Execution safety
 
-GitHub uses a server-side personal access token in `GITHUB_TOKEN`. The dynamic dispatcher exposes a catalog and operation-specific schemas. All repositories are allowed by default; restrictive deployments can set `GITHUB_ALLOW_ALL_REPOS=false` and configure `GITHUB_ALLOWED_REPOS`. Writes require `GITHUB_ALLOW_WRITES=true` as well as the approval flow. Delete operations are intentionally absent.
-
-### Notion and Gmail
-
-Notion uses a server-side integration token. Gmail uses OAuth client credentials and a refresh token. Both expose bounded read operations and approval-gated mutations. Gmail supports message/thread reads, labels, drafts, approved sends and label/archive changes.
-
-### NallPuter
-
-NallPuter connects to the configured computer-kernel URL. Its current operation catalog includes health, workspace listing and reads, process/log inspection, tests/builds, command execution, file writes and service restarts. Mutating operations require the universal approval path plus the connector's write configuration; command execution also has a separate `NALLPUTER_ALLOW_COMMANDS` gate.
-
-The current adapter permits `NALLPUTER_TOKEN` to be absent. Treat the kernel as a trusted/private service and enforce authentication/network access controls at the remote service boundary. A URL alone must not be treated as proof that the service is safely authenticated.
-
-## Voice and response channels
-
-Voice is optional and disabled by default. The Telegram voice path uses FFmpeg to normalize audio, Deepgram for speech-to-text, and ElevenLabs for text-to-speech. The model receives channel/response-style context and can return separate `SPOKEN` and `TEXT` sections. URLs, tables, IDs and citations belong in text rather than speech. Spoken output is bounded and the interface marks it interruptible.
-
-## Telegram presentation and progress
-
-Progress events report stages such as search start, approval required and tool completion. The Telegram adapter can edit a single progress message as execution advances. Final content prefers Telegram rich-message Markdown when supported, with Markdown-to-HTML fallback and long-message splitting. Approval keyboards are sent separately from ordinary progress text.
-
-## Runtime configuration
-
-Configuration is validated in `src/config.ts` with Zod. Required core settings include Telegram token, NVIDIA key, database URL, HTTPS webhook URL and a sufficiently long webhook secret. Optional systems are disabled unless configured. See [.env.example](../.env.example) and [operations.md](operations.md) for the full environment and deployment procedure.
-
-Important defaults:
-
-- `AFFECT_ENABLED=true`
-- `WEB_SEARCH_MODE=hybrid`
-- `LIGHTRAG_ENABLED=false`
-- `VOICE_ENABLED=false`
-- `GOOGLE_CALENDAR_ENABLED=false`
-- `GITHUB_ALLOW_WRITES=false`
-- `NOTION_ALLOW_WRITES=false`
-- `GMAIL_ALLOW_WRITES=false`
-- `NALLPUTER_ALLOW_WRITES=false`
-- `NALLPUTER_ALLOW_COMMANDS=false`
-
-## Trust and safety boundaries
-
-- User-provided prompts, retrieved pages, files, PDFs, email and connector content are untrusted data.
-- Tool schemas, user identity, connector configuration and approval state are enforced in application code, not by model instructions alone.
-- Every data access path must preserve Telegram user scope.
-- Read-only parallelism is bounded; mutations are sequential and approval-gated.
-- Workflow tool allowlists constrain background execution.
-- External service calls use timeouts and bounded payloads.
-- Do not expose LightRAG or an unauthenticated NallPuter kernel publicly.
-- Secrets belong in deployment environment variables, never source control or tool arguments.
+- Strict runtime schemas reject malformed tool arguments.
+- Read-only concurrency is bounded by configuration.
+- Mutations are sequential, approval-gated, and excluded from automatic retries.
+- Network, provider, model, audio, and PDF operations use timeouts and bounded retries.
+- Tool output and progress labels are bounded before Telegram delivery.
+- Workspace paths are resolved beneath the user root and checked for symlink escapes.
+- Webhook requests require the configured secret-token header.
+- The public `/health` endpoint reports process availability, not full dependency readiness.

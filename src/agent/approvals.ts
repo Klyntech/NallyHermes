@@ -169,6 +169,16 @@ export async function getPendingApproval(id: string): Promise<PendingApprovalRec
   };
 }
 
+/** Claim a pending approval exactly once before executing its mutation. */
+export async function claimPendingApproval(id: string): Promise<boolean> {
+  const rows = await db
+    .update(pendingApprovals)
+    .set({ status: "approved" })
+    .where(and(eq(pendingApprovals.id, id), eq(pendingApprovals.status, "pending")))
+    .returning({ id: pendingApprovals.id });
+  return rows.length > 0;
+}
+
 export async function markPending(
   id: string,
   status: "approved" | "denied" | "executed" | "failed",

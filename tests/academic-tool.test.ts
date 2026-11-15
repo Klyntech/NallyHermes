@@ -11,7 +11,7 @@ const { agentTools } = await import("../src/agent/definitions.js");
 const { isReadOnlyCall } = await import("../src/agent/executor.js");
 
 test("academic tool is registered", () => {
-  const names = agentTools.map((tool) => tool.function.name);
+  const names = agentTools.flatMap((tool) => tool.type === "function" ? [tool.function.name] : []);
   assert.ok(names.includes("academic"));
 });
 
