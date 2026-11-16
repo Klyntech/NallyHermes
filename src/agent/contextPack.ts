@@ -2,6 +2,7 @@ import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { memories, users } from "../db/schema.js";
 import type { InteractionChannel, ResponseStyle, RouteComplexity } from "./orchestra.js";
+import { shouldUseSemanticMemory } from "./memoryRouting.js";
 
 export type ConnectorHealth = {
   id: string;
@@ -130,7 +131,9 @@ export async function buildAdaptiveContextPack(input: {
     voice?: boolean;
   };
 }): Promise<AdaptiveContextPack> {
-  const memory = await loadMemorySlices(input.telegramId);
+  const memory = shouldUseSemanticMemory(input.userMessage)
+    ? await loadMemorySlices(input.telegramId)
+    : { entities: [], preferences: [], commitments: [], facts: [] };
   return {
     telegramId: input.telegramId,
     channel: input.channel,

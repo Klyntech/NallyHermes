@@ -39,6 +39,7 @@ const envSchema = z.object({
   LIGHTRAG_EMBEDDING_DIM: z.coerce.number().int().min(1).max(8192).default(2048),
   LIGHTRAG_WORKING_DIR: z.string().min(1).default("./lightrag_data"),
   LIGHTRAG_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(1_800_000).default(1_800_000),
+  LIGHTRAG_QUERY_TIMEOUT_MS: z.coerce.number().int().min(250).max(10_000).default(2_000),
   GOOGLE_CALENDAR_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   GOOGLE_CALENDAR_CLIENT_ID: z.string().optional(),
   GOOGLE_CALENDAR_CLIENT_SECRET: z.string().optional(),

@@ -9,7 +9,7 @@ process.env.WEBHOOK_SECRET = "a".repeat(32);
 process.env.LIGHTRAG_ENABLED = "false";
 
 const { isAllowedCall, isReadOnlyCall } = await import("../src/agent/executor.js");
-const { nextWorkflowOccurrence } = await import("../src/agent/workflows.js");
+const { nextWorkflowOccurrence, workflowShouldCompleteAfterSuccess } = await import("../src/agent/workflows.js");
 
 test("workflow tool policies allow only explicitly listed tools", () => {
   const allowed = new Set(["web_search", "memory"]);
@@ -31,4 +31,20 @@ test("monthly workflow recurrence clamps invalid month dates", () => {
   const previous = new Date("2026-01-31T08:00:00.000Z");
   const next = nextWorkflowOccurrence(previous, "monthly", "Africa/Lagos");
   assert.equal(next.toISOString(), "2026-02-28T08:00:00.000Z");
+});
+
+test("one-time workflow completes after its successful run", () => {
+  assert.equal(workflowShouldCompleteAfterSuccess({ recurrence: "once", maxRuns: null, untilAt: null }, 1, null), true);
+});
+
+test("recurring workflow stops when its successful-run limit is reached", () => {
+  const workflow = { recurrence: "weekly" as const, maxRuns: 2, untilAt: null };
+  assert.equal(workflowShouldCompleteAfterSuccess(workflow, 1, new Date("2026-03-15T08:00:00Z")), false);
+  assert.equal(workflowShouldCompleteAfterSuccess(workflow, 2, new Date("2026-03-15T08:00:00Z")), true);
+});
+
+test("recurring workflow stops when the next run would exceed until_at", () => {
+  const workflow = { recurrence: "daily" as const, maxRuns: null, untilAt: new Date("2026-03-03T08:00:00Z") };
+  assert.equal(workflowShouldCompleteAfterSuccess(workflow, 1, new Date("2026-03-03T08:00:00Z")), false);
+  assert.equal(workflowShouldCompleteAfterSuccess(workflow, 2, new Date("2026-03-04T08:00:00Z")), true);
 });

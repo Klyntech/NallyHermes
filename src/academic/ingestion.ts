@@ -77,12 +77,18 @@ export async function ingestAcademicDocument(telegramId: string, input: { title:
     error
   });
   if (!extractedText || status === "stored_extraction_failed" || !config.LIGHTRAG_ENABLED) return document;
-  try {
-    const indexed = await indexAcademicDocument(telegramId, document.id, input.title, input.course, extractedText, filePath);
-    if (indexed) return (await updateAcademicDocumentStatus(telegramId, document.id, "indexed")) ?? document;
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message.slice(0, 1000) : "LightRAG indexing failed.";
-    return (await updateAcademicDocumentStatus(telegramId, document.id, "extracted_index_failed", detail)) ?? document;
-  }
-  return document;
+  const indexing = await updateAcademicDocumentStatus(telegramId, document.id, "indexing") ?? document;
+  void indexAcademicDocument(telegramId, document.id, input.title, input.course, extractedText, filePath)
+    .then(async (indexed) => {
+      if (indexed) await updateAcademicDocumentStatus(telegramId, document.id, "indexed");
+      else await updateAcademicDocumentStatus(telegramId, document.id, "extracted_index_failed", "LightRAG did not confirm indexing.");
+    })
+    .catch(async (cause) => {
+      const detail = cause instanceof Error ? cause.message.slice(0, 1000) : "LightRAG indexing failed.";
+      console.error("Background LightRAG academic indexing failed:", detail);
+      await updateAcademicDocumentStatus(telegramId, document.id, "extracted_index_failed", detail).catch((error) => {
+        console.error("Could not persist academic indexing failure:", error);
+      });
+    });
+  return indexing;
 }

@@ -169,6 +169,8 @@ export const workflows = pgTable("workflows", {
   runAt: timestamp("run_at", { withTimezone: true }).notNull(),
   recurrence: text("recurrence").notNull(),
   timezone: text("timezone").notNull(),
+  maxRuns: integer("max_runs"),
+  untilAt: timestamp("until_at", { withTimezone: true }),
   allowedTools: jsonb("allowed_tools").$type<string[]>().default([]).notNull(),
   approvalPolicy: text("approval_policy").notNull().default("confirm_mutations"),
   outputDestination: text("output_destination").notNull().default("telegram"),

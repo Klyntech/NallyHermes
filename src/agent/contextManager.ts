@@ -6,6 +6,7 @@ import { buildSkillContext } from "./skills/registry.js";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { memories, users } from "../db/schema.js";
+import { shouldUseSemanticMemory } from "./memoryRouting.js";
 
 export interface ContextAssemblyInput {
   history: ChatCompletionMessageParam[];
@@ -22,7 +23,7 @@ function mayNeedActiveMemory(userMessage: string): boolean {
 }
 
 async function buildActiveMemoryContext(telegramId: string, userMessage: string): Promise<string> {
-  if (!mayNeedActiveMemory(userMessage)) return "";
+  if (!mayNeedActiveMemory(userMessage) || !shouldUseSemanticMemory(userMessage)) return "";
   try {
     const now = new Date();
     const rows = await db.select({

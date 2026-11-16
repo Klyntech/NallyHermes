@@ -10,6 +10,7 @@ import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } fro
 import type { ToolProgressReporter } from "../progress.js";
 import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
 import { cancelWorkflow, createWorkflow, listWorkflows, pauseWorkflow } from "../workflows.js";
+import { shouldUseSemanticMemory } from "../memoryRouting.js";
 import { composeReminderMessage } from "../reminderMessage.js";
 import { calendarTool } from "../calendar.js";
 import { creepyScrape, isCreepyCrawleyConfigured } from "./creepyCrawley.js";
@@ -276,31 +277,10 @@ async function getUserId(telegramId: string): Promise<string> {
   return user.id;
 }
 
-const indexedMemoryUsers = new Set<string>();
-const memorySyncJobs = new Map<string, Promise<void>>();
-
-export async function syncUserMemories(telegramId: string, onProgress?: ToolProgressReporter): Promise<void> {
-  if (!config.LIGHTRAG_ENABLED || indexedMemoryUsers.has(telegramId)) return;
-  const existingJob = memorySyncJobs.get(telegramId);
-  if (existingJob) return existingJob;
-
-  const job = (async () => {
-    const userId = await getUserId(telegramId);
-    const rows = await db.select({ id: memories.id, content: memories.content })
-      .from(memories).where(eq(memories.userId, userId));
-    if (rows.length) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
-    for (const memory of rows) {
-      await indexMemory(telegramId, memory.id, memory.content);
-    }
-    indexedMemoryUsers.add(telegramId);
-  })();
-
-  memorySyncJobs.set(telegramId, job);
-  try {
-    await job;
-  } finally {
-    memorySyncJobs.delete(telegramId);
-  }
+function runLightRAGInBackground(operation: string, task: () => Promise<unknown>): void {
+  void task().catch((error) => {
+    console.warn(`Background LightRAG ${operation} failed:`, error);
+  });
 }
 
 type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string; kind?: "fact" | "preference" | "project" | "commitment" | "entity" | "episode"; subject?: string; predicate?: string; object?: string; confidence?: number; expires_at?: string };
@@ -314,23 +294,18 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new Error("expires_at must be a valid ISO-8601 timestamp.");
       const [saved] = await db.insert(memories).values({ userId, content: input.content.trim(), kind: input.kind ?? "fact", subject: input.subject?.trim().slice(0, 200) || null, predicate: input.predicate?.trim().slice(0, 200) || null, object: input.object?.trim().slice(0, 500) || null, confidence, source: "user", expiresAt: expiresAt ?? null, lastConfirmedAt: new Date() }).returning({ id: memories.id, content: memories.content, kind: memories.kind, subject: memories.subject, predicate: memories.predicate, object: memories.object, confidence: memories.confidence });
       if (!saved) throw new Error("Memory could not be saved.");
-      let indexed = false;
-      try {
-        if (config.LIGHTRAG_ENABLED) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
-        indexed = await indexMemory(telegramId, saved.id, saved.content);
+      if (config.LIGHTRAG_ENABLED) {
+        runLightRAGInBackground("memory indexing", () => indexMemory(telegramId, saved.id, saved.content));
       }
-      catch (error) { console.error("LightRAG memory indexing failed:", error); }
-      return { ...saved, indexed };
+      return { ...saved, indexing: config.LIGHTRAG_ENABLED ? "background" : "disabled" };
     }
     case "recall": {
       const rows = await db.select({ id: memories.id, content: memories.content, updatedAt: memories.updatedAt })
         .from(memories).where(input.query ? and(eq(memories.userId, userId), ilike(memories.content, `%${input.query.slice(0, 100)}%`)) : eq(memories.userId, userId))
         .orderBy(desc(memories.updatedAt)).limit(20);
       let semanticContext = "";
-      if (input.query && config.LIGHTRAG_ENABLED) {
+      if (input.query && config.LIGHTRAG_ENABLED && shouldUseSemanticMemory(input.query)) {
         try {
-          await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
-          await syncUserMemories(telegramId, onProgress);
           await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
           semanticContext = await retrieveMemory(telegramId, input.query);
         }
@@ -349,26 +324,27 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       const [existing] = await db.select({ id: memories.id }).from(memories)
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).limit(1);
       if (!existing) return { deleted: false };
-      await deleteMemory(telegramId, input.id);
       const removed = await db.delete(memories).where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id });
-      return { deleted: removed.length > 0 };
+      if (removed.length && config.LIGHTRAG_ENABLED) {
+        runLightRAGInBackground("memory deletion", () => deleteMemory(telegramId, input.id!));
+      }
+      return { deleted: removed.length > 0, semantic_index_cleanup: config.LIGHTRAG_ENABLED ? "background" : "disabled" };
     }
     case "update": {
       if (!input.id || !input.content?.trim() || input.content.length > 4000) throw new Error("A memory ID and new content (1–4000 characters) are required.");
       const [existing] = await db.select({ id: memories.id }).from(memories)
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).limit(1);
       if (!existing) return { updated: false };
-      await deleteMemory(telegramId, input.id);
       const [updated] = await db.update(memories).set({ content: input.content.trim(), kind: input.kind ?? undefined, subject: input.subject?.trim().slice(0, 200) || undefined, predicate: input.predicate?.trim().slice(0, 200) || undefined, object: input.object?.trim().slice(0, 500) || undefined, confidence: input.confidence === undefined ? undefined : Math.min(100, Math.max(0, Math.round(input.confidence))), lastConfirmedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id, content: memories.content });
       if (!updated) return { updated: false };
-      let indexed = false;
-      try {
-        if (config.LIGHTRAG_ENABLED) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_indexing" });
-        indexed = await indexMemory(telegramId, updated.id, updated.content);
+      if (config.LIGHTRAG_ENABLED) {
+        runLightRAGInBackground("memory re-indexing", async () => {
+          await deleteMemory(telegramId, input.id!);
+          return indexMemory(telegramId, updated.id, updated.content);
+        });
       }
-      catch (error) { console.error("LightRAG memory re-indexing failed:", error); }
-      return { ...updated, indexed };
+      return { ...updated, indexing: config.LIGHTRAG_ENABLED ? "background" : "disabled" };
     }
   }
 }
@@ -497,7 +473,9 @@ type WorkflowInput = {
   name?: string;
   instructions?: string;
   run_at?: string;
-  recurrence?: "daily" | "weekly" | "monthly";
+  recurrence?: "once" | "daily" | "weekly" | "monthly";
+  max_runs?: number;
+  until_at?: string;
   timezone?: string;
   allowed_tools?: string[];
   approval_policy?: string;
@@ -510,25 +488,35 @@ export async function workflowTool(telegramId: string, input: WorkflowInput): Pr
   if (!input.id && (input.operation === "pause" || input.operation === "cancel")) throw new Error("Provide a workflow ID.");
   if (input.operation === "pause") return { paused: await pauseWorkflow(telegramId, input.id!) };
   if (input.operation === "cancel") return { cancelled: await cancelWorkflow(telegramId, input.id!) };
-  if (!input.name || !input.instructions || !input.run_at || !input.recurrence) {
-    throw new Error("A workflow name, instructions, recurrence, and first run are required.");
+  if (!input.name || !input.instructions || !input.run_at) {
+    throw new Error("A workflow name, instructions, and first run are required.");
   }
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(input.run_at)) {
     throw new Error("run_at must be ISO-8601 with an explicit Z or timezone offset.");
   }
   const runAt = new Date(input.run_at);
   if (!Number.isFinite(runAt.getTime()) || runAt <= new Date()) throw new Error("The first workflow run must be in the future.");
+  let untilAt: Date | undefined;
+  if (input.until_at !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(input.until_at)) {
+      throw new Error("until_at must be ISO-8601 with an explicit Z or timezone offset.");
+    }
+    untilAt = new Date(input.until_at);
+    if (!Number.isFinite(untilAt.getTime()) || untilAt < runAt) throw new Error("until_at must be at or after the first run.");
+  }
   const workflow = await createWorkflow(telegramId, {
     name: input.name,
     instructions: input.instructions,
     runAt,
-    recurrence: input.recurrence,
+    recurrence: input.recurrence ?? "once",
     timezone: input.timezone,
+    maxRuns: input.max_runs,
+    untilAt,
     allowedTools: input.allowed_tools,
     approvalPolicy: input.approval_policy,
     outputDestination: input.output_destination
   });
-  return { ...workflow, run_at: workflow.runAt.toISOString() };
+  return { ...workflow, run_at: workflow.runAt.toISOString(), until_at: workflow.untilAt?.toISOString() ?? null };
 }
 
 export function startScheduleWorker(sendMessage: (telegramId: string, text: string) => Promise<unknown>): void {

@@ -105,16 +105,18 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "workflow",
-      description: "Create and manage bounded recurring workflows. Workflows record run history and proactively deliver reports to Telegram. Use this for recurring multi-step work, source checks, and condition monitoring when the supported trigger and tools exist; do not downgrade an event-triggered request into a plain reminder.",
+      description: "Create and manage one-time or recurring workflows. Workflows record run history and proactively deliver reports to Telegram. Omit recurrence or use once for a one-time run; daily/weekly/monthly workflows may be bounded by max_runs and/or until_at, and users can cancel them when no longer needed. Use this for multi-step work and source checks; do not downgrade an event-triggered request into a plain reminder.",
       parameters: {
         type: "object",
         properties: {
           operation: { type: "string", enum: ["create", "list", "pause", "cancel"] },
           name: { type: "string", description: "Short workflow name." },
-          instructions: { type: "string", description: "Exact recurring instructions." },
+          instructions: { type: "string", description: "Exact instructions for the one-time or recurring task." },
           run_at: { type: "string", description: "First run as ISO-8601 with explicit timezone." },
-          recurrence: { type: "string", enum: ["daily", "weekly", "monthly"] },
+          recurrence: { type: "string", enum: ["once", "daily", "weekly", "monthly"], description: "Omit or set once for a single execution; otherwise choose a recurring cadence." },
           timezone: { type: "string", description: "IANA timezone for recurring wall-clock behavior." },
+          max_runs: { type: "integer", minimum: 1, maximum: 1000, description: "Optional maximum number of successful runs, e.g. 2." },
+          until_at: { type: "string", description: "Optional ISO-8601 end date/time. No occurrence after this time will run." },
           allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"] }, maxItems: 10 },
           approval_policy: { type: "string", description: "Policy label such as confirm_mutations or read_only." },
           output_destination: { type: "string", enum: ["telegram"] },

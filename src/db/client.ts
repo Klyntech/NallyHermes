@@ -119,6 +119,8 @@ export async function ensureDatabase(): Promise<void> {
       run_at timestamptz NOT NULL,
       recurrence text NOT NULL,
       timezone text NOT NULL,
+      max_runs integer,
+      until_at timestamptz,
       allowed_tools jsonb NOT NULL DEFAULT '[]'::jsonb,
       approval_policy text NOT NULL DEFAULT 'confirm_mutations',
       output_destination text NOT NULL DEFAULT 'telegram',
@@ -202,6 +204,8 @@ export async function ensureDatabase(): Promise<void> {
     ,"CREATE INDEX IF NOT EXISTS workflows_user_id_idx ON workflows(user_id)"
     ,"CREATE INDEX IF NOT EXISTS workflows_due_idx ON workflows(status, run_at)"
     ,"CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_idx ON workflow_runs(workflow_id)"
+    ,"ALTER TABLE workflows ADD COLUMN IF NOT EXISTS max_runs integer"
+    ,"ALTER TABLE workflows ADD COLUMN IF NOT EXISTS until_at timestamptz"
     ,`CREATE TABLE IF NOT EXISTS approval_grants (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       telegram_id text NOT NULL,

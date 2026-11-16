@@ -1,10 +1,10 @@
-import { and, asc, desc, eq, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, lte } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { users, workflowRuns, workflows } from "../db/schema.js";
 import { getUserTimezone, isValidTimezone } from "./clock.js";
 
-type WorkflowRecurrence = "daily" | "weekly" | "monthly";
-export type WorkflowStatus = "active" | "paused" | "cancelled";
+type WorkflowRecurrence = "once" | "daily" | "weekly" | "monthly";
+export type WorkflowStatus = "active" | "paused" | "cancelled" | "completed" | "failed";
 
 export interface WorkflowDefinition {
   id: string;
@@ -16,6 +16,8 @@ export interface WorkflowDefinition {
   runAt: Date;
   recurrence: WorkflowRecurrence;
   timezone: string;
+  maxRuns: number | null;
+  untilAt: Date | null;
   allowedTools: string[];
   approvalPolicy: string;
   outputDestination: string;
@@ -27,8 +29,10 @@ export interface CreateWorkflowInput {
   name: string;
   instructions: string;
   runAt: Date;
-  recurrence: WorkflowRecurrence;
+  recurrence?: WorkflowRecurrence;
   timezone?: string;
+  maxRuns?: number;
+  untilAt?: Date;
   allowedTools?: string[];
   approvalPolicy?: string;
   outputDestination?: string;
@@ -53,6 +57,7 @@ function localTimeToUtc(parts: ReturnType<typeof zonedParts>, timezone: string):
 }
 
 export function nextWorkflowOccurrence(previous: Date, recurrence: WorkflowRecurrence, timezone: string): Date {
+  if (recurrence === "once") throw new Error("A one-time workflow has no next occurrence.");
   const parts = zonedParts(previous, timezone);
   if (recurrence === "daily" || recurrence === "weekly") {
     const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + (recurrence === "daily" ? 1 : 7)));
@@ -72,6 +77,16 @@ export function nextWorkflowOccurrence(previous: Date, recurrence: WorkflowRecur
   return next;
 }
 
+export function workflowShouldCompleteAfterSuccess(
+  workflow: Pick<WorkflowDefinition, "recurrence" | "maxRuns" | "untilAt">,
+  completedRuns: number,
+  nextRun: Date | null
+): boolean {
+  if (workflow.recurrence === "once") return true;
+  if (workflow.maxRuns !== null && completedRuns >= workflow.maxRuns) return true;
+  return Boolean(workflow.untilAt && nextRun && nextRun > workflow.untilAt);
+}
+
 async function getUserId(telegramId: string): Promise<string> {
   const [user] = await db.select({ id: users.id }).from(users).where(eq(users.telegramId, telegramId)).limit(1);
   if (!user) throw new Error("User profile is not ready yet.");
@@ -89,6 +104,8 @@ function rowToWorkflow(row: typeof workflows.$inferSelect, telegramId: string): 
     runAt: row.runAt,
     recurrence: row.recurrence as WorkflowRecurrence,
     timezone: row.timezone,
+    maxRuns: row.maxRuns,
+    untilAt: row.untilAt,
     allowedTools: row.allowedTools,
     approvalPolicy: row.approvalPolicy,
     outputDestination: row.outputDestination,
@@ -104,6 +121,17 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
   if (!Number.isFinite(input.runAt.getTime()) || input.runAt <= new Date() || input.runAt.getTime() > Date.now() + 365 * 86400_000) throw new Error("The first workflow run must be in the future and within one year.");
   const timezone = input.timezone ?? await getUserTimezone(telegramId);
   if (!isValidTimezone(timezone)) throw new Error("Invalid IANA timezone.");
+  const recurrence = input.recurrence ?? "once";
+  if (!["once", "daily", "weekly", "monthly"].includes(recurrence)) throw new Error("Unsupported workflow recurrence.");
+  if (input.maxRuns !== undefined && (!Number.isInteger(input.maxRuns) || input.maxRuns < 1 || input.maxRuns > 1000)) {
+    throw new Error("max_runs must be an integer between 1 and 1000.");
+  }
+  if (recurrence === "once" && input.maxRuns !== undefined && input.maxRuns !== 1) {
+    throw new Error("A one-time workflow cannot have max_runs greater than 1.");
+  }
+  if (input.untilAt && (!Number.isFinite(input.untilAt.getTime()) || input.untilAt < input.runAt)) {
+    throw new Error("until_at must be a valid date at or after the first run.");
+  }
   const supportedTools = new Set(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"]);
   const allowedTools = [...new Set((input.allowedTools ?? ["web_search", "fetch", "memory"]).slice(0, 10))];
   if (allowedTools.some((tool) => !supportedTools.has(tool))) throw new Error("Workflow contains an unsupported tool.");
@@ -120,8 +148,10 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
     name: input.name.trim(),
     instructions: input.instructions.trim(),
     runAt: input.runAt,
-    recurrence: input.recurrence,
+    recurrence,
     timezone,
+    maxRuns: input.maxRuns ?? null,
+    untilAt: input.untilAt ?? null,
     allowedTools,
     approvalPolicy,
     outputDestination: input.outputDestination ?? "telegram",
@@ -170,6 +200,10 @@ export function startWorkflowWorker(runWorkflow: WorkflowRunner, deliver: Workfl
         .limit(10);
       for (const item of due) {
         const workflow = rowToWorkflow(item.workflow, item.telegramId);
+        if (workflow.untilAt && workflow.runAt > workflow.untilAt) {
+          await db.update(workflows).set({ status: "completed", updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+          continue;
+        }
         const [previousRun] = await db.select({ attempt: workflowRuns.attempt, status: workflowRuns.status })
           .from(workflowRuns)
           .where(eq(workflowRuns.workflowId, workflow.id))
@@ -182,15 +216,37 @@ export function startWorkflowWorker(runWorkflow: WorkflowRunner, deliver: Workfl
           const output = await runWorkflow(workflow);
           if (workflow.outputDestination === "telegram") await deliver(workflow.telegramId, output);
           await db.update(workflowRuns).set({ status: "completed", finishedAt: new Date(), output }).where(eq(workflowRuns.id, run.id));
-          await db.update(workflows).set({ runAt: nextWorkflowOccurrence(workflow.runAt, workflow.recurrence, workflow.timezone), lastRunAt: new Date(), updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+          const [completed] = await db.select({ total: count() }).from(workflowRuns)
+            .where(and(eq(workflowRuns.workflowId, workflow.id), eq(workflowRuns.status, "completed")));
+          const nextRun = workflow.recurrence === "once"
+            ? null
+            : nextWorkflowOccurrence(workflow.runAt, workflow.recurrence, workflow.timezone);
+          if (workflowShouldCompleteAfterSuccess(workflow, completed?.total ?? 0, nextRun)) {
+            await db.update(workflows).set({ status: "completed", lastRunAt: new Date(), updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+          } else {
+            await db.update(workflows).set({ runAt: nextRun!, lastRunAt: new Date(), updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+          }
         } catch (error) {
           const reason = error instanceof Error ? error.message : "Workflow execution failed.";
           await db.update(workflowRuns).set({ status: "failed", finishedAt: new Date(), error: reason }).where(eq(workflowRuns.id, run.id));
           const retryAllowed = attempt < workflow.retryPolicy.max_attempts;
-          const nextRun = retryAllowed
-            ? new Date(Date.now() + workflow.retryPolicy.backoff_seconds * 1000)
-            : nextWorkflowOccurrence(workflow.runAt, workflow.recurrence, workflow.timezone);
-          await db.update(workflows).set({ runAt: nextRun, updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+          if (retryAllowed) {
+            const retryAt = new Date(Date.now() + workflow.retryPolicy.backoff_seconds * 1000);
+            if (workflow.untilAt && retryAt > workflow.untilAt) {
+              await db.update(workflows).set({ status: "failed", updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+            } else {
+              await db.update(workflows).set({ runAt: retryAt, updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+            }
+          } else if (workflow.recurrence === "once") {
+            await db.update(workflows).set({ status: "failed", updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+          } else {
+            const nextRun = nextWorkflowOccurrence(workflow.runAt, workflow.recurrence, workflow.timezone);
+            if (workflow.untilAt && nextRun > workflow.untilAt) {
+              await db.update(workflows).set({ status: "completed", updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+            } else {
+              await db.update(workflows).set({ runAt: nextRun, updatedAt: new Date() }).where(eq(workflows.id, workflow.id));
+            }
+          }
           console.error("Workflow execution failed:", reason);
         }
       }
