@@ -1,19 +1,18 @@
 # NallyHermes Android
 
-A native Android client for NallyHermes, written in Kotlin and Jetpack Compose. The client is intended to use the existing Render-hosted agent; it does not embed provider or model credentials and does not create a second agent runtime.
+A native Android client for the existing NallyHermes Render agent, written in Kotlin and Jetpack Compose. It connects to `https://nally.onrender.com` by default; the base URL remains editable in Settings. The app does not embed Telegram bot tokens, model keys, or connector credentials and does not create a second agent runtime.
 
-## Current client
+## What works in this client
 
 - Chat, Voice, and Settings destinations in a compact floating navigation bar.
-- A two-row message composer inspired by the supplied reference, with prompt-tool shortcuts and Lucide controls.
-- Rounded, Claude-inspired user-message treatment while preserving the existing typography, olive palette, and blurred portrait backdrop.
-- A reusable, animated activity card designed to render real thinking and tool-progress events when a native progress stream is available. It is deliberately not driven by simulated activity.
+- A two-row composer with Lucide controls and prompt-tool shortcuts, preserving the established typography, olive palette, and blurred portrait backdrop.
+- Secure account pairing: send `/mobile` in your **private Telegram chat** with NallyHermes, then enter its one-time 10-digit code in Android Settings. The code expires after five minutes and can be used once.
+- Shared ordered text conversation: ordinary text messages from Telegram and Android appear in both places. Android-originated messages and their agent replies are echoed to Telegram with source labels.
+- Live server-reported thinking/tool activity through HTTPS polling. Mutating actions still require Telegram approval; the app never grants approval by itself.
+- Local app session token stored in private app preferences; the server stores only its keyed HMAC. Unlinking revokes the session.
 - GitHub, Notion, and Gmail SVG source marks, converted to native Android vector drawables for crisp display. The source SVGs are from Simple Icons, licensed CC0; brand names and marks remain the property of their respective owners.
-- Local UI state only; this client does not currently send or persist chat messages.
 
-## Backend integration status
-
-The V3.1 agent already emits thinking and tool-progress events for Telegram, including GitHub, Notion, Gmail, web search, calendar, memory, files, and other tools. Those events currently do not reach a native Android client. The Render service still needs a protected native chat/auth API and a streaming or event endpoint for the app to send requests, receive replies, and display live activity. Voice also needs a native endpoint and microphone-permission flow. The UI does not claim that a request or tool action is running when no server event has been received. Do not place Telegram bot tokens, Render secrets, or model-provider keys in the APK.
+The current text sync does not include Telegram attachments or native voice capture. Voice UI remains a setup placeholder. Tool activity is a transient server snapshot and may reset if the service restarts while a request is running. Telegram Login is not part of this pairing build: the private `/mobile` code is the supported account-link path for now.
 
 ## Requirements
 
@@ -31,3 +30,12 @@ gradle --no-daemon :app:assembleDebug
 ```
 
 The output is `app/build/outputs/apk/debug/app-debug.apk`. The GitHub Actions workflow at `.github/workflows/android-apk.yml` builds a debug APK artifact.
+
+## Pairing
+
+1. Install the APK and open **Settings**.
+2. In your private Telegram chat with NallyHermes, send `/mobile`.
+3. Enter the one-time code in the app within five minutes and tap **Connect Telegram**.
+4. Return to Chat. Text messages sync with that Telegram conversation; Android messages and replies are labeled in Telegram.
+
+Do not share the pairing code. If a device is lost, use **Unlink this device** when possible; the session expires automatically after 30 days.

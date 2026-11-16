@@ -10,9 +10,9 @@ android {
         applicationId = "com.klyntech.nallyhermes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "3.1.0-alpha.2"
-        buildConfigField("String", "API_BASE_URL", "\"\"")
+        versionCode = 33
+        versionName = "3.1.0-alpha.3"
+        buildConfigField("String", "API_BASE_URL", "\"https://nally.onrender.com\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
