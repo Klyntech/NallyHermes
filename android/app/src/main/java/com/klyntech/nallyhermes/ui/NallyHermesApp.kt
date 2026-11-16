@@ -16,6 +16,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -336,9 +337,22 @@ private fun TelegramLoginScreen(
     val oliveDeep = Color(0xFF7D8F69)
     val telegram = Color(0xFF2AABEE)
 
+    // Calm entrance — Claude/Render: content settles in after the field is already alive
+    var contentVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { contentVisible = true }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (contentVisible) 1f else 0f,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label = "loginContentAlpha"
+    )
+    val contentRise by animateFloatAsState(
+        targetValue = if (contentVisible) 0f else 18f,
+        animationSpec = tween(750, easing = FastOutSlowInEasing),
+        label = "loginContentRise"
+    )
+
     Box(Modifier.fillMaxSize().background(canvas)) {
         PolishedLoginBackdrop()
-        // Full-bleed solid canvas; only content respects system insets
         Column(
             Modifier
                 .fillMaxSize()
@@ -346,6 +360,10 @@ private fun TelegramLoginScreen(
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = 28.dp)
+                .graphicsLayer {
+                    alpha = contentAlpha
+                    translationY = contentRise
+                }
         ) {
             Spacer(Modifier.height(28.dp))
             // Brand mark — quiet, top-left like Spotify / Grok accounts
@@ -463,38 +481,91 @@ private fun TelegramLoginScreen(
 
 @Composable
 private fun PolishedLoginBackdrop() {
-    val transition = rememberInfiniteTransition(label = "polishedLogin")
-    val drift by transition.animateFloat(
-        -18f, 18f,
-        infiniteRepeatable(tween(10_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "drift"
+    // Render / Claude style: slow floating color fields, never busy
+    val transition = rememberInfiniteTransition(label = "loginAtmosphere")
+
+    val driftA by transition.animateFloat(
+        initialValue = -0.04f,
+        targetValue = 0.05f,
+        animationSpec = infiniteRepeatable(tween(14_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "driftA"
     )
-    val pulse by transition.animateFloat(
-        0.06f, 0.11f,
-        infiniteRepeatable(tween(5_000), RepeatMode.Reverse),
-        label = "pulse"
+    val driftB by transition.animateFloat(
+        initialValue = 0.05f,
+        targetValue = -0.04f,
+        animationSpec = infiniteRepeatable(tween(18_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "driftB"
     )
+    val driftC by transition.animateFloat(
+        initialValue = -0.03f,
+        targetValue = 0.04f,
+        animationSpec = infiniteRepeatable(tween(22_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "driftC"
+    )
+    val breathe by transition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(8_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "breathe"
+    )
+    val sweep by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(48_000, easing = LinearEasing), RepeatMode.Restart),
+        label = "sweep"
+    )
+
     Canvas(Modifier.fillMaxSize()) {
-        // Soft ambient depth — kept inward so top/bottom edges stay pure black
         val w = size.width
         val h = size.height
-        drawCircle(
+
+        // Base vignette — keeps edges dark like Claude's login shell
+        drawRect(
             Brush.radialGradient(
-                listOf(Color(0xFF2AABEE).copy(alpha = pulse * 0.35f), Color.Transparent),
-                center = Offset(w * 0.78f + drift, h * 0.28f),
-                radius = w * 0.42f
-            ),
-            radius = w * 0.42f,
-            center = Offset(w * 0.78f + drift, h * 0.28f)
+                colors = listOf(Color(0xFF141612), Color(0xFF0B0C0B)),
+                center = Offset(w * 0.5f, h * 0.42f),
+                radius = maxOf(w, h) * 0.85f
+            )
+        )
+
+        // Soft mesh blobs — olive / teal / telegram blue at very low alpha
+        val blob1 = Offset(w * (0.72f + driftA), h * (0.22f + driftB * 0.4f))
+        val blob2 = Offset(w * (0.18f + driftB), h * (0.58f + driftA * 0.5f))
+        val blob3 = Offset(w * (0.55f + driftC), h * (0.72f + driftB * 0.3f))
+        val blob4 = Offset(w * (0.88f + driftA * 0.5f), h * (0.55f + driftC))
+
+        fun softBlob(center: Offset, color: Color, radiusFrac: Float, alpha: Float) {
+            val r = w * radiusFrac
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(color.copy(alpha = alpha), Color.Transparent),
+                    center = center,
+                    radius = r
+                ),
+                radius = r,
+                center = center
+            )
+        }
+
+        softBlob(blob1, Color(0xFF2AABEE), 0.55f, 0.10f * breathe)
+        softBlob(blob2, Color(0xFFA3B18A), 0.50f, 0.11f * breathe)
+        softBlob(blob3, Color(0xFF588157), 0.42f, 0.08f * breathe)
+        softBlob(blob4, Color(0xFF3D8CDB), 0.36f, 0.07f * (1.2f - breathe * 0.4f))
+
+        // Ultra-slow rotating sheen — almost imperceptible depth
+        val angle = Math.toRadians(sweep.toDouble())
+        val sheenCenter = Offset(
+            (w * 0.5f + kotlin.math.cos(angle).toFloat() * w * 0.18f),
+            (h * 0.4f + kotlin.math.sin(angle).toFloat() * h * 0.12f)
         )
         drawCircle(
-            Brush.radialGradient(
-                listOf(Color(0xFFA3B18A).copy(alpha = pulse * 0.30f), Color.Transparent),
-                center = Offset(w * 0.22f - drift * 0.35f, h * 0.62f),
-                radius = w * 0.38f
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White.copy(alpha = 0.025f * breathe), Color.Transparent),
+                center = sheenCenter,
+                radius = w * 0.35f
             ),
-            radius = w * 0.38f,
-            center = Offset(w * 0.22f - drift * 0.35f, h * 0.62f)
+            radius = w * 0.35f,
+            center = sheenCenter
         )
     }
 }
