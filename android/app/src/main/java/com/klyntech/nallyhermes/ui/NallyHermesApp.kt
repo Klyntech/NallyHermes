@@ -3,9 +3,13 @@ package com.klyntech.nallyhermes.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -19,6 +23,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.animateItem
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -193,8 +201,12 @@ fun NallyHermesApp(
             bottomBar = {
                 AnimatedVisibility(
                     visible = paired && !showPairingCode,
-                    enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 2 },
-                    exit = fadeOut(tween(150)) + slideOutVertically(tween(190)) { it / 3 }
+                    enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
+                        slideInVertically(
+                            animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
+                        ) { it / 3 },
+                    exit = fadeOut(tween(160)) +
+                        slideOutVertically(animationSpec = tween(200, easing = FastOutSlowInEasing)) { it / 4 }
                 ) { FloatingNavigation(selectedTab) { selectedTabName = it.name } }
             }
         ) { insets ->
@@ -202,7 +214,14 @@ fun NallyHermesApp(
                 targetState = when { paired -> "app"; showPairingCode -> "code"; else -> "login" },
                 modifier = Modifier.padding(insets),
                 transitionSpec = {
-                    (fadeIn(tween(250)) + scaleIn(initialScale = 0.985f, animationSpec = tween(250, easing = FastOutSlowInEasing))) togetherWith fadeOut(tween(160))
+                    // Grok: calm cross-fade, almost no motion
+                    (
+                        fadeIn(animationSpec = tween(320, easing = FastOutSlowInEasing)) +
+                        scaleIn(initialScale = 0.992f, animationSpec = tween(340, easing = FastOutSlowInEasing))
+                    ) togetherWith (
+                        fadeOut(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                        scaleOut(targetScale = 0.992f, animationSpec = tween(200, easing = FastOutSlowInEasing))
+                    )
                 },
                 label = "authenticationTransition"
             ) { destination ->
@@ -239,14 +258,23 @@ fun NallyHermesApp(
                     else -> AnimatedContent(
                         targetState = selectedTab,
                         transitionSpec = {
+                            // Spotify direction + Grok restraint
                             val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                            (fadeIn(tween(240)) + slideInHorizontally(
-                                animationSpec = tween(270, easing = FastOutSlowInEasing),
-                                initialOffsetX = { width -> direction * width / 14 }
-                            )) togetherWith (fadeOut(tween(170)) + slideOutHorizontally(
-                                animationSpec = tween(230),
-                                targetOffsetX = { width -> -direction * width / 18 }
-                            ))
+                            (
+                                fadeIn(animationSpec = tween(280, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(
+                                    animationSpec = tween(320, easing = FastOutSlowInEasing),
+                                    initialOffsetX = { width -> direction * (width / 10) }
+                                ) +
+                                scaleIn(initialScale = 0.988f, animationSpec = tween(320, easing = FastOutSlowInEasing))
+                            ) togetherWith (
+                                fadeOut(animationSpec = tween(200, easing = FastOutSlowInEasing)) +
+                                slideOutHorizontally(
+                                    animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { width -> -direction * (width / 14) }
+                                ) +
+                                scaleOut(targetScale = 0.988f, animationSpec = tween(220, easing = FastOutSlowInEasing))
+                            )
                         },
                         label = "tabTransition"
                     ) { tab ->
@@ -551,22 +579,77 @@ private fun BrandIcon(provider: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun FloatingNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(25.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(25.dp)).padding(5.dp),
-            verticalAlignment = Alignment.CenterVertically
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 18.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val tabs = AppTab.entries
+        val trackWidth = maxWidth
+        val tabWidth = trackWidth / tabs.size
+        val indicatorOffset by animateDpAsState(
+            targetValue = tabWidth * selected.ordinal,
+            animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f),
+            label = "navPillOffset"
+        )
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .clip(RoundedCornerShape(25.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(25.dp))
         ) {
-            AppTab.entries.forEach { tab ->
-                val active = selected == tab
-                val itemColor by animateColorAsState(if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, animationSpec = tween(220, easing = FastOutSlowInEasing), label = "navSurface")
-                val iconColor by animateColorAsState(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, animationSpec = tween(180), label = "navIcon")
-                Column(
-                    Modifier.weight(1f).height(54.dp).clip(RoundedCornerShape(20.dp)).background(itemColor).clickable { onSelect(tab) }.padding(vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    LucideIcon(tab.icon, tab.label, iconColor, Modifier.size(20.dp))
-                    Text(tab.label, style = MaterialTheme.typography.labelSmall, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium)
+            // Sliding Spotify-style selection pill
+            Box(
+                Modifier
+                    .offset(x = indicatorOffset)
+                    .width(tabWidth)
+                    .fillMaxHeight()
+                    .padding(5.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+            )
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                tabs.forEach { tab ->
+                    val active = selected == tab
+                    val iconColor by animateColorAsState(
+                        if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        label = "navIcon"
+                    )
+                    val scale by animateFloatAsState(
+                        targetValue = if (active) 1.06f else 1f,
+                        animationSpec = spring(dampingRatio = 0.7f, stiffness = 420f),
+                        label = "navIconScale"
+                    )
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onSelect(tab) }
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        LucideIcon(
+                            tab.icon,
+                            tab.label,
+                            iconColor,
+                            Modifier
+                                .size(20.dp)
+                                .graphicsLayer { scaleX = scale; scaleY = scale }
+                        )
+                        Text(
+                            tab.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
                 }
             }
         }
@@ -606,7 +689,16 @@ private fun ChatScreen(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
-                    if (message.role == "user") UserMessage(message.text, message.status) else AssistantMessage(message.text)
+                    val itemMod = Modifier.animateItem(
+                        fadeInSpec = tween(280, easing = FastOutSlowInEasing),
+                        fadeOutSpec = tween(160, easing = FastOutSlowInEasing),
+                        placementSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)
+                    )
+                    if (message.role == "user") {
+                        UserMessage(message.text, message.status, modifier = itemMod)
+                    } else {
+                        AssistantMessage(message.text, modifier = itemMod)
+                    }
                 }
                 if (activity != null) item(key = "agent-activity") {
                     if (activity.requiresTelegramApproval) NoticeCard("Approval in Telegram", "Open your private NallyHermes Telegram chat to review the requested action.")
@@ -674,8 +766,8 @@ private fun UserMessage(text: String, status: String) {
 }
 
 @Composable
-private fun AssistantMessage(text: String) {
-    Column(Modifier.fillMaxWidth().padding(end = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
+    Column(modifier,Modifier.fillMaxWidth().padding(end = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Box(Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
                 LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.primary, Modifier.size(12.dp))
