@@ -1597,7 +1597,24 @@ private fun SettingsScreen(
 ) {
     var busy by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var identities by remember { mutableStateOf<List<MobileApi.LinkedIdentity>>(emptyList()) }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        try {
+            identities = api.listIdentities()
+        } catch (_: Exception) {
+            // older servers may not expose identities yet
+        }
+    }
+    fun refreshIdentities() {
+        scope.launch {
+            try {
+                identities = api.listIdentities()
+            } catch (error: Exception) {
+                feedback = error.message ?: "Could not refresh linked logins."
+            }
+        }
+    }
     Column(modifier.fillMaxSize().padding(horizontal = 22.dp)) {
         Text("Settings", Modifier.padding(top = 26.dp, bottom = 5.dp), style = MaterialTheme.typography.headlineLarge)
         Text("Your Nally account and connected device.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1621,8 +1638,74 @@ private fun SettingsScreen(
                         finally { busy = false }
                     }
                 }, enabled = !busy) { Text(if (busy) "Unlinking…" else "Unlink this device") }
-                feedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
+        }
+        Spacer(Modifier.height(12.dp))
+        Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f), shape = RoundedCornerShape(18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(17.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Linked logins", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Link Google or GitHub so you can sign into the same Nally account later without a mobile code.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                val googleLinked = identities.any { it.provider == "google" }
+                val githubLinked = identities.any { it.provider == "github" }
+                LinkedLoginRow(
+                    title = "Google",
+                    subtitle = identities.firstOrNull { it.provider == "google" }?.email ?: if (googleLinked) "Linked" else "Not linked",
+                    linked = googleLinked,
+                    enabled = !busy,
+                    onLink = {
+                        feedback = "Google linking uses a Google ID token from Sign-In. Deploy the oauth-account-linking backend, set GOOGLE_OAUTH_CLIENT_ID, then complete Sign-In to call linkGoogle(idToken)."
+                    },
+                    onUnlink = {
+                        scope.launch {
+                            busy = true
+                            feedback = null
+                            try {
+                                api.unlinkIdentity("google")
+                                refreshIdentities()
+                                feedback = "Google unlinked."
+                            } catch (error: Exception) {
+                                feedback = error.message ?: "Could not unlink Google."
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }
+                )
+                LinkedLoginRow(
+                    title = "GitHub",
+                    subtitle = identities.firstOrNull { it.provider == "github" }?.displayName
+                        ?: identities.firstOrNull { it.provider == "github" }?.email
+                        ?: if (githubLinked) "Linked" else "Not linked",
+                    linked = githubLinked,
+                    enabled = !busy,
+                    onLink = {
+                        feedback = "GitHub linking needs a user access token. After the backend is deployed, call linkGitHub(accessToken) from the GitHub OAuth app flow."
+                    },
+                    onUnlink = {
+                        scope.launch {
+                            busy = true
+                            feedback = null
+                            try {
+                                api.unlinkIdentity("github")
+                                refreshIdentities()
+                                feedback = "GitHub unlinked."
+                            } catch (error: Exception) {
+                                feedback = error.message ?: "Could not unlink GitHub."
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }
+                )
+            }
+        }
+        feedback?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(18.dp)) {
@@ -1633,6 +1716,30 @@ private fun SettingsScreen(
                     Text("Native Compose · secure token stored on device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LinkedLoginRow(
+    title: String,
+    subtitle: String,
+    linked: Boolean,
+    enabled: Boolean,
+    onLink: () -> Unit,
+    onUnlink: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = if (linked) onUnlink else onLink, enabled = enabled) {
+            Text(if (linked) "Unlink" else "Link")
         }
     }
 }
