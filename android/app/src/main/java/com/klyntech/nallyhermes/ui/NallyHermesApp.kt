@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -294,80 +295,182 @@ private fun TelegramLoginScreen(
     onLogin: () -> Unit,
     onUseCode: () -> Unit
 ) {
-    Box(Modifier.fillMaxSize()) {
-        AnimatedLoginBackdrop()
+    // Spotify/Grok-inspired: immersive near-black, one primary pill, calm hierarchy
+    val canvas = Color(0xFF0B0C0B)
+    val muted = Color(0xFF9A9E96)
+    val soft = Color(0xFFB8BDB4)
+    val olive = Color(0xFFA3B18A)
+    val oliveDeep = Color(0xFF7D8F69)
+    val telegram = Color(0xFF2AABEE)
+
+    Box(Modifier.fillMaxSize().background(canvas)) {
+        PolishedLoginBackdrop()
         Column(
-            Modifier.fillMaxSize().imePadding().navigationBarsPadding().padding(horizontal = 27.dp, vertical = 22.dp),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.Center
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 28.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(17.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-                    LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.primary, Modifier.size(24.dp))
+            Spacer(Modifier.height(28.dp))
+            // Brand mark — quiet, top-left like Spotify / Grok accounts
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(olive.copy(alpha = 0.18f))
+                        .border(1.dp, olive.copy(alpha = 0.28f), RoundedCornerShape(11.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, olive, Modifier.size(18.dp))
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text("NallyHermes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    Text("YOUR PERSONAL ASSISTANT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
-                }
+                Text(
+                    "NallyHermes",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
-            Spacer(Modifier.height(48.dp))
-            Text("A calmer way\nto think things through.", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(12.dp))
-            Text("Sign in with the Telegram account you already use with Nally. Your conversation stays in sync across both apps.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(30.dp))
-            val pulse by rememberInfiniteTransition(label = "telegramLoginPill").animateFloat(
-                initialValue = 0.992f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(1_900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "telegramLoginPillPulse"
+
+            Spacer(Modifier.weight(1f))
+
+            // Hero copy — large, confident, Grok-clean
+            Text(
+                "Think clearly.\nAct with Nally.",
+                style = MaterialTheme.typography.displayMedium.copy(
+                    fontSize = 34.sp,
+                    lineHeight = 40.sp,
+                    letterSpacing = (-0.8).sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = Color.White
             )
-            Row(
-                Modifier.fillMaxWidth().height(60.dp).graphicsLayer { scaleX = pulse; scaleY = pulse }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Sign in with the Telegram account you already use with Nally. Your private chat stays in sync.",
+                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                color = muted
+            )
+
+            Spacer(Modifier.height(36.dp))
+
+            // Primary CTA — full pill, Spotify-weight
+            val pressScale by animateFloatAsState(
+                targetValue = if (busy) 0.98f else 1f,
+                animationSpec = tween(180, easing = FastOutSlowInEasing),
+                label = "loginCtaScale"
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
                     .clip(CircleShape)
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF218BCB), Color(0xFF1473B8))))
-                    .border(1.dp, Color.White.copy(alpha = 0.24f), CircleShape)
-                    .clickable(enabled = !busy) { onLogin() }
-                    .padding(horizontal = 21.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                    .background(
+                        Brush.horizontalGradient(listOf(telegram, Color(0xFF1B92D1)))
+                    )
+                    .clickable(enabled = !busy, onClick = onLogin),
+                contentAlignment = Alignment.Center
             ) {
-                LucideIcon(LucideR.drawable.lucide_ic_send, null, Color.White, Modifier.size(20.dp))
-                Spacer(Modifier.width(11.dp))
-                Text(if (busy) "Preparing secure sign-in…" else "Continue with Telegram", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
-                if (!busy) {
-                    Spacer(Modifier.width(9.dp))
-                    LucideIcon(LucideR.drawable.lucide_ic_arrow_right, null, Color.White.copy(alpha = 0.9f), Modifier.size(17.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    LucideIcon(LucideR.drawable.lucide_ic_send, null, Color.White, Modifier.size(18.dp))
+                    Text(
+                        if (busy) "Connecting…" else "Continue with Telegram",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
+
             feedback?.let {
                 Spacer(Modifier.height(12.dp))
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF8A80))
             }
-            Spacer(Modifier.height(16.dp))
-            TextButton(onClick = onUseCode, enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("Use a one-time code instead", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+
             Spacer(Modifier.height(18.dp))
-            Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                LucideIcon(LucideR.drawable.lucide_ic_shield_check, null, MaterialTheme.colorScheme.primary, Modifier.size(15.dp))
-                Text("Secure sign-in · private chat sync", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            // Secondary — quiet text, not a competing button
+            Text(
+                "Use a one-time code instead",
+                style = MaterialTheme.typography.bodyMedium,
+                color = soft,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = !busy, onClick = onUseCode)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+
+            Spacer(Modifier.height(28.dp))
+
+            // Trust strip
+            Row(
+                Modifier.align(Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                LucideIcon(LucideR.drawable.lucide_ic_shield_check, null, oliveDeep, Modifier.size(14.dp))
+                Text(
+                    "Secure · private · synced with Telegram",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = muted.copy(alpha = 0.85f)
+                )
             }
+            Spacer(Modifier.height(20.dp))
         }
     }
 }
 
 @Composable
-private fun AnimatedLoginBackdrop() {
-    val transition = rememberInfiniteTransition(label = "loginBackdrop")
-    val drift by transition.animateFloat(-32f, 34f, infiniteRepeatable(tween(7_200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "loginBackdropDrift")
-    val glow by transition.animateFloat(0.11f, 0.19f, infiniteRepeatable(tween(3_600), RepeatMode.Reverse), label = "loginBackdropGlow")
-    val accent = MaterialTheme.colorScheme.primary
+private fun PolishedLoginBackdrop() {
+    val transition = rememberInfiniteTransition(label = "polishedLogin")
+    val drift by transition.animateFloat(
+        -28f, 30f,
+        infiniteRepeatable(tween(9_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "drift"
+    )
+    val pulse by transition.animateFloat(
+        0.10f, 0.18f,
+        infiniteRepeatable(tween(4_200), RepeatMode.Reverse),
+        label = "pulse"
+    )
     Canvas(Modifier.fillMaxSize()) {
-        val radius = size.minDimension * 0.43f
-        val topCenter = Offset(size.width * 0.86f + drift, size.height * 0.18f)
-        val lowerCenter = Offset(size.width * 0.06f - drift * 0.65f, size.height * 0.82f)
-        drawCircle(Brush.radialGradient(listOf(Color(0xFF3D8CDB).copy(alpha = glow), Color.Transparent), center = topCenter, radius = radius), radius, topCenter)
-        drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.72f), Color.Transparent), center = lowerCenter, radius = radius * 0.82f), radius * 0.82f, lowerCenter)
+        // Soft ambient orbs — Spotify-like depth without clutter
+        val w = size.width
+        val h = size.height
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color(0xFF2AABEE).copy(alpha = pulse * 0.55f), Color.Transparent),
+                center = Offset(w * 0.82f + drift, h * 0.12f),
+                radius = w * 0.55f
+            ),
+            radius = w * 0.55f,
+            center = Offset(w * 0.82f + drift, h * 0.12f)
+        )
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color(0xFFA3B18A).copy(alpha = pulse * 0.45f), Color.Transparent),
+                center = Offset(w * 0.12f - drift * 0.4f, h * 0.78f),
+                radius = w * 0.48f
+            ),
+            radius = w * 0.48f,
+            center = Offset(w * 0.12f - drift * 0.4f, h * 0.78f)
+        )
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color(0xFF3D4A3A).copy(alpha = 0.35f), Color.Transparent),
+                center = Offset(w * 0.5f, h * 0.45f),
+                radius = w * 0.7f
+            ),
+            radius = w * 0.7f,
+            center = Offset(w * 0.5f, h * 0.45f)
+        )
     }
 }
 
