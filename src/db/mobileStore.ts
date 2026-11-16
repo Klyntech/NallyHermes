@@ -1,10 +1,11 @@
 import { createHmac, randomBytes, randomInt } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { db } from "./client.js";
-import { mobilePairingCodes, mobileSessions, users } from "./schema.js";
+import { mobileLoginChallenges, mobilePairingCodes, mobileSessions, users } from "./schema.js";
 import { config } from "../config.js";
 
 const PAIRING_CODE_TTL_MS = 5 * 60 * 1_000;
+const LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 
 function hashSecret(value: string): string {
@@ -16,6 +17,21 @@ export type MobileSession = {
   userId: string;
   telegramId: string;
   telegramChatId: string;
+  expiresAt: Date;
+};
+
+export type CreatedMobileSession = {
+  token: string;
+  expiresAt: Date;
+  telegramId: string;
+  telegramChatId: string;
+};
+
+export type TelegramLoginChallenge = {
+  nonce: string;
+  clientId: string;
+  redirectUri: string;
+  scopes: string[];
   expiresAt: Date;
 };
 
@@ -35,53 +51,111 @@ export async function createMobilePairingCode(
   return { code, expiresAt };
 }
 
-/** Consume a Telegram-issued code exactly once and return a new app-only bearer token. */
-export async function pairMobileSession(codeInput: string): Promise<{
-  token: string;
-  expiresAt: Date;
-  telegramId: string;
-  telegramChatId: string;
-} | null> {
+async function releasePairingCode(code: string, consumedAt: Date): Promise<void> {
+  await db.update(mobilePairingCodes)
+    .set({ consumedAt: null })
+    .where(and(
+      eq(mobilePairingCodes.codeHash, hashSecret(code)),
+      eq(mobilePairingCodes.consumedAt, consumedAt)
+    ));
+}
+
+async function createSessionForUser(
+  userId: string,
+  telegramId: string,
+  telegramChatId: string
+): Promise<CreatedMobileSession> {
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  await db.insert(mobileSessions).values({
+    userId,
+    telegramId,
+    telegramChatId,
+    tokenHash: hashSecret(token),
+    expiresAt
+  });
+  return { token, expiresAt, telegramId, telegramChatId };
+}
+
+/** Consume a Telegram-issued code once. Neon HTTP does not support Drizzle transactions. */
+export async function pairMobileSession(codeInput: string): Promise<CreatedMobileSession | null> {
   const code = codeInput.trim();
   if (!/^\d{10}$/.test(code)) return null;
 
-  return db.transaction(async (tx) => {
-    const now = new Date();
-    const [pairing] = await tx.update(mobilePairingCodes)
-      .set({ consumedAt: now })
-      .where(and(
-        eq(mobilePairingCodes.codeHash, hashSecret(code)),
-        gt(mobilePairingCodes.expiresAt, now),
-        isNull(mobilePairingCodes.consumedAt)
-      ))
-      .returning({
-        telegramId: mobilePairingCodes.telegramId,
-        telegramChatId: mobilePairingCodes.telegramChatId
-      });
-    if (!pairing) return null;
+  const now = new Date();
+  const [pairing] = await db.update(mobilePairingCodes)
+    .set({ consumedAt: now })
+    .where(and(
+      eq(mobilePairingCodes.codeHash, hashSecret(code)),
+      gt(mobilePairingCodes.expiresAt, now),
+      isNull(mobilePairingCodes.consumedAt)
+    ))
+    .returning({
+      telegramId: mobilePairingCodes.telegramId,
+      telegramChatId: mobilePairingCodes.telegramChatId
+    });
+  if (!pairing) return null;
 
-    const [user] = await tx.select({ id: users.id })
+  try {
+    const [user] = await db.select({ id: users.id })
       .from(users)
       .where(eq(users.telegramId, pairing.telegramId))
       .limit(1);
-    if (!user) return null;
+    if (!user) {
+      await releasePairingCode(code, now);
+      return null;
+    }
+    return await createSessionForUser(user.id, pairing.telegramId, pairing.telegramChatId);
+  } catch (error) {
+    // If session creation fails, make the unexpired code usable again.
+    await releasePairingCode(code, now);
+    throw error;
+  }
+}
 
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-    await tx.insert(mobileSessions).values({
-      userId: user.id,
-      telegramId: pairing.telegramId,
-      telegramChatId: pairing.telegramChatId,
-      tokenHash: hashSecret(token),
-      expiresAt
-    });
-    return {
-      token,
-      expiresAt,
-      telegramId: pairing.telegramId,
-      telegramChatId: pairing.telegramChatId
-    };
-  });
+export async function createTelegramLoginChallenge(): Promise<TelegramLoginChallenge | null> {
+  const clientId = config.TELEGRAM_LOGIN_CLIENT_ID;
+  const redirectUri = config.TELEGRAM_LOGIN_REDIRECT_URI;
+  if (!clientId || !redirectUri) return null;
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + LOGIN_CHALLENGE_TTL_MS);
+  const nonce = randomBytes(32).toString("base64url");
+  await db.delete(mobileLoginChallenges).where(lt(mobileLoginChallenges.expiresAt, now));
+  await db.insert(mobileLoginChallenges).values({ nonceHash: hashSecret(nonce), expiresAt });
+  return {
+    nonce,
+    clientId,
+    redirectUri,
+    scopes: ["profile", "telegram:bot_access"],
+    expiresAt
+  };
+}
+
+/** Atomically consume a short-lived OIDC nonce; a successful nonce is never reusable. */
+export async function consumeTelegramLoginChallenge(nonce: string): Promise<boolean> {
+  if (nonce.length < 32 || nonce.length > 128) return false;
+  const now = new Date();
+  const [challenge] = await db.update(mobileLoginChallenges)
+    .set({ consumedAt: now })
+    .where(and(
+      eq(mobileLoginChallenges.nonceHash, hashSecret(nonce)),
+      gt(mobileLoginChallenges.expiresAt, now),
+      isNull(mobileLoginChallenges.consumedAt)
+    ))
+    .returning({ id: mobileLoginChallenges.id });
+  return Boolean(challenge);
+}
+
+/** Create a native session for an existing Nally Telegram user after verified OIDC login. */
+export async function createMobileSessionForTelegramUser(telegramId: string): Promise<CreatedMobileSession | null> {
+  const [user] = await db.select({ id: users.id })
+    .from(users)
+    .where(eq(users.telegramId, telegramId))
+    .limit(1);
+  if (!user) return null;
+  // Private Telegram chat IDs equal their owning user's Telegram ID.
+  return createSessionForUser(user.id, telegramId, telegramId);
 }
 
 export async function authenticateMobileSession(token: string): Promise<MobileSession | null> {

@@ -123,6 +123,14 @@ export const mobileSessions = pgTable("mobile_sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("mobile_sessions_user_id_idx").on(table.userId)]);
 
+export const mobileLoginChallenges = pgTable("mobile_login_challenges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  nonceHash: text("nonce_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("mobile_login_challenges_expiry_idx").on(table.expiresAt)]);
+
 export const memories = pgTable("memories", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

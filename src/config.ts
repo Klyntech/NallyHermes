@@ -1,8 +1,18 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const optionalTrimmedString = z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().optional()
+);
+
 const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
+  TELEGRAM_LOGIN_CLIENT_ID: optionalTrimmedString,
+  TELEGRAM_LOGIN_REDIRECT_URI: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional()
+  ),
   NVIDIA_NIM_API_KEY: z.string().min(1),
   NVIDIA_NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NVIDIA_NIM_MODEL: z.string().default("nvidia/nemotron-3.5-super-vl-120b-a12b"),
@@ -84,6 +94,21 @@ const envSchema = z.object({
   VOICE_SIMILARITY_BOOST: z.coerce.number().min(0).max(1).default(0.8),
   VOICE_STYLE: z.coerce.number().min(0).max(1).default(0.35)
 }).superRefine((env, context) => {
+  if (Boolean(env.TELEGRAM_LOGIN_CLIENT_ID) !== Boolean(env.TELEGRAM_LOGIN_REDIRECT_URI)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [env.TELEGRAM_LOGIN_CLIENT_ID ? "TELEGRAM_LOGIN_REDIRECT_URI" : "TELEGRAM_LOGIN_CLIENT_ID"],
+      message: "Telegram Login client ID and redirect URI must be configured together."
+    });
+  }
+  if (env.TELEGRAM_LOGIN_REDIRECT_URI && new URL(env.TELEGRAM_LOGIN_REDIRECT_URI).protocol !== "https:") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["TELEGRAM_LOGIN_REDIRECT_URI"],
+      message: "Telegram Login redirect URI must use HTTPS."
+    });
+  }
+
   if (new URL(env.WEBHOOK_URL).protocol !== "https:") {
     context.addIssue({
       code: z.ZodIssueCode.custom,

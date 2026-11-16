@@ -171,6 +171,14 @@ export async function ensureDatabase(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     "CREATE INDEX IF NOT EXISTS mobile_sessions_user_id_idx ON mobile_sessions(user_id)",
+    `CREATE TABLE IF NOT EXISTS mobile_login_challenges (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      nonce_hash text NOT NULL UNIQUE,
+      expires_at timestamptz NOT NULL,
+      consumed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS mobile_login_challenges_expiry_idx ON mobile_login_challenges(expires_at)",
     "CREATE INDEX IF NOT EXISTS memories_user_id_idx ON memories(user_id)",
     "ALTER TABLE memories ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'fact'",
     "ALTER TABLE memories ADD COLUMN IF NOT EXISTS subject text",

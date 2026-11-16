@@ -2,20 +2,20 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import test from "node:test";
-import { handleMobileApiRequest } from "../src/mobile/http.js";
+import { handleMobileApiRequest, type MobileApiDependencies } from "../src/mobile/http.js";
 import type { MobileSession } from "../src/db/mobileStore.js";
 
 async function withServer<T>(
   run: (baseUrl: string) => Promise<T>,
-  authenticateSession?: (token: string) => Promise<MobileSession | null>,
-  submitMessage?: (session: MobileSession, input: { clientMessageId: string; text: string }) => Promise<{ state: "accepted" | "in_progress" | "complete" | "awaiting_approval" | "failed" }>
+  overrides: Partial<MobileApiDependencies> = {}
 ): Promise<T> {
   const server = createServer((req, res) => {
-    void handleMobileApiRequest(req, res, {
-      authenticateSession,
-      submitMessage: submitMessage ?? (async () => ({ state: "accepted" })),
-      getActivity: () => null
-    });
+    const dependencies: MobileApiDependencies = {
+      ...overrides,
+      submitMessage: overrides.submitMessage ?? (async () => ({ state: "accepted" })),
+      getActivity: overrides.getActivity ?? (() => null)
+    };
+    void handleMobileApiRequest(req, res, dependencies);
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -28,6 +28,14 @@ async function withServer<T>(
     await once(server, "close");
   }
 }
+
+const testSession: MobileSession = {
+  sessionId: "session-id",
+  userId: "00000000-0000-4000-8000-000000000001",
+  telegramId: "123456789",
+  telegramChatId: "123456789",
+  expiresAt: new Date(Date.now() + 60_000)
+};
 
 test("mobile message history requires a bearer session", async () => {
   await withServer(async (baseUrl) => {
@@ -47,6 +55,90 @@ test("mobile pairing rejects malformed codes before database access", async () =
     assert.equal(response.status, 400);
     assert.match((await response.json() as { error: string }).error, /10-digit code/);
   });
+});
+
+test("a valid pairing code returns a native session", async () => {
+  const expiresAt = new Date(Date.now() + 60_000);
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/mobile/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: "6749313482" })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { accessToken: "a".repeat(64), expiresAt: expiresAt.toISOString() });
+  }, { pairSession: async () => ({ token: "a".repeat(64), expiresAt, telegramId: "123456789", telegramChatId: "123456789" }) });
+});
+
+test("Telegram Login challenge returns the configured native flow parameters", async () => {
+  const expiresAt = new Date(Date.now() + 60_000);
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/mobile/login/challenge`, { method: "POST" });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      nonce: "n".repeat(43),
+      clientId: "1234567890",
+      redirectUri: "https://app123456-login.tg.dev/tglogin",
+      scopes: ["profile", "telegram:bot_access"],
+      expiresAt: expiresAt.toISOString()
+    });
+  }, {
+    createLoginChallenge: async () => ({
+      nonce: "n".repeat(43),
+      clientId: "1234567890",
+      redirectUri: "https://app123456-login.tg.dev/tglogin",
+      scopes: ["profile", "telegram:bot_access"],
+      expiresAt
+    })
+  });
+});
+
+test("a verified Telegram ID token and unspent nonce create a mobile session", async () => {
+  const expiresAt = new Date(Date.now() + 60_000);
+  let verified: { idToken: string; nonce: string } | null = null;
+  let createdFor: string | null = null;
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/mobile/telegram-login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken: "signed-id-token", nonce: "n".repeat(43) })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { accessToken: "b".repeat(64), expiresAt: expiresAt.toISOString() });
+  }, {
+    verifyLoginIdToken: async (idToken, nonce) => {
+      verified = { idToken, nonce };
+      return { telegramId: "123456789" };
+    },
+    consumeLoginChallenge: async () => true,
+    createTelegramSession: async (telegramId) => {
+      createdFor = telegramId;
+      return { token: "b".repeat(64), expiresAt, telegramId, telegramChatId: telegramId };
+    }
+  });
+  assert.deepEqual(verified, { idToken: "signed-id-token", nonce: "n".repeat(43) });
+  assert.equal(createdFor, "123456789");
+});
+
+test("a replayed Telegram Login challenge cannot create another session", async () => {
+  let sessionCreationAttempted = false;
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/mobile/telegram-login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken: "signed-id-token", nonce: "n".repeat(43) })
+    });
+    assert.equal(response.status, 401);
+    assert.match((await response.json() as { error: string }).error, /expired/);
+  }, {
+    verifyLoginIdToken: async () => ({ telegramId: "123456789" }),
+    consumeLoginChallenge: async () => false,
+    createTelegramSession: async () => {
+      sessionCreationAttempted = true;
+      return null;
+    }
+  });
+  assert.equal(sessionCreationAttempted, false);
 });
 
 test("unauthenticated mobile requests do not reveal route existence", async () => {
@@ -69,13 +161,6 @@ test("oversized mobile request bodies are rejected", async () => {
 });
 
 test("authenticated mobile submissions pass the paired identity and client id to the worker", async () => {
-  const session: MobileSession = {
-    sessionId: "session-id",
-    userId: "00000000-0000-4000-8000-000000000001",
-    telegramId: "123456789",
-    telegramChatId: "123456789",
-    expiresAt: new Date(Date.now() + 60_000)
-  };
   let captured: { telegramId: string; clientMessageId: string; text: string } | null = null;
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/mobile/messages`, {
@@ -85,9 +170,12 @@ test("authenticated mobile submissions pass the paired identity and client id to
     });
     assert.equal(response.status, 202);
     assert.deepEqual(await response.json(), { clientMessageId: "123e4567-e89b-42d3-a456-426614174000", state: "accepted" });
-  }, async (token) => token.startsWith("valid-test") ? session : null, async (pairedSession, input) => {
-    captured = { telegramId: pairedSession.telegramId, ...input };
-    return { state: "accepted" };
+  }, {
+    authenticateSession: async (token) => token.startsWith("valid-test") ? testSession : null,
+    submitMessage: async (pairedSession, input) => {
+      captured = { telegramId: pairedSession.telegramId, ...input };
+      return { state: "accepted" };
+    }
   });
   assert.deepEqual(captured, {
     telegramId: "123456789",

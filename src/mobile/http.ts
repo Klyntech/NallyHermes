@@ -2,10 +2,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { getOrCreateConversation, loadConversationMessages } from "../db/conversationStore.js";
 import {
   authenticateMobileSession,
+  consumeTelegramLoginChallenge,
+  createMobileSessionForTelegramUser,
+  createTelegramLoginChallenge,
   pairMobileSession,
   revokeMobileSession,
   type MobileSession
 } from "../db/mobileStore.js";
+import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
 
 const MAX_REQUEST_BYTES = 8_192;
 const CLIENT_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,6 +20,11 @@ type SubmitResult = { state: "accepted" | "in_progress" | "complete" | "awaiting
 
 export type MobileApiDependencies = {
   authenticateSession?: (token: string) => Promise<MobileSession | null>;
+  pairSession?: typeof pairMobileSession;
+  createLoginChallenge?: typeof createTelegramLoginChallenge;
+  verifyLoginIdToken?: typeof verifyTelegramLoginIdToken;
+  consumeLoginChallenge?: typeof consumeTelegramLoginChallenge;
+  createTelegramSession?: typeof createMobileSessionForTelegramUser;
   submitMessage: (session: MobileSession, input: { clientMessageId: string; text: string }) => Promise<SubmitResult>;
   getActivity: (telegramId: string) => unknown | null;
 };
@@ -65,6 +74,45 @@ export async function handleMobileApiRequest(
   if (!pathname.startsWith("/api/mobile/")) return;
 
   try {
+    if (pathname === "/api/mobile/login/challenge" && req.method === "POST") {
+      const challenge = await (deps.createLoginChallenge ?? createTelegramLoginChallenge)();
+      if (!challenge) {
+        sendJson(res, 503, { error: "Telegram Login is not configured on the server yet." });
+        return;
+      }
+      sendJson(res, 200, {
+        nonce: challenge.nonce,
+        clientId: challenge.clientId,
+        redirectUri: challenge.redirectUri,
+        scopes: challenge.scopes,
+        expiresAt: challenge.expiresAt.toISOString()
+      });
+      return;
+    }
+
+    if (pathname === "/api/mobile/telegram-login" && req.method === "POST") {
+      const body = await readJson(req);
+      const idToken = typeof body?.idToken === "string" ? body.idToken : "";
+      const nonce = typeof body?.nonce === "string" ? body.nonce : "";
+      if (!idToken || idToken.length > 16_384 || nonce.length < 32 || nonce.length > 128) {
+        sendJson(res, 400, { error: "Telegram sign-in response is incomplete. Please try again." });
+        return;
+      }
+      const identity = await (deps.verifyLoginIdToken ?? verifyTelegramLoginIdToken)(idToken, nonce);
+      const consumed = await (deps.consumeLoginChallenge ?? consumeTelegramLoginChallenge)(nonce);
+      if (!consumed) {
+        sendJson(res, 401, { error: "This Telegram sign-in has expired. Please try again." });
+        return;
+      }
+      const session = await (deps.createTelegramSession ?? createMobileSessionForTelegramUser)(identity.telegramId);
+      if (!session) {
+        sendJson(res, 409, { error: "Start a private chat with NallyHermes in Telegram first, then sign in again." });
+        return;
+      }
+      sendJson(res, 200, { accessToken: session.token, expiresAt: session.expiresAt.toISOString() });
+      return;
+    }
+
     if (pathname === "/api/mobile/pair" && req.method === "POST") {
       const now = Date.now();
       if (now - pairingWindowStart >= 60_000) {
@@ -81,7 +129,7 @@ export async function handleMobileApiRequest(
         sendJson(res, 400, { error: "Enter the 10-digit code from your private Telegram chat." });
         return;
       }
-      const paired = await pairMobileSession(body.code);
+      const paired = await (deps.pairSession ?? pairMobileSession)(body.code);
       if (!paired) {
         sendJson(res, 401, { error: "That pairing code is invalid, expired, or already used." });
         return;
@@ -156,6 +204,10 @@ export async function handleMobileApiRequest(
 
     sendJson(res, 404, { error: "Mobile API route not found." });
   } catch (error) {
+    if (error instanceof TelegramLoginError) {
+      sendJson(res, error.status, { error: error.message });
+      return;
+    }
     if (error instanceof Error && error.message === "request_too_large") {
       sendJson(res, 413, { error: "Request body is too large." });
       return;
