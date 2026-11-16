@@ -263,11 +263,19 @@ fun NallyHermesApp(
                         slideOutVertically(animationSpec = tween(140, easing = FastOutSlowInEasing)) { it / 4 }
                 ) { FloatingNavigation(selectedTab) { selectedTabName = it.name } }
             }
-        ) { _ ->
+        ) { scaffoldPadding ->
+            // Keep chat / composer above the floating nav (Scaffold bottomBar height).
+            // When the keyboard is up the nav is hidden, so only IME padding applies.
             val shellModifier = if (imeVisible) {
-                Modifier.fillMaxSize().imePadding()
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .imePadding()
             } else {
-                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(bottom = scaffoldPadding.calculateBottomPadding())
             }
             AnimatedContent(
                 targetState = when {
