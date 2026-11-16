@@ -1,12 +1,15 @@
 import {
+  bigserial,
   pgTable,
   text,
   timestamp,
   uuid,
   jsonb,
   index,
-  integer
+  integer,
+  uniqueIndex
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -85,11 +88,40 @@ export const conversations = pgTable("conversations", {
 
 export const messages = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),
+  sequence: bigserial("sequence", { mode: "number" }).notNull(),
   conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
   role: text("role").notNull(),
   content: text("content").notNull(),
+  sourceChannel: text("source_channel").notNull().default("telegram"),
+  sourceMessageId: text("source_message_id"),
+  status: text("status").notNull().default("complete"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (table) => [index("messages_conversation_id_idx").on(table.conversationId)]);
+}, (table) => [
+  index("messages_conversation_id_idx").on(table.conversationId),
+  uniqueIndex("messages_source_message_idx").on(table.conversationId, table.sourceChannel, table.sourceMessageId)
+    .where(sql`${table.sourceMessageId} IS NOT NULL`)
+]);
+
+export const mobilePairingCodes = pgTable("mobile_pairing_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  telegramId: text("telegram_id").notNull(),
+  telegramChatId: text("telegram_chat_id").notNull(),
+  codeHash: text("code_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("mobile_pairing_codes_expiry_idx").on(table.expiresAt)]);
+
+export const mobileSessions = pgTable("mobile_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  telegramId: text("telegram_id").notNull(),
+  telegramChatId: text("telegram_chat_id").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("mobile_sessions_user_id_idx").on(table.userId)]);
 
 export const memories = pgTable("memories", {
   id: uuid("id").defaultRandom().primaryKey(),

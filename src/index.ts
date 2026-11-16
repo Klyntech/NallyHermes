@@ -3,7 +3,17 @@ import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
 import { users } from "./db/schema.js";
-import { appendConversationExchange, getOrCreateConversation, loadConversationHistory } from "./db/conversationStore.js";
+import {
+  appendConversationExchange,
+  appendConversationMessage,
+  completeLatestAwaitingMessage,
+  findConversationMessageSource,
+  getOrCreateConversation,
+  loadConversationHistory,
+  setConversationMessageStatus
+} from "./db/conversationStore.js";
+import { createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
+import { handleMobileApiRequest } from "./mobile/http.js";
 import { respond } from "./agent/orchestrator.js";
 import { isVoiceConfigured, speechToText, prepareSpokenDelivery } from "./agent/voice/index.js";
 import { normalizeTelegramAudio, readResponseWithLimit } from "./agent/voice/audio.js";
@@ -56,6 +66,13 @@ async function sendApprovalKeyboard(
 ${summary}`,
     { reply_markup: keyboard }
   );
+}
+
+async function saveApprovalContinuation(telegramId: string, answer: string | null): Promise<void> {
+  if (answer === null) return;
+  const conversationId = await getOrCreateConversation(telegramId, telegramId);
+  await completeLatestAwaitingMessage(conversationId, answer);
+  publishMobileActivity(telegramId, { type: "response_ready" });
 }
 
 
@@ -133,6 +150,109 @@ async function serializeConversation<T>(key: string, operation: () => Promise<T>
   }
 }
 
+type MobileActivity = {
+  headline: string;
+  provider: string | null;
+  isThinking: boolean;
+  requiresTelegramApproval: boolean;
+  updatedAt: number;
+  expiresAt: number;
+};
+const mobileActivities = new Map<string, MobileActivity>();
+
+function publishMobileActivity(telegramId: string, event: ProgressEvent): void {
+  if (event.type === "response_ready") {
+    mobileActivities.delete(telegramId);
+    return;
+  }
+  const display = displayProgress(event);
+  if (!display) return;
+  const approval = event.type === "tool_progress" && event.stage === "approval_required";
+  const provider = event.type === "tool_start" || event.type === "tool_complete" || event.type === "tool_error"
+    ? event.tool
+    : event.type === "tool_progress" ? event.tool : null;
+  const now = Date.now();
+  mobileActivities.set(telegramId, {
+    headline: approval ? "Approval needed in Telegram" : display.text,
+    provider,
+    isThinking: !approval && Boolean(display.animateThinking),
+    requiresTelegramApproval: approval,
+    updatedAt: now,
+    expiresAt: now + (approval ? 60 * 60_000 : 5 * 60_000)
+  });
+}
+
+function getMobileActivity(telegramId: string): Omit<MobileActivity, "expiresAt"> | null {
+  const activity = mobileActivities.get(telegramId);
+  if (!activity) return null;
+  if (activity.expiresAt <= Date.now()) {
+    mobileActivities.delete(telegramId);
+    return null;
+  }
+  const { expiresAt: _expiresAt, ...publicActivity } = activity;
+  return publicActivity;
+}
+
+const mobileSubmitInFlight = new Set<string>();
+
+async function submitMobileMessage(
+  session: MobileSession,
+  input: { clientMessageId: string; text: string }
+): Promise<{ state: "accepted" | "in_progress" | "complete" | "awaiting_approval" | "failed" }> {
+  const conversationId = await getOrCreateConversation(session.telegramId, session.telegramChatId);
+  const existing = await findConversationMessageSource(conversationId, "android", input.clientMessageId);
+  if (existing) {
+    if (mobileSubmitInFlight.has(`${session.telegramId}:${input.clientMessageId}`)) return { state: "in_progress" };
+    if (existing.status === "pending") return { state: "in_progress" };
+    return { state: existing.status as "awaiting_approval" | "complete" | "failed" };
+  }
+
+  const lockKey = conversationKey(Number(session.telegramChatId), Number(session.telegramId));
+  const userRecord = await appendConversationMessage({
+    conversationId,
+    role: "user",
+    content: input.text,
+    sourceChannel: "android",
+    sourceMessageId: input.clientMessageId,
+    status: "pending"
+  });
+  mobileSubmitInFlight.add(`${session.telegramId}:${input.clientMessageId}`);
+  void bot.api.sendMessage(Number(session.telegramChatId), `From NallyHermes Android\n\n${input.text}`)
+    .catch((error) => console.warn("Could not echo Android message to Telegram:", error));
+
+  const work = serializeConversation(lockKey, async () => {
+    try {
+      const persistedHistory = await loadConversationHistory(conversationId);
+      const history = [...persistedHistory];
+      const answer = await respond(history, input.text, session.telegramId, async (event) => {
+        publishMobileActivity(session.telegramId, event);
+        await notifyApprovalIfNeeded(Number(session.telegramChatId), event);
+      }, undefined, undefined, { channel: "telegram", conversationId });
+      if (answer === null) {
+        await setConversationMessageStatus(userRecord.id, "awaiting_approval");
+        mobileSubmitInFlight.delete(`${session.telegramId}:${input.clientMessageId}`);
+        return { state: "awaiting_approval" as const };
+      }
+      await appendConversationMessage({ conversationId, role: "assistant", content: answer, sourceChannel: "agent" });
+      await setConversationMessageStatus(userRecord.id, "complete");
+      void bot.api.sendMessage(Number(session.telegramChatId), `NallyHermes · Android reply\n\n${answer.slice(0, 3_800)}`)
+        .catch((error) => console.warn("Could not echo Android reply to Telegram:", error));
+      mobileSubmitInFlight.delete(`${session.telegramId}:${input.clientMessageId}`);
+      return { state: "complete" as const };
+    } catch (error) {
+      console.error("Android agent request failed:", error);
+      await setConversationMessageStatus(userRecord.id, "failed");
+      mobileSubmitInFlight.delete(`${session.telegramId}:${input.clientMessageId}`);
+      publishMobileActivity(session.telegramId, { type: "response_ready" });
+      return { state: "failed" as const };
+    }
+  });
+  // Run in the background: Android receives an acknowledgement immediately and polls the
+  // shared transcript plus the current activity snapshot while the agent is working.
+  void work.catch((error) => console.error("Android message worker failed:", error));
+  return { state: "accepted" };
+}
+
 async function applyPendingLabel(
   pending: PendingLabel,
   labelText: string
@@ -157,7 +277,7 @@ async function applyPendingLabel(
 
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
-const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
+const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/mobile — pair the Android app securely\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
 
 
 bot.on("callback_query:data", async (ctx) => {
@@ -208,8 +328,12 @@ bot.on("callback_query:data", async (ctx) => {
         "Explain the limitation briefly and finish the request using only safe verified information."
       ].join("\n\n"),
       telegramId,
-      async (event) => { await notifyApprovalIfNeeded(ctx.chat?.id, event); }
+      async (event) => {
+        publishMobileActivity(telegramId, event);
+        await notifyApprovalIfNeeded(ctx.chat?.id, event);
+      }
     );
+    await saveApprovalContinuation(telegramId, continuation);
     if (continuation !== null) await ctx.reply(continuation);
     return;
   }
@@ -264,8 +388,12 @@ bot.on("callback_query:data", async (ctx) => {
           "Use the verified result to finish the request and give the user the concise final answer."
         ].join("\n\n"),
         telegramId,
-        async (event) => { await notifyApprovalIfNeeded(ctx.chat?.id, event); }
+        async (event) => {
+          publishMobileActivity(telegramId, event);
+          await notifyApprovalIfNeeded(ctx.chat?.id, event);
+        }
       );
+      await saveApprovalContinuation(telegramId, continuation);
       if (continuation !== null) await ctx.reply(continuation);
       return;
     }
@@ -298,6 +426,28 @@ bot.command("help", async (ctx) => {
         : ctx.api.sendRichMessage(ctx.chat.id, rich_message),
     html: (text, options) => ctx.reply(text, options)
   }, helpText);
+});
+
+bot.command("mobile", async (ctx) => {
+  if (!ctx.from) return;
+  if (ctx.chat.type !== "private") {
+    await ctx.reply("For privacy, request a mobile pairing code in a private chat with NallyHermes.");
+    return;
+  }
+  const telegramId = String(ctx.from.id);
+  await db.insert(users).values({
+    telegramId,
+    username: ctx.from.username ?? null,
+    firstName: ctx.from.first_name ?? null,
+    timezone: getDefaultTimezone()
+  }).onConflictDoUpdate({
+    target: users.telegramId,
+    set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
+  });
+  const pairing = await createMobilePairingCode(telegramId, String(ctx.chat.id));
+  await ctx.reply(
+    `NallyHermes Android pairing\n\nYour one-time code: ${pairing.code}\n\nEnter it in the app within 5 minutes. Keep it private; it links the app to this Telegram account. The code can only be used once.`
+  );
 });
 
 bot.command("ingest", async (ctx) => {
@@ -624,6 +774,7 @@ bot.on("message:text", async (ctx) => {
     let progressMessageId: number | undefined;
     let thinkingTimer: ReturnType<typeof setInterval> | undefined;
     let closeProgress: (() => Promise<void>) | undefined;
+    let persistedUserMessageId: string | undefined;
     try {
       const progressMessage = await ctx.reply("Thinking…");
       progressMessageId = progressMessage.message_id;
@@ -671,6 +822,7 @@ bot.on("message:text", async (ctx) => {
         await progressQueue;
       };
       const onProgress = async (event: ProgressEvent): Promise<void> => {
+        publishMobileActivity(telegramId, event);
         if (await notifyApprovalIfNeeded(ctx.chat?.id, event)) return;
         const display = displayProgress(event);
         if (display) await showProgress(display.text, display.animateThinking);
@@ -688,15 +840,32 @@ bot.on("message:text", async (ctx) => {
       });
 
       const conversationId = await getOrCreateConversation(telegramId, String(ctx.chat.id));
+      const sourceMessageId = `${ctx.chat.id}:${ctx.message.message_id}`;
+      const existingMessage = await findConversationMessageSource(conversationId, "telegram", sourceMessageId);
+      if (existingMessage) {
+        await closeProgress();
+        return;
+      }
       const persistedHistory = await loadConversationHistory(conversationId);
       const history = persistedHistory.length ? persistedHistory : getHistory(historyKey);
-      const answer = await respond(history, ctx.message.text, telegramId, onProgress);
+      const userRecord = await appendConversationMessage({
+        conversationId,
+        role: "user",
+        content: ctx.message.text,
+        sourceChannel: "telegram",
+        sourceMessageId,
+        status: "pending"
+      });
+      persistedUserMessageId = userRecord.id;
+      const answer = await respond(history, ctx.message.text, telegramId, onProgress, undefined, undefined, { conversationId });
       if (answer === null) {
+        await setConversationMessageStatus(userRecord.id, "awaiting_approval");
         await closeProgress();
         return;
       }
       await closeProgress();
-      await appendConversationExchange(conversationId, ctx.message.text, answer);
+      await appendConversationMessage({ conversationId, role: "assistant", content: answer, sourceChannel: "agent" });
+      await setConversationMessageStatus(userRecord.id, "complete");
       history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
       saveHistory(historyKey, history);
       await editFormatted(
@@ -720,6 +889,12 @@ bot.on("message:text", async (ctx) => {
         answer
       );
     } catch (error) {
+      publishMobileActivity(telegramId, { type: "response_ready" });
+      if (persistedUserMessageId) {
+        await setConversationMessageStatus(persistedUserMessageId, "failed").catch((statusError) => {
+          console.error("Could not mark failed Telegram message:", statusError);
+        });
+      }
       if (closeProgress) await closeProgress();
       else if (thinkingTimer) clearInterval(thinkingTimer);
       console.error("Agent request failed:", error);
@@ -745,6 +920,7 @@ await bot.init();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
   { command: "help", description: "See what NallyHermes can do" },
+  { command: "mobile", description: "Pair the NallyHermes Android app" },
   { command: "timezone", description: "View or change your timezone" },
   { command: "memorycheck", description: "Test memory storage, retrieval and deletion" },
   { command: "rerankbench", description: "Benchmark NVIDIA reranker latency" }
@@ -752,6 +928,13 @@ await bot.api.setMyCommands([
 
 const server = createServer((req, res) => {
   const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+  if (pathname.startsWith("/api/mobile/")) {
+    void handleMobileApiRequest(req, res, {
+      submitMessage: submitMobileMessage,
+      getActivity: getMobileActivity
+    });
+    return;
+  }
   if (pathname === "/manus-routes.json" && req.method === "GET") {
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end(JSON.stringify({ routes: [{ path: "/ingestion", title: "Nally Academic Companion" }] }));

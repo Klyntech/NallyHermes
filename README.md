@@ -198,6 +198,12 @@ Deploy the Dockerfile as a Render Web Service. The image installs Node 22, Poppl
 | `/rerankbench` | Run the NVIDIA reranker diagnostic |
 | `/ingest` | Explain academic PDF ingestion |
 
+## Android app pairing and chat sync
+
+The native Android client connects to `https://nally.onrender.com`. In a **private chat** with Nally, send `/mobile`; enter the returned single-use 10-digit code in Android Settings within five minutes. The code proves access to that Telegram chat and is not a Telegram bot token. The API exchanges it for a 30-day opaque bearer session; only a keyed HMAC of the code/session token is stored in Postgres. Unlinking the device revokes that session. Pairing codes are never returned by an unauthenticated API response.
+
+The protected `/api/mobile/` API provides pairing, session revocation, message submission, an ordered shared transcript and the current sanitized agent activity. Ordinary text messages sent from Android are mirrored into the linked private Telegram chat with an explicit `From NallyHermes Android` label; their agent replies are likewise labeled. Telegram and Android text turns are persisted in one ordered conversation, with in-progress, approval-required and failed states. Tool operations that require approval still require a Telegram approval button and are not silently authorized by the app. The Android client polls the transcript/activity endpoints over HTTPS; this is a polling integration, not a streaming socket. The live activity snapshot is process-local and can reset if Render restarts during a request. Telegram attachments and native voice capture are not part of this text-sync flow.
+
 ## Privacy, safety, and beta limitations
 
 - User memories, conversations, schedules, academic records, files, and approval state are scoped by Telegram identity.
