@@ -168,6 +168,75 @@ internal class MobileApi(context: Context) {
         execute(request("/api/mobile/messages").post(body).build())
     }
 
+
+
+    data class LinkedIdentity(
+        val provider: String,
+        val email: String?,
+        val displayName: String?,
+        val linkedAt: String?
+    )
+
+    suspend fun listIdentities(): List<LinkedIdentity> = withContext(Dispatchers.IO) {
+        val response = execute(request("/api/mobile/account/identities").get().build())
+        val arr = response.optJSONArray("identities") ?: JSONArray()
+        buildList {
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                add(
+                    LinkedIdentity(
+                        provider = item.optString("provider"),
+                        email = item.optString("email").takeIf { it.isNotBlank() },
+                        displayName = item.optString("displayName").takeIf { it.isNotBlank() },
+                        linkedAt = item.optString("linkedAt").takeIf { it.isNotBlank() }
+                    )
+                )
+            }
+        }
+    }
+
+    suspend fun linkGoogle(idToken: String) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("provider", "google")
+            .put("idToken", idToken)
+            .toString()
+            .toRequestBody(jsonType)
+        execute(request("/api/mobile/account/link").post(body).build())
+        Unit
+    }
+
+    suspend fun linkGitHub(accessToken: String) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("provider", "github")
+            .put("accessToken", accessToken)
+            .toString()
+            .toRequestBody(jsonType)
+        execute(request("/api/mobile/account/link").post(body).build())
+        Unit
+    }
+
+    suspend fun unlinkIdentity(provider: String) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("provider", provider).toString().toRequestBody(jsonType)
+        execute(Request.Builder().url(endpoint("/api/mobile/account/identities")).delete(body).build())
+        Unit
+    }
+
+    suspend fun loginWithGoogle(idToken: String) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("idToken", idToken).toString().toRequestBody(jsonType)
+        val response = execute(Request.Builder().url(endpoint("/api/mobile/auth/google")).post(body).build())
+        val token = response.optString("accessToken")
+        require(token.length >= 40) { "Google sign-in did not return a valid session." }
+        preferences.edit().putString("access_token", token).apply()
+    }
+
+    suspend fun loginWithGitHub(accessToken: String) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("accessToken", accessToken).toString().toRequestBody(jsonType)
+        val response = execute(Request.Builder().url(endpoint("/api/mobile/auth/github")).post(body).build())
+        val token = response.optString("accessToken")
+        require(token.length >= 40) { "GitHub sign-in did not return a valid session." }
+        preferences.edit().putString("access_token", token).apply()
+    }
+
     suspend fun revoke() {
         if (!isPaired) return
         execute(request("/api/mobile/session").delete().build())
