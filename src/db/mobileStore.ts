@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomInt } from "node:crypto";
 import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { db } from "./client.js";
-import { mobileLoginChallenges, mobilePairingCodes, mobileSessions, users } from "./schema.js";
+import { mobileLoginChallenges, mobilePairingCodes, mobileSessions, userIdentities, users } from "./schema.js";
 import { config } from "../config.js";
 
 const PAIRING_CODE_TTL_MS = 5 * 60 * 1_000;
@@ -182,4 +182,114 @@ export async function revokeMobileSession(sessionId: string): Promise<void> {
   await db.update(mobileSessions)
     .set({ revokedAt: new Date() })
     .where(and(eq(mobileSessions.id, sessionId), isNull(mobileSessions.revokedAt)));
+}
+
+
+export type LinkedIdentity = {
+  provider: string;
+  email: string | null;
+  displayName: string | null;
+  linkedAt: Date;
+};
+
+export async function listLinkedIdentities(userId: string): Promise<LinkedIdentity[]> {
+  const rows = await db.select({
+    provider: userIdentities.provider,
+    email: userIdentities.email,
+    displayName: userIdentities.displayName,
+    linkedAt: userIdentities.linkedAt
+  }).from(userIdentities).where(eq(userIdentities.userId, userId));
+  return rows;
+}
+
+export async function linkUserIdentity(input: {
+  userId: string;
+  telegramChatId: string;
+  provider: "google" | "github";
+  providerUserId: string;
+  email: string | null;
+  displayName: string | null;
+}): Promise<LinkedIdentity> {
+  const existing = await db.select({
+    id: userIdentities.id,
+    userId: userIdentities.userId
+  }).from(userIdentities).where(and(
+    eq(userIdentities.provider, input.provider),
+    eq(userIdentities.providerUserId, input.providerUserId)
+  )).limit(1);
+
+  if (existing[0] && existing[0].userId !== input.userId) {
+    throw new Error("identity_claimed");
+  }
+
+  if (existing[0]) {
+    await db.update(userIdentities).set({
+      email: input.email,
+      displayName: input.displayName,
+      telegramChatId: input.telegramChatId
+    }).where(eq(userIdentities.id, existing[0].id));
+  } else {
+    // One row per provider per user
+    await db.delete(userIdentities).where(and(
+      eq(userIdentities.userId, input.userId),
+      eq(userIdentities.provider, input.provider)
+    ));
+    await db.insert(userIdentities).values({
+      userId: input.userId,
+      provider: input.provider,
+      providerUserId: input.providerUserId,
+      email: input.email,
+      displayName: input.displayName,
+      telegramChatId: input.telegramChatId
+    });
+  }
+
+  return {
+    provider: input.provider,
+    email: input.email,
+    displayName: input.displayName,
+    linkedAt: new Date()
+  };
+}
+
+export async function unlinkUserIdentity(userId: string, provider: string): Promise<boolean> {
+  const removed = await db.delete(userIdentities).where(and(
+    eq(userIdentities.userId, userId),
+    eq(userIdentities.provider, provider)
+  )).returning({ id: userIdentities.id });
+  return removed.length > 0;
+}
+
+/** Sign in with a previously linked OAuth identity and mint a mobile session. */
+export async function createMobileSessionFromIdentity(
+  provider: "google" | "github",
+  providerUserId: string
+): Promise<CreatedMobileSession | null> {
+  const [identity] = await db.select({
+    userId: userIdentities.userId,
+    telegramChatId: userIdentities.telegramChatId
+  }).from(userIdentities).where(and(
+    eq(userIdentities.provider, provider),
+    eq(userIdentities.providerUserId, providerUserId)
+  )).limit(1);
+  if (!identity) return null;
+
+  const [user] = await db.select({
+    id: users.id,
+    telegramId: users.telegramId
+  }).from(users).where(eq(users.id, identity.userId)).limit(1);
+  if (!user?.telegramId) return null;
+
+  let chatId = identity.telegramChatId;
+  if (!chatId) {
+    const [prior] = await db.select({
+      telegramChatId: mobileSessions.telegramChatId
+    }).from(mobileSessions)
+      .where(eq(mobileSessions.userId, user.id))
+      .limit(1);
+    chatId = prior?.telegramChatId ?? null;
+  }
+  if (!chatId) return null;
+
+  return createSessionForUser(user.id, user.telegramId, chatId);
 }
