@@ -137,6 +137,7 @@ fun NallyHermesApp(
     val tabStateHolder = rememberSaveableStateHolder()
     val chatListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     var chatDraft by rememberSaveable { mutableStateOf("") }
+    var syncReady by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val api = remember { MobileApi(context.applicationContext) }
     val messages = remember { mutableStateListOf<SyncedMessage>() }
@@ -150,7 +151,10 @@ fun NallyHermesApp(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(paired) {
-        if (!paired) return@LaunchedEffect
+        if (!paired) {
+            syncReady = false
+            return@LaunchedEffect
+        }
         while (true) {
             try {
                 val snapshot = api.fetchMessages(0L)
@@ -160,9 +164,13 @@ fun NallyHermesApp(
                 }
                 activity = snapshot.activity
                 connectionMessage = null
+                syncReady = true
             } catch (error: Exception) {
                 connectionMessage = error.message ?: "Could not sync with Nally."
-                if (!api.isPaired) paired = false
+                if (!api.isPaired) {
+                    paired = false
+                    syncReady = false
+                }
             }
             delay(1_500)
         }
@@ -218,7 +226,7 @@ fun NallyHermesApp(
             containerColor = Color.Transparent,
             bottomBar = {
                 AnimatedVisibility(
-                    visible = paired && !showPairingCode,
+                    visible = paired && syncReady && !showPairingCode,
                     enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
                         slideInVertically(
                             animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
@@ -229,7 +237,12 @@ fun NallyHermesApp(
             }
         ) { insets ->
             AnimatedContent(
-                targetState = when { paired -> "app"; showPairingCode -> "code"; else -> "login" },
+                targetState = when {
+                    paired && !syncReady -> "sync"
+                    paired -> "app"
+                    showPairingCode -> "code"
+                    else -> "login"
+                },
                 modifier = Modifier.padding(insets),
                 transitionSpec = {
                     // Grok: calm cross-fade, almost no motion
