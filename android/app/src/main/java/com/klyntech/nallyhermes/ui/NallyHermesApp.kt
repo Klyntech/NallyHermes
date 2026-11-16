@@ -1,7 +1,16 @@
 package com.klyntech.nallyhermes.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,6 +20,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,7 +69,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -69,11 +82,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.composables.icons.lucide.R as LucideR
-import com.klyntech.nallyhermes.BuildConfig
 import com.klyntech.nallyhermes.MobileApi
 import com.klyntech.nallyhermes.SyncedMessage
 import com.klyntech.nallyhermes.MobileActivitySnapshot
+import com.klyntech.nallyhermes.TelegramLoginChallenge
+import com.klyntech.nallyhermes.TelegramLoginEvent
 import com.klyntech.nallyhermes.R
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -93,20 +109,26 @@ private data class AgentActivity(
 )
 
 @Composable
-fun NallyHermesApp() {
+fun NallyHermesApp(
+    onStartTelegramLogin: (TelegramLoginChallenge) -> Unit,
+    loginEvents: StateFlow<TelegramLoginEvent?>,
+    onLoginEventConsumed: () -> Unit
+) {
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CHAT.name) }
     val selectedTab = AppTab.valueOf(selectedTabName)
     val context = LocalContext.current
     val api = remember { MobileApi(context.applicationContext) }
     val messages = remember { mutableStateListOf<SyncedMessage>() }
     var paired by remember { mutableStateOf(api.isPaired) }
-    var baseUrl by rememberSaveable { mutableStateOf(api.baseUrl.ifBlank { BuildConfig.API_BASE_URL }) }
+    var showPairingCode by rememberSaveable { mutableStateOf(false) }
+    var loginNonce by rememberSaveable { mutableStateOf<String?>(null) }
+    var authFeedback by rememberSaveable { mutableStateOf<String?>(null) }
+    var authBusy by remember { mutableStateOf(false) }
     var activity by remember { mutableStateOf<MobileActivitySnapshot?>(null) }
     var connectionMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(paired, baseUrl) {
-        api.baseUrl = baseUrl
+    LaunchedEffect(paired) {
         if (!paired) return@LaunchedEffect
         while (true) {
             try {
@@ -125,6 +147,38 @@ fun NallyHermesApp() {
         }
     }
 
+    LaunchedEffect(loginEvents) {
+        loginEvents.collect { event ->
+            if (event == null) return@collect
+            when (event) {
+                is TelegramLoginEvent.Success -> {
+                    val nonce = loginNonce
+                    if (nonce.isNullOrBlank()) {
+                        authFeedback = "That sign-in has expired. Please start again."
+                    } else {
+                        authBusy = true
+                        try {
+                            api.completeTelegramLogin(event.idToken, nonce)
+                            paired = true
+                            showPairingCode = false
+                            loginNonce = null
+                            authFeedback = null
+                        } catch (error: Exception) {
+                            authFeedback = error.message ?: "Telegram sign-in could not be completed."
+                        } finally {
+                            authBusy = false
+                        }
+                    }
+                }
+                is TelegramLoginEvent.Failure -> {
+                    loginNonce = null
+                    authFeedback = event.message
+                }
+            }
+            onLoginEventConsumed()
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         Image(
             painter = painterResource(R.drawable.spiderman_bg),
@@ -135,45 +189,244 @@ fun NallyHermesApp() {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)))
         Scaffold(
             containerColor = Color.Transparent,
-            bottomBar = { FloatingNavigation(selectedTab) { selectedTabName = it.name } }
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = paired && !showPairingCode,
+                    enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 2 },
+                    exit = fadeOut(tween(150)) + slideOutVertically(tween(190)) { it / 3 }
+                ) { FloatingNavigation(selectedTab) { selectedTabName = it.name } }
+            }
         ) { insets ->
-            when (selectedTab) {
-                AppTab.CHAT -> ChatScreen(
-                    messages = messages,
-                    activity = activity,
-                    paired = paired,
-                    connectionMessage = connectionMessage,
-                    onSend = { text ->
-                        scope.launch {
-                            try {
-                                api.sendMessage(UUID.randomUUID().toString(), text)
-                                connectionMessage = null
-                            } catch (error: Exception) {
-                                connectionMessage = error.message ?: "Message could not be sent."
+            AnimatedContent(
+                targetState = when { paired -> "app"; showPairingCode -> "code"; else -> "login" },
+                modifier = Modifier.padding(insets),
+                transitionSpec = {
+                    (fadeIn(tween(250)) + scaleIn(initialScale = 0.985f, animationSpec = tween(250, easing = FastOutSlowInEasing))) togetherWith fadeOut(tween(160))
+                },
+                label = "authenticationTransition"
+            ) { destination ->
+                when (destination) {
+                    "login" -> TelegramLoginScreen(
+                        busy = authBusy,
+                        feedback = authFeedback,
+                        onLogin = {
+                            scope.launch {
+                                authBusy = true
+                                authFeedback = null
+                                try {
+                                    val challenge = api.createTelegramLoginChallenge()
+                                    loginNonce = challenge.nonce
+                                    onStartTelegramLogin(challenge)
+                                } catch (error: Exception) {
+                                    authFeedback = error.message ?: "Could not start Telegram Login."
+                                } finally {
+                                    authBusy = false
+                                }
                             }
+                        },
+                        onUseCode = { authFeedback = null; showPairingCode = true }
+                    )
+                    "code" -> PairingCodeScreen(
+                        api = api,
+                        busy = authBusy,
+                        feedback = authFeedback,
+                        onBusyChange = { authBusy = it },
+                        onFeedback = { authFeedback = it },
+                        onConnected = { paired = true; showPairingCode = false; authFeedback = null },
+                        onBack = { authFeedback = null; showPairingCode = false }
+                    )
+                    else -> AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = {
+                            val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                            (fadeIn(tween(240)) + slideInHorizontally(
+                                animationSpec = tween(270, easing = FastOutSlowInEasing),
+                                initialOffsetX = { width -> direction * width / 14 }
+                            )) togetherWith (fadeOut(tween(170)) + slideOutHorizontally(
+                                animationSpec = tween(230),
+                                targetOffsetX = { width -> -direction * width / 18 }
+                            ))
+                        },
+                        label = "tabTransition"
+                    ) { tab ->
+                        when (tab) {
+                            AppTab.CHAT -> ChatScreen(
+                                messages = messages,
+                                activity = activity,
+                                paired = paired,
+                                connectionMessage = connectionMessage,
+                                onSend = { text ->
+                                    scope.launch {
+                                        try {
+                                            api.sendMessage(UUID.randomUUID().toString(), text)
+                                            connectionMessage = null
+                                        } catch (error: Exception) {
+                                            connectionMessage = error.message ?: "Message could not be sent."
+                                        }
+                                    }
+                                },
+                                onSettings = { selectedTabName = AppTab.SETTINGS.name },
+                                onVoice = { selectedTabName = AppTab.VOICE.name }
+                            )
+                            AppTab.VOICE -> VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
+                            AppTab.SETTINGS -> SettingsScreen(
+                                api = api,
+                                onUnlinked = {
+                                    paired = false
+                                    showPairingCode = false
+                                    messages.clear()
+                                    activity = null
+                                    selectedTabName = AppTab.CHAT.name
+                                }
+                            )
                         }
-                    },
-                    onSettings = { selectedTabName = AppTab.SETTINGS.name },
-                    onVoice = { selectedTabName = AppTab.VOICE.name },
-                    modifier = Modifier.padding(insets)
-                )
-                AppTab.VOICE -> VoiceScreen(
-                    onSettings = { selectedTabName = AppTab.SETTINGS.name },
-                    modifier = Modifier.padding(insets)
-                )
-                AppTab.SETTINGS -> SettingsScreen(
-                    api = api,
-                    paired = paired,
-                    baseUrl = baseUrl,
-                    onBaseUrlChange = { baseUrl = it },
-                    onPairedChange = { isPaired ->
-                        paired = isPaired
-                        if (!isPaired) { messages.clear(); activity = null }
-                    },
-                    modifier = Modifier.padding(insets)
-                )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun TelegramLoginScreen(
+    busy: Boolean,
+    feedback: String?,
+    onLogin: () -> Unit,
+    onUseCode: () -> Unit
+) {
+    Box(Modifier.fillMaxSize()) {
+        AnimatedLoginBackdrop()
+        Column(
+            Modifier.fillMaxSize().imePadding().navigationBarsPadding().padding(horizontal = 27.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(17.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.primary, Modifier.size(24.dp))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text("NallyHermes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("YOUR PERSONAL ASSISTANT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
+                }
+            }
+            Spacer(Modifier.height(48.dp))
+            Text("A calmer way\nto think things through.", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(12.dp))
+            Text("Sign in with the Telegram account you already use with Nally. Your conversation stays in sync across both apps.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(30.dp))
+            val pulse by rememberInfiniteTransition(label = "telegramLoginPill").animateFloat(
+                initialValue = 0.992f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(1_900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "telegramLoginPillPulse"
+            )
+            Row(
+                Modifier.fillMaxWidth().height(60.dp).graphicsLayer { scaleX = pulse; scaleY = pulse }
+                    .clip(CircleShape)
+                    .background(Brush.horizontalGradient(listOf(Color(0xFF218BCB), Color(0xFF1473B8))))
+                    .border(1.dp, Color.White.copy(alpha = 0.24f), CircleShape)
+                    .clickable(enabled = !busy) { onLogin() }
+                    .padding(horizontal = 21.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                LucideIcon(LucideR.drawable.lucide_ic_send, null, Color.White, Modifier.size(20.dp))
+                Spacer(Modifier.width(11.dp))
+                Text(if (busy) "Preparing secure sign-in…" else "Continue with Telegram", style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
+                if (!busy) {
+                    Spacer(Modifier.width(9.dp))
+                    LucideIcon(LucideR.drawable.lucide_ic_arrow_right, null, Color.White.copy(alpha = 0.9f), Modifier.size(17.dp))
+                }
+            }
+            feedback?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = onUseCode, enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("Use a one-time code instead", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(18.dp))
+            Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                LucideIcon(LucideR.drawable.lucide_ic_shield_check, null, MaterialTheme.colorScheme.primary, Modifier.size(15.dp))
+                Text("Secure sign-in · private chat sync", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedLoginBackdrop() {
+    val transition = rememberInfiniteTransition(label = "loginBackdrop")
+    val drift by transition.animateFloat(-32f, 34f, infiniteRepeatable(tween(7_200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "loginBackdropDrift")
+    val glow by transition.animateFloat(0.11f, 0.19f, infiniteRepeatable(tween(3_600), RepeatMode.Reverse), label = "loginBackdropGlow")
+    val accent = MaterialTheme.colorScheme.primary
+    Canvas(Modifier.fillMaxSize()) {
+        val radius = size.minDimension * 0.43f
+        val topCenter = Offset(size.width * 0.86f + drift, size.height * 0.18f)
+        val lowerCenter = Offset(size.width * 0.06f - drift * 0.65f, size.height * 0.82f)
+        drawCircle(Brush.radialGradient(listOf(Color(0xFF3D8CDB).copy(alpha = glow), Color.Transparent), center = topCenter, radius = radius), radius, topCenter)
+        drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = glow * 0.72f), Color.Transparent), center = lowerCenter, radius = radius * 0.82f), radius * 0.82f, lowerCenter)
+    }
+}
+
+@Composable
+private fun PairingCodeScreen(
+    api: MobileApi,
+    busy: Boolean,
+    feedback: String?,
+    onBusyChange: (Boolean) -> Unit,
+    onFeedback: (String?) -> Unit,
+    onConnected: () -> Unit,
+    onBack: () -> Unit
+) {
+    var pairingCode by rememberSaveable { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    Column(
+        Modifier.fillMaxSize().imePadding().navigationBarsPadding().padding(horizontal = 25.dp, vertical = 22.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        TextButton(onClick = onBack) { Text("‹  Back to sign in") }
+        Spacer(Modifier.height(15.dp))
+        Text("Connect your\nTelegram chat", style = MaterialTheme.typography.headlineLarge)
+        Spacer(Modifier.height(10.dp))
+        Text("In your private NallyHermes Telegram chat, send /mobile. Enter the one-time code here within five minutes.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(23.dp))
+        OutlinedTextField(
+            value = pairingCode,
+            onValueChange = { pairingCode = it.filter(Char::isDigit).take(10) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("10-digit code") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                scope.launch {
+                    onBusyChange(true)
+                    onFeedback(null)
+                    try {
+                        api.pair(pairingCode)
+                        pairingCode = ""
+                        onConnected()
+                    } catch (error: Exception) {
+                        onFeedback(error.message ?: "Pairing could not be completed. Please try again.")
+                    } finally {
+                        onBusyChange(false)
+                    }
+                }
+            },
+            enabled = pairingCode.length == 10 && !busy,
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        ) { Text(if (busy) "Connecting…" else "Connect securely") }
+        feedback?.let {
+            Spacer(Modifier.height(11.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        Spacer(Modifier.height(13.dp))
+        Text("The code is single-use. Your messages will sync with the same private chat.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -240,7 +493,7 @@ private fun ChatScreen(
         Row(Modifier.fillMaxWidth().padding(horizontal = 21.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (paired) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error))
             Spacer(Modifier.width(7.dp))
-            Text(if (paired) "Synced with Telegram" else "Pair with Telegram in Settings", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (paired) "Synced with Telegram" else "Reconnect Telegram to sync", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (messages.isEmpty()) {
             WelcomeScreen(onPrompt = { draft = it }, modifier = Modifier.weight(1f).fillMaxWidth())
@@ -384,7 +637,7 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(27.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.66f), RoundedCornerShape(27.dp)).padding(horizontal = 16.dp, vertical = 11.dp)) {
             Box(Modifier.fillMaxWidth().padding(top = 1.dp, bottom = 9.dp)) {
-                if (value.isEmpty()) Text(if (enabled) "Message NallyHermes · / for tools" else "Pair in Settings to send a message", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                if (value.isEmpty()) Text(if (enabled) "Message NallyHermes · / for tools" else "Sign in to send a message", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 BasicTextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { onSend() }), readOnly = !enabled, maxLines = 5)
             }
@@ -403,7 +656,7 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                 }
             }
         }
-        Text(if (enabled) "Messages sync with your private Telegram chat" else "Pair in Settings to start a synced conversation", Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (enabled) "Messages sync with your private Telegram chat" else "Sign in to start a synced conversation", Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -454,9 +707,9 @@ private fun VoiceScreen(onSettings: () -> Unit, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(27.dp))
         Text("Voice is waiting for setup", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(7.dp))
-        Text("Connect the Render voice endpoint and microphone permissions to start a spoken conversation.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Voice is still being prepared for this native client. Your live, synced text conversation is ready in Chat.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onSettings) { Text("View connection settings") }
+        TextButton(onClick = onSettings) { Text("View account settings") }
         Spacer(Modifier.weight(1f))
     }
 }
@@ -464,81 +717,35 @@ private fun VoiceScreen(onSettings: () -> Unit, modifier: Modifier = Modifier) {
 @Composable
 private fun SettingsScreen(
     api: MobileApi,
-    paired: Boolean,
-    baseUrl: String,
-    onBaseUrlChange: (String) -> Unit,
-    onPairedChange: (Boolean) -> Unit,
+    onUnlinked: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var pairingCode by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     Column(modifier.fillMaxSize().padding(horizontal = 22.dp)) {
         Text("Settings", Modifier.padding(top = 26.dp, bottom = 5.dp), style = MaterialTheme.typography.headlineLarge)
-        Text("Securely connect the app to your private Telegram chat.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Your Nally account and connected device.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
         Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.fillMaxWidth().padding(17.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LucideIcon(if (paired) LucideR.drawable.lucide_ic_circle_check else LucideR.drawable.lucide_ic_link, null,
-                        if (paired) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(20.dp))
+                    LucideIcon(LucideR.drawable.lucide_ic_circle_check, null, MaterialTheme.colorScheme.primary, Modifier.size(20.dp))
                     Column {
                         Text("Telegram account", style = MaterialTheme.typography.titleMedium)
-                        Text(if (paired) "Linked · messages sync both ways" else "Not linked yet", style = MaterialTheme.typography.labelMedium,
-                            color = if (paired) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Linked · messages sync both ways", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 }
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { onBaseUrlChange(it); api.baseUrl = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Render service URL") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
-                )
-                if (!paired) {
-                    Text("In your private Telegram chat with NallyHermes, send /mobile. Enter the one-time code here within 5 minutes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(
-                        value = pairingCode,
-                        onValueChange = { pairingCode = it.filter(Char::isDigit).take(10) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("10-digit pairing code") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
-                    )
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                busy = true; feedback = null
-                                try {
-                                    api.baseUrl = baseUrl
-                                    api.pair(pairingCode)
-                                    pairingCode = ""
-                                    onPairedChange(true)
-                                    feedback = "Connected securely. Your Telegram chat will sync here."
-                                } catch (error: Exception) { feedback = error.message ?: "Pairing failed." }
-                                finally { busy = false }
-                            }
-                        },
-                        enabled = pairingCode.length == 10 && !busy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (busy) Text("Connecting…") else Text("Connect Telegram")
+                Text("Messages from Telegram and this app appear in the same private conversation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = {
+                    scope.launch {
+                        busy = true
+                        feedback = null
+                        try { api.revoke(); onUnlinked() }
+                        catch (error: Exception) { feedback = error.message ?: "Could not unlink this device." }
+                        finally { busy = false }
                     }
-                } else {
-                    Text("This device is linked to the Telegram account that issued the pairing code. Messages from both places appear in the same conversation.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                busy = true; feedback = null
-                                try { api.revoke(); onPairedChange(false); feedback = "This device has been unlinked." }
-                                catch (error: Exception) { feedback = error.message ?: "Could not unlink this device." }
-                                finally { busy = false }
-                            }
-                        }, enabled = !busy
-                    ) { Text("Unlink this device") }
-                }
+                }, enabled = !busy) { Text(if (busy) "Unlinking…" else "Unlink this device") }
                 feedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }

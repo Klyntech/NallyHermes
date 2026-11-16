@@ -36,6 +36,13 @@ internal data class SyncSnapshot(
     val activity: MobileActivitySnapshot?
 )
 
+internal data class TelegramLoginChallenge(
+    val nonce: String,
+    val clientId: String,
+    val redirectUri: String,
+    val scopes: List<String>
+)
+
 internal class MobileApi(context: Context) {
     private val preferences = context.getSharedPreferences("nally_mobile", Context.MODE_PRIVATE)
     private val http = OkHttpClient.Builder()
@@ -45,17 +52,15 @@ internal class MobileApi(context: Context) {
         .build()
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
-    var baseUrl: String
-        get() = preferences.getString("base_url", BuildConfig.API_BASE_URL) ?: BuildConfig.API_BASE_URL
-        set(value) { preferences.edit().putString("base_url", value.trim().trimEnd('/')).apply() }
+    val baseUrl: String get() = BuildConfig.API_BASE_URL
 
     val isPaired: Boolean
         get() = !preferences.getString("access_token", null).isNullOrBlank()
 
     private fun endpoint(path: String): String {
         val raw = baseUrl.trim().trimEnd('/')
-        require(raw.startsWith("https://", ignoreCase = true)) { "Enter the Render service URL beginning with https://." }
-        require(raw.length <= 240 && !raw.contains("/api/mobile")) { "Enter only the base Render URL, without an API path." }
+        require(raw.startsWith("https://", ignoreCase = true)) { "A secure connection is unavailable." }
+        require(raw.length <= 240 && !raw.contains("/api/mobile")) { "The secure service address is invalid." }
         return raw + path
     }
 
@@ -82,6 +87,34 @@ internal class MobileApi(context: Context) {
         val response = execute(Request.Builder().url(endpoint("/api/mobile/pair")).post(body).build())
         val token = response.optString("accessToken")
         require(token.length >= 40) { "The server returned an invalid session. Please try pairing again." }
+        preferences.edit().putString("access_token", token).apply()
+    }
+
+    suspend fun createTelegramLoginChallenge(): TelegramLoginChallenge {
+        val body = JSONObject().toString().toRequestBody(jsonType)
+        val response = execute(Request.Builder().url(endpoint("/api/mobile/login/challenge")).post(body).build())
+        val scopesJson = response.optJSONArray("scopes") ?: JSONArray()
+        val scopes = buildList {
+            for (index in 0 until scopesJson.length()) scopes.add(scopesJson.optString(index))
+        }
+        val nonce = response.optString("nonce")
+        val clientId = response.optString("clientId")
+        val redirectUri = response.optString("redirectUri")
+        require(nonce.length >= 32 && clientId.isNotBlank() && redirectUri.startsWith("https://")) {
+            "Telegram Login is not configured correctly yet."
+        }
+        return TelegramLoginChallenge(nonce, clientId, redirectUri, scopes)
+    }
+
+    suspend fun completeTelegramLogin(idToken: String, nonce: String) {
+        val body = JSONObject()
+            .put("idToken", idToken)
+            .put("nonce", nonce)
+            .toString()
+            .toRequestBody(jsonType)
+        val response = execute(Request.Builder().url(endpoint("/api/mobile/telegram-login")).post(body).build())
+        val token = response.optString("accessToken")
+        require(token.length >= 40) { "Telegram did not return a valid app session. Please sign in again." }
         preferences.edit().putString("access_token", token).apply()
     }
 

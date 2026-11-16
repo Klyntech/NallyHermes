@@ -10,8 +10,8 @@ android {
         applicationId = "com.klyntech.nallyhermes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
-        versionName = "3.1.0-alpha.3"
+        versionCode = 34
+        versionName = "3.1.0-alpha.4"
         buildConfigField("String", "API_BASE_URL", "\"https://nally.onrender.com\"")
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -26,6 +26,7 @@ dependencies {
     implementation(composeBom)
     androidTestImplementation(composeBom)
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
