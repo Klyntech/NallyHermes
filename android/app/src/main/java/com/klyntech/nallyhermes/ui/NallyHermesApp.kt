@@ -271,6 +271,7 @@ fun NallyHermesApp(
                     .fillMaxSize()
                     .statusBarsPadding()
                     .imePadding()
+                    .padding(bottom = 8.dp) // slight air above the keyboard
             } else {
                 Modifier
                     .fillMaxSize()
@@ -526,7 +527,74 @@ private fun TelegramLoginScreen(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF8A80))
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(22.dp))
+
+            // Divider — continue with
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+                Text(
+                    "  or continue with  ",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = muted
+                )
+                Box(Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            var providerNote by remember { mutableStateOf<String?>(null) }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                LoginProviderChip(
+                    label = "Google",
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                    onClick = { providerNote = "Google sign-in is coming in a later build." }
+                ) {
+                    Box(
+                        Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("G", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+                LoginProviderChip(
+                    label = "GitHub",
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                    onClick = { providerNote = "GitHub sign-in is coming in a later build." }
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_github_brand),
+                        contentDescription = null,
+                        colorFilter = ColorFilter.tint(Color.White),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                LoginProviderChip(
+                    label = "Email",
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                    onClick = { providerNote = "Email sign-in is coming in a later build." }
+                ) {
+                    LucideIcon(LucideR.drawable.lucide_ic_message_circle, null, Color.White, Modifier.size(18.dp))
+                }
+            }
+
+            providerNote?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = soft)
+            }
+
+            Spacer(Modifier.height(16.dp))
 
             // Secondary — quiet text, not a competing button
             Text(
@@ -647,6 +715,35 @@ private fun PolishedLoginBackdrop() {
             ),
             radius = w * 0.35f,
             center = sheenCenter
+        )
+    }
+}
+
+@Composable
+private fun LoginProviderChip(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        icon()
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White.copy(alpha = 0.88f),
+            fontWeight = FontWeight.Medium
         )
     }
 }
@@ -1296,7 +1393,7 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                 start = 12.dp,
                 end = 12.dp,
                 top = if (imeUp) 2.dp else 4.dp,
-                bottom = if (imeUp) 0.dp else 2.dp
+                bottom = if (imeUp) 6.dp else 2.dp
             )
     ) {
         AnimatedVisibility(visible = trayOpen) {
