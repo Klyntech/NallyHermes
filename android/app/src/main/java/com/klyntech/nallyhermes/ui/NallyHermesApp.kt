@@ -43,7 +43,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -99,6 +103,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import com.composables.icons.lucide.R as LucideR
 import com.klyntech.nallyhermes.MobileApi
 import com.klyntech.nallyhermes.SyncedMessage
@@ -191,6 +196,7 @@ fun NallyHermesApp(
         val lastIndex = (messages.size + extra - 1).coerceAtLeast(0)
         // Seed list index without waiting on an attached LazyList (avoids infinite suspend)
         chatListState.requestScrollToItem(lastIndex)
+        api.markInitialSyncComplete()
         syncReady = true
     }
 
@@ -240,28 +246,38 @@ fun NallyHermesApp(
             )
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)))
         }
+        val density = LocalDensity.current
+        val imeVisible = WindowInsets.ime.getBottom(density) > with(density) { 6.dp.toPx() }
+
         Scaffold(
             containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 AnimatedVisibility(
-                    visible = paired && syncReady && !showPairingCode,
-                    enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
+                    visible = paired && syncReady && !showPairingCode && !imeVisible,
+                    enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
                         slideInVertically(
                             animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
                         ) { it / 3 },
-                    exit = fadeOut(tween(160)) +
-                        slideOutVertically(animationSpec = tween(200, easing = FastOutSlowInEasing)) { it / 4 }
+                    exit = fadeOut(tween(120)) +
+                        slideOutVertically(animationSpec = tween(140, easing = FastOutSlowInEasing)) { it / 4 }
                 ) { FloatingNavigation(selectedTab) { selectedTabName = it.name } }
             }
-        ) { insets ->
+        ) { _ ->
+            val shellModifier = if (imeVisible) {
+                Modifier.fillMaxSize().imePadding()
+            } else {
+                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)
+            }
             AnimatedContent(
                 targetState = when {
-                    paired && !syncReady -> "sync"
+                    paired && !syncReady && !api.hasCompletedInitialSync -> "sync"
+                    paired && !syncReady -> "welcome"
                     paired -> "app"
                     showPairingCode -> "code"
                     else -> "login"
                 },
-                modifier = Modifier.padding(insets),
+                modifier = shellModifier,
                 transitionSpec = {
                     // Grok: calm cross-fade, almost no motion
                     (
@@ -310,6 +326,7 @@ fun NallyHermesApp(
                         onBack = { authFeedback = null; showPairingCode = false }
                     )
                     "sync" -> SyncProgressScreen()
+                    "welcome" -> WelcomeBackScreen()
                     else -> // Chat stays composed so returning from Voice/Settings is instant.
                     // Voice & Settings are light — they can enter/exit freely.
                     Box(Modifier.fillMaxSize()) {
@@ -623,6 +640,77 @@ private fun PolishedLoginBackdrop() {
             radius = w * 0.35f,
             center = sheenCenter
         )
+    }
+}
+
+@Composable
+private fun WelcomeBackScreen() {
+    val lines = listOf("Welcome back", "Let’s get things sorted")
+    var phase by remember { mutableStateOf(0) }
+    val alpha0 by animateFloatAsState(
+        targetValue = if (phase >= 0) 1f else 0f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "welcomeLine0"
+    )
+    val alpha1 by animateFloatAsState(
+        targetValue = if (phase >= 1) 1f else 0f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "welcomeLine1"
+    )
+    val rise0 by animateFloatAsState(
+        targetValue = if (phase >= 0) 0f else 14f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "rise0"
+    )
+    val rise1 by animateFloatAsState(
+        targetValue = if (phase >= 1) 0f else 14f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "rise1"
+    )
+    LaunchedEffect(Unit) {
+        phase = 0
+        delay(700)
+        phase = 1
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0C0B)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 36.dp)
+        ) {
+            Text(
+                lines[0],
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontSize = 30.sp,
+                    letterSpacing = (-0.4).sp
+                ),
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = alpha0
+                    translationY = rise0
+                }
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                lines[1],
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFFB8BDB4),
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = alpha1
+                    translationY = rise1
+                }
+            )
+            Spacer(Modifier.height(28.dp))
+            WindowsStyleSpinner(Modifier.size(28.dp))
+        }
     }
 }
 
@@ -991,7 +1079,7 @@ private fun ChatScreen(
         }
     }
 
-    Column(modifier.fillMaxSize().imePadding()) {
+    Column(modifier.fillMaxSize()) {
         ChatHeader(onSettings = onSettings)
         Row(Modifier.fillMaxWidth().padding(horizontal = 21.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (paired) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error))
@@ -1191,10 +1279,17 @@ private fun ThinkingDots() {
 private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit, onVoice: () -> Unit, enabled: Boolean) {
     var trayOpen by rememberSaveable { mutableStateOf(false) }
     val glassShape = RoundedCornerShape(26.dp)
+    val density = LocalDensity.current
+    val imeUp = WindowInsets.ime.getBottom(density) > with(density) { 6.dp.toPx() }
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 2.dp)
+            .padding(
+                start = 12.dp,
+                end = 12.dp,
+                top = if (imeUp) 2.dp else 4.dp,
+                bottom = if (imeUp) 0.dp else 2.dp
+            )
     ) {
         AnimatedVisibility(visible = trayOpen) {
             ToolShortcutTray(
@@ -1309,13 +1404,15 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                 }
             }
         }
-        Spacer(Modifier.height(5.dp))
-        Text(
-            "Messages sync with your private Telegram chat",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-            modifier = Modifier.padding(horizontal = 6.dp)
-        )
+        if (!imeUp) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Messages sync with your private Telegram chat",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                modifier = Modifier.padding(horizontal = 6.dp)
+            )
+        }
     }
 }
 
