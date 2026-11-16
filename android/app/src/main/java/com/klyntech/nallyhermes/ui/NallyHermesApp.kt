@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,9 +71,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -126,6 +129,9 @@ fun NallyHermesApp(
 ) {
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CHAT.name) }
     val selectedTab = AppTab.valueOf(selectedTabName)
+    val tabStateHolder = rememberSaveableStateHolder()
+    val chatListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    var chatDraft by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val api = remember { MobileApi(context.applicationContext) }
     val messages = remember { mutableStateListOf<SyncedMessage>() }
@@ -284,36 +290,41 @@ fun NallyHermesApp(
                         },
                         label = "tabTransition"
                     ) { tab ->
-                        when (tab) {
-                            AppTab.CHAT -> ChatScreen(
-                                messages = messages,
-                                activity = activity,
-                                paired = paired,
-                                connectionMessage = connectionMessage,
-                                onSend = { text ->
-                                    scope.launch {
-                                        try {
-                                            api.sendMessage(UUID.randomUUID().toString(), text)
-                                            connectionMessage = null
-                                        } catch (error: Exception) {
-                                            connectionMessage = error.message ?: "Message could not be sent."
+                        tabStateHolder.SaveableStateProvider(tab.name) {
+                            when (tab) {
+                                AppTab.CHAT -> ChatScreen(
+                                    messages = messages,
+                                    activity = activity,
+                                    paired = paired,
+                                    connectionMessage = connectionMessage,
+                                    listState = chatListState,
+                                    draft = chatDraft,
+                                    onDraftChange = { chatDraft = it },
+                                    onSend = { text ->
+                                        scope.launch {
+                                            try {
+                                                api.sendMessage(UUID.randomUUID().toString(), text)
+                                                connectionMessage = null
+                                            } catch (error: Exception) {
+                                                connectionMessage = error.message ?: "Message could not be sent."
+                                            }
                                         }
+                                    },
+                                    onSettings = { selectedTabName = AppTab.SETTINGS.name },
+                                    onVoice = { selectedTabName = AppTab.VOICE.name }
+                                )
+                                AppTab.VOICE -> VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
+                                AppTab.SETTINGS -> SettingsScreen(
+                                    api = api,
+                                    onUnlinked = {
+                                        paired = false
+                                        showPairingCode = false
+                                        messages.clear()
+                                        activity = null
+                                        selectedTabName = AppTab.CHAT.name
                                     }
-                                },
-                                onSettings = { selectedTabName = AppTab.SETTINGS.name },
-                                onVoice = { selectedTabName = AppTab.VOICE.name }
-                            )
-                            AppTab.VOICE -> VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
-                            AppTab.SETTINGS -> SettingsScreen(
-                                api = api,
-                                onUnlinked = {
-                                    paired = false
-                                    showPairingCode = false
-                                    messages.clear()
-                                    activity = null
-                                    selectedTabName = AppTab.CHAT.name
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -730,16 +741,36 @@ private fun ChatScreen(
     activity: MobileActivitySnapshot?,
     paired: Boolean,
     connectionMessage: String?,
+    listState: LazyListState,
+    draft: String,
+    onDraftChange: (String) -> Unit,
     onSend: (String) -> Unit,
     onSettings: () -> Unit,
     onVoice: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var draft by rememberSaveable { mutableStateOf("") }
-    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     fun send() {
         val text = draft.trim()
-        if (text.isNotEmpty() && paired) { onSend(text); draft = "" }
+        if (text.isNotEmpty() && paired) {
+            onSend(text)
+            onDraftChange("")
+            scope.launch {
+                val last = listState.layoutInfo.totalItemsCount - 1
+                if (last >= 0) listState.animateScrollToItem(last)
+            }
+        }
+    }
+
+    val isAtBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            if (info.totalItemsCount == 0) true
+            else {
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lastVisible >= info.totalItemsCount - 2
+            }
+        }
     }
 
     Column(modifier.fillMaxSize().imePadding()) {
@@ -750,31 +781,69 @@ private fun ChatScreen(
             Text(if (paired) "Synced with Telegram" else "Reconnect Telegram to sync", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (messages.isEmpty()) {
-            WelcomeScreen(onPrompt = { draft = it }, modifier = Modifier.weight(1f).fillMaxWidth())
+            WelcomeScreen(onPrompt = { onDraftChange(it) }, modifier = Modifier.weight(1f).fillMaxWidth())
         } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(), state = listState,
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    if (message.role == "user") {
-                        UserMessage(message.text, message.status)
-                    } else {
-                        AssistantMessage(message.text)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        if (message.role == "user") {
+                            UserMessage(message.text, message.status)
+                        } else {
+                            AssistantMessage(message.text)
+                        }
+                    }
+                    if (activity != null) item(key = "agent-activity") {
+                        if (activity.requiresTelegramApproval) NoticeCard("Approval in Telegram", "Open your private NallyHermes Telegram chat to review the requested action.")
+                        else AgentActivityCard(AgentActivity(headline = activity.headline, provider = activity.provider, isThinking = activity.isThinking))
+                    }
+                    connectionMessage?.let { error -> item(key = "connection-error") { NoticeCard("Sync issue", error) } }
+                }
+
+                // Jump-to-bottom — only when user has scrolled up
+                AnimatedVisibility(
+                    visible = !isAtBottom,
+                    enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.85f, animationSpec = tween(200)),
+                    exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.85f, animationSpec = tween(140)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = 12.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f), CircleShape)
+                            .clickable {
+                                scope.launch {
+                                    val last = listState.layoutInfo.totalItemsCount - 1
+                                    if (last >= 0) listState.animateScrollToItem(last)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LucideIcon(
+                            LucideR.drawable.lucide_ic_arrow_down,
+                            "Jump to latest",
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                            Modifier.size(20.dp)
+                        )
                     }
                 }
-                if (activity != null) item(key = "agent-activity") {
-                    if (activity.requiresTelegramApproval) NoticeCard("Approval in Telegram", "Open your private NallyHermes Telegram chat to review the requested action.")
-                    else AgentActivityCard(AgentActivity(headline = activity.headline, provider = activity.provider, isThinking = activity.isThinking))
-                }
-                connectionMessage?.let { error -> item(key = "connection-error") { NoticeCard("Sync issue", error) } }
             }
+            // Auto-follow new messages only if already near the bottom
             LaunchedEffect(messages.size, activity, connectionMessage) {
+                if (!isAtBottom) return@LaunchedEffect
                 val last = listState.layoutInfo.totalItemsCount - 1
                 if (last >= 0) listState.animateScrollToItem(last)
             }
         }
-        MessageComposer(value = draft, onValueChange = { draft = it }, onSend = ::send, onVoice = onVoice, enabled = paired)
+        MessageComposer(value = draft, onValueChange = onDraftChange, onSend = ::send, onVoice = onVoice, enabled = paired)
     }
 }
 
