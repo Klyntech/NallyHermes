@@ -150,9 +150,11 @@ fun NallyHermesApp(
     var connectionMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    var initialDataReady by remember { mutableStateOf(false) }
     LaunchedEffect(paired) {
         if (!paired) {
             syncReady = false
+            initialDataReady = false
             return@LaunchedEffect
         }
         while (true) {
@@ -164,16 +166,34 @@ fun NallyHermesApp(
                 }
                 activity = snapshot.activity
                 connectionMessage = null
-                syncReady = true
+                initialDataReady = true
             } catch (error: Exception) {
                 connectionMessage = error.message ?: "Could not sync with Nally."
                 if (!api.isPaired) {
                     paired = false
                     syncReady = false
+                    initialDataReady = false
                 }
             }
             delay(1_500)
         }
+    }
+    // Keep spinner until history is loaded and the list is pinned to the bottom
+    LaunchedEffect(paired, initialDataReady, messages.size, activity, connectionMessage) {
+        if (!paired || !initialDataReady || syncReady) return@LaunchedEffect
+        val extra = (if (activity != null) 1 else 0) + (if (connectionMessage != null) 1 else 0)
+        val lastIndex = (messages.size + extra - 1).coerceAtLeast(0)
+        try {
+            chatListState.scrollToItem(lastIndex)
+        } catch (_: Exception) {
+        }
+        delay(150)
+        try {
+            chatListState.scrollToItem(lastIndex)
+        } catch (_: Exception) {
+        }
+        delay(100)
+        syncReady = true
     }
 
     LaunchedEffect(loginEvents) {
@@ -211,7 +231,7 @@ fun NallyHermesApp(
 
     // Auth screens get a solid canvas (no photo bleed at status / nav bars).
     // Paired app keeps the branded background treatment.
-    val onAuthSurface = !paired || showPairingCode
+    val onAuthSurface = !paired || showPairingCode || !syncReady
     Box(Modifier.fillMaxSize().background(if (onAuthSurface) Color(0xFF0B0C0B) else Color.Transparent)) {
         if (!onAuthSurface) {
             Image(
@@ -642,14 +662,15 @@ private fun SyncProgressScreen() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B0C0B))
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+            .background(Color(0xFF0B0C0B)),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 36.dp)
+            modifier = Modifier
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 36.dp)
         ) {
             WindowsStyleSpinner(Modifier.size(56.dp))
             Spacer(Modifier.height(28.dp))
@@ -1165,7 +1186,7 @@ private fun ThinkingDots() {
 private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit, onVoice: () -> Unit, enabled: Boolean) {
     var trayOpen by rememberSaveable { mutableStateOf(false) }
     val glassShape = RoundedCornerShape(26.dp)
-    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, top = 4.dp, bottom = 2.dp)) {
         AnimatedVisibility(visible = trayOpen) {
             ToolShortcutTray(
                 onSelect = { prefix ->
@@ -1238,10 +1259,12 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                             modifier = Modifier.fillMaxWidth(),
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { onSend() }),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Default
+                            ),
                             readOnly = !enabled,
-                            maxLines = 5
+                            maxLines = 8
                         )
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
