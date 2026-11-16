@@ -26,7 +26,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.animateItem
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -38,6 +37,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -686,15 +686,10 @@ private fun ChatScreen(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
-                    val itemMod = Modifier.animateItem(
-                        fadeInSpec = tween(280, easing = FastOutSlowInEasing),
-                        fadeOutSpec = tween(160, easing = FastOutSlowInEasing),
-                        placementSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)
-                    )
                     if (message.role == "user") {
-                        UserMessage(message.text, message.status, modifier = itemMod)
+                        UserMessage(message.text, message.status)
                     } else {
-                        AssistantMessage(message.text, modifier = itemMod)
+                        AssistantMessage(message.text)
                     }
                 }
                 if (activity != null) item(key = "agent-activity") {
