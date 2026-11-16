@@ -465,45 +465,36 @@ private fun TelegramLoginScreen(
 private fun PolishedLoginBackdrop() {
     val transition = rememberInfiniteTransition(label = "polishedLogin")
     val drift by transition.animateFloat(
-        -28f, 30f,
-        infiniteRepeatable(tween(9_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        -18f, 18f,
+        infiniteRepeatable(tween(10_000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "drift"
     )
     val pulse by transition.animateFloat(
-        0.10f, 0.18f,
-        infiniteRepeatable(tween(4_200), RepeatMode.Reverse),
+        0.06f, 0.11f,
+        infiniteRepeatable(tween(5_000), RepeatMode.Reverse),
         label = "pulse"
     )
     Canvas(Modifier.fillMaxSize()) {
-        // Soft ambient orbs — Spotify-like depth without clutter
+        // Soft ambient depth — kept inward so top/bottom edges stay pure black
         val w = size.width
         val h = size.height
         drawCircle(
             Brush.radialGradient(
-                listOf(Color(0xFF2AABEE).copy(alpha = pulse * 0.55f), Color.Transparent),
-                center = Offset(w * 0.82f + drift, h * 0.12f),
-                radius = w * 0.55f
+                listOf(Color(0xFF2AABEE).copy(alpha = pulse * 0.35f), Color.Transparent),
+                center = Offset(w * 0.78f + drift, h * 0.28f),
+                radius = w * 0.42f
             ),
-            radius = w * 0.55f,
-            center = Offset(w * 0.82f + drift, h * 0.12f)
+            radius = w * 0.42f,
+            center = Offset(w * 0.78f + drift, h * 0.28f)
         )
         drawCircle(
             Brush.radialGradient(
-                listOf(Color(0xFFA3B18A).copy(alpha = pulse * 0.45f), Color.Transparent),
-                center = Offset(w * 0.12f - drift * 0.4f, h * 0.78f),
-                radius = w * 0.48f
+                listOf(Color(0xFFA3B18A).copy(alpha = pulse * 0.30f), Color.Transparent),
+                center = Offset(w * 0.22f - drift * 0.35f, h * 0.62f),
+                radius = w * 0.38f
             ),
-            radius = w * 0.48f,
-            center = Offset(w * 0.12f - drift * 0.4f, h * 0.78f)
-        )
-        drawCircle(
-            Brush.radialGradient(
-                listOf(Color(0xFF3D4A3A).copy(alpha = 0.35f), Color.Transparent),
-                center = Offset(w * 0.5f, h * 0.45f),
-                radius = w * 0.7f
-            ),
-            radius = w * 0.7f,
-            center = Offset(w * 0.5f, h * 0.45f)
+            radius = w * 0.38f,
+            center = Offset(w * 0.22f - drift * 0.35f, h * 0.62f)
         )
     }
 }
