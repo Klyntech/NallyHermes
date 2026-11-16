@@ -157,6 +157,7 @@ fun NallyHermesApp(
             initialDataReady = false
             return@LaunchedEffect
         }
+        var attempts = 0
         while (true) {
             try {
                 val snapshot = api.fetchMessages(0L)
@@ -169,30 +170,27 @@ fun NallyHermesApp(
                 initialDataReady = true
             } catch (error: Exception) {
                 connectionMessage = error.message ?: "Could not sync with Nally."
+                attempts += 1
+                // Don't trap the user on the spinner if the session is valid but the network hiccups
                 if (!api.isPaired) {
                     paired = false
                     syncReady = false
                     initialDataReady = false
+                } else if (attempts >= 3) {
+                    initialDataReady = true
                 }
             }
             delay(1_500)
         }
     }
-    // Keep spinner until history is loaded and the list is pinned to the bottom
-    LaunchedEffect(paired, initialDataReady, messages.size, activity, connectionMessage) {
+    // Leave the spinner once history is loaded. Scroll is applied when Chat is composed —
+    // scrollToItem cannot complete while the LazyColumn is off-screen on the sync route.
+    LaunchedEffect(paired, initialDataReady, messages.size) {
         if (!paired || !initialDataReady || syncReady) return@LaunchedEffect
         val extra = (if (activity != null) 1 else 0) + (if (connectionMessage != null) 1 else 0)
         val lastIndex = (messages.size + extra - 1).coerceAtLeast(0)
-        try {
-            chatListState.scrollToItem(lastIndex)
-        } catch (_: Exception) {
-        }
-        delay(150)
-        try {
-            chatListState.scrollToItem(lastIndex)
-        } catch (_: Exception) {
-        }
-        delay(100)
+        // Seed list index without waiting on an attached LazyList (avoids infinite suspend)
+        chatListState.requestScrollToItem(lastIndex)
         syncReady = true
     }
 
@@ -1057,6 +1055,13 @@ private fun ChatScreen(
                             )
                         }
                     }
+                }
+            }
+            // First paint after sync: land on the latest message
+            LaunchedEffect(Unit) {
+                val last = listState.layoutInfo.totalItemsCount - 1
+                if (last >= 0) {
+                    listState.scrollToItem(last)
                 }
             }
             // Auto-follow new messages only if already near the bottom
