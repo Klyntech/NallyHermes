@@ -805,34 +805,37 @@ private fun ChatScreen(
                 }
 
                 // Jump-to-bottom — only when user has scrolled up
-                AnimatedVisibility(
-                    visible = !isAtBottom,
-                    enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.85f, animationSpec = tween(200)),
-                    exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.85f, animationSpec = tween(140)),
-                    modifier = Modifier
+                Box(
+                    Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = 16.dp, bottom = 12.dp)
                 ) {
-                    Box(
-                        Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f), CircleShape)
-                            .clickable {
-                                scope.launch {
-                                    val last = listState.layoutInfo.totalItemsCount - 1
-                                    if (last >= 0) listState.animateScrollToItem(last)
-                                }
-                            },
-                        contentAlignment = Alignment.Center
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !isAtBottom,
+                        enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.85f, animationSpec = tween(200)),
+                        exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.85f, animationSpec = tween(140))
                     ) {
-                        LucideIcon(
-                            LucideR.drawable.lucide_ic_arrow_down,
-                            "Jump to latest",
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                            Modifier.size(20.dp)
-                        )
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f), CircleShape)
+                                .clickable {
+                                    scope.launch {
+                                        val last = listState.layoutInfo.totalItemsCount - 1
+                                        if (last >= 0) listState.animateScrollToItem(last)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideIcon(
+                                LucideR.drawable.lucide_ic_chevron_down,
+                                "Jump to latest",
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                                Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
