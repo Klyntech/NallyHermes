@@ -665,7 +665,7 @@ private fun FloatingNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
         Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 8.dp),
+            .padding(horizontal = 28.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         val tabs = AppTab.entries
@@ -673,62 +673,116 @@ private fun FloatingNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
         val tabWidth = trackWidth / tabs.size
         val indicatorOffset by animateDpAsState(
             targetValue = tabWidth * selected.ordinal,
-            animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f),
+            animationSpec = spring(dampingRatio = 0.84f, stiffness = 420f),
             label = "navPillOffset"
         )
+        val glassShape = RoundedCornerShape(22.dp)
+        val activeShape = RoundedCornerShape(16.dp)
 
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .clip(RoundedCornerShape(25.dp))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f), RoundedCornerShape(25.dp))
+                .height(52.dp)
+                .clip(glassShape)
+                // Glass base
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.04f),
+                            Color.Black.copy(alpha = 0.28f)
+                        )
+                    )
+                )
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.28f),
+                            Color.White.copy(alpha = 0.06f),
+                            Color.Black.copy(alpha = 0.18f)
+                        )
+                    ),
+                    shape = glassShape
+                )
         ) {
-            // Sliding Spotify-style selection pill
+            // Fine grain texture
+            Canvas(Modifier.fillMaxSize()) {
+                val step = 3.2f
+                var y = 0f
+                var row = 0
+                while (y < size.height) {
+                    var x = if (row % 2 == 0) 0f else step * 0.5f
+                    while (x < size.width) {
+                        val n = ((x * 12.9898f + y * 78.233f) % 1f)
+                        val a = if (n > 0.72f) 0.045f else 0.018f
+                        drawCircle(
+                            color = Color.White.copy(alpha = a),
+                            radius = 0.55f,
+                            center = Offset(x, y)
+                        )
+                        x += step
+                    }
+                    y += step
+                    row++
+                }
+            }
+
+            // Sliding active segment
             Box(
                 Modifier
                     .offset(x = indicatorOffset)
                     .width(tabWidth)
                     .fillMaxHeight()
-                    .padding(5.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
+                    .clip(activeShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f))
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), activeShape)
             )
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+
+            Row(
+                Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 tabs.forEach { tab ->
                     val active = selected == tab
                     val iconColor by animateColorAsState(
-                        if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                        animationSpec = tween(180, easing = FastOutSlowInEasing),
                         label = "navIcon"
                     )
+                    val labelColor by animateColorAsState(
+                        if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                        animationSpec = tween(180, easing = FastOutSlowInEasing),
+                        label = "navLabel"
+                    )
                     val scale by animateFloatAsState(
-                        targetValue = if (active) 1.06f else 1f,
-                        animationSpec = spring(dampingRatio = 0.7f, stiffness = 420f),
+                        targetValue = if (active) 1.04f else 1f,
+                        animationSpec = spring(dampingRatio = 0.75f, stiffness = 480f),
                         label = "navIconScale"
                     )
                     Column(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clickable { onSelect(tab) }
-                            .padding(vertical = 8.dp),
+                            .clickable { onSelect(tab) },
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.Center
                     ) {
                         LucideIcon(
                             tab.icon,
                             tab.label,
                             iconColor,
                             Modifier
-                                .size(20.dp)
+                                .size(18.dp)
                                 .graphicsLayer { scaleX = scale; scaleY = scale }
                         )
+                        Spacer(Modifier.height(2.dp))
                         Text(
                             tab.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp),
+                            color = labelColor,
                             fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium
                         )
                     }
