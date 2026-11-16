@@ -32,6 +32,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -762,11 +763,15 @@ private fun FloatingNavigation(selected: AppTab, onSelect: (AppTab) -> Unit) {
                         animationSpec = spring(dampingRatio = 0.75f, stiffness = 480f),
                         label = "navIconScale"
                     )
+                    val interaction = remember { MutableInteractionSource() }
                     Column(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clickable { onSelect(tab) },
+                            .clickable(
+                                interactionSource = interaction,
+                                indication = null
+                            ) { onSelect(tab) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
