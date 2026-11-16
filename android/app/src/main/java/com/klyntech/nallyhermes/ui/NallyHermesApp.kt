@@ -753,8 +753,8 @@ private fun WelcomeScreen(onPrompt: (String) -> Unit, modifier: Modifier = Modif
 }
 
 @Composable
-private fun UserMessage(text: String, status: String) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun UserMessage(text: String, status: String?, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.98f), shape = RoundedCornerShape(21.dp, 21.dp, 7.dp, 21.dp)) {
             Text(text, Modifier.padding(horizontal = 17.dp, vertical = 12.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
         }
@@ -767,7 +767,7 @@ private fun UserMessage(text: String, status: String) {
 
 @Composable
 private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
-    Column(modifier,Modifier.fillMaxWidth().padding(end = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.fillMaxWidth().padding(end = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Box(Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
                 LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.primary, Modifier.size(12.dp))
