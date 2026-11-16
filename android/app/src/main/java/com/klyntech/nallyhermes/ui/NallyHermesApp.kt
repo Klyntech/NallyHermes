@@ -188,14 +188,19 @@ fun NallyHermesApp(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Image(
-            painter = painterResource(R.drawable.spiderman_bg),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)))
+    // Auth screens get a solid canvas (no photo bleed at status / nav bars).
+    // Paired app keeps the branded background treatment.
+    val onAuthSurface = !paired || showPairingCode
+    Box(Modifier.fillMaxSize().background(if (onAuthSurface) Color(0xFF0B0C0B) else Color.Transparent)) {
+        if (!onAuthSurface) {
+            Image(
+                painter = painterResource(R.drawable.spiderman_bg),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)))
+        }
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
@@ -333,6 +338,7 @@ private fun TelegramLoginScreen(
 
     Box(Modifier.fillMaxSize().background(canvas)) {
         PolishedLoginBackdrop()
+        // Full-bleed solid canvas; only content respects system insets
         Column(
             Modifier
                 .fillMaxSize()
