@@ -36,7 +36,7 @@ internal data class SyncSnapshot(
     val activity: MobileActivitySnapshot?
 )
 
-internal data class TelegramLoginChallenge(
+data class TelegramLoginChallenge(
     val nonce: String,
     val clientId: String,
     val redirectUri: String,
@@ -94,8 +94,10 @@ internal class MobileApi(context: Context) {
         val body = JSONObject().toString().toRequestBody(jsonType)
         val response = execute(Request.Builder().url(endpoint("/api/mobile/login/challenge")).post(body).build())
         val scopesJson = response.optJSONArray("scopes") ?: JSONArray()
-        val scopes = buildList {
-            for (index in 0 until scopesJson.length()) scopes.add(scopesJson.optString(index))
+        val scopes = buildList<String> {
+            for (index in 0 until scopesJson.length()) {
+                add(scopesJson.optString(index))
+            }
         }
         val nonce = response.optString("nonce")
         val clientId = response.optString("clientId")
