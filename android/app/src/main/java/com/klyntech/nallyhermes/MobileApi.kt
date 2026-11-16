@@ -57,6 +57,13 @@ internal class MobileApi(context: Context) {
     val isPaired: Boolean
         get() = !preferences.getString("access_token", null).isNullOrBlank()
 
+    val hasCompletedInitialSync: Boolean
+        get() = preferences.getBoolean("initial_sync_done", false)
+
+    fun markInitialSyncComplete() {
+        preferences.edit().putBoolean("initial_sync_done", true).apply()
+    }
+
     private fun endpoint(path: String): String {
         val raw = baseUrl.trim().trimEnd('/')
         require(raw.startsWith("https://", ignoreCase = true)) { "A secure connection is unavailable." }
@@ -75,7 +82,7 @@ internal class MobileApi(context: Context) {
             val text = response.body?.string().orEmpty()
             val body = try { JSONObject(text) } catch (_: Exception) { JSONObject() }
             if (!response.isSuccessful) {
-                if (response.code == 401) preferences.edit().remove("access_token").apply()
+                if (response.code == 401) preferences.edit().remove("access_token").remove("initial_sync_done").apply()
                 throw IllegalStateException(body.optString("error").ifBlank { "Server returned HTTP ${response.code}." })
             }
             body
@@ -164,6 +171,6 @@ internal class MobileApi(context: Context) {
     suspend fun revoke() {
         if (!isPaired) return
         execute(request("/api/mobile/session").delete().build())
-        preferences.edit().remove("access_token").apply()
+        preferences.edit().remove("access_token").remove("initial_sync_done").apply()
     }
 }
