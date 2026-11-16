@@ -556,15 +556,11 @@ private fun TelegramLoginScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { providerNote = "Google sign-in is coming in a later build." }
                 ) {
-                    Box(
-                        Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("G", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
+                    Image(
+                        painter = painterResource(R.drawable.ic_google_brand),
+                        contentDescription = "Google",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
                 LoginProviderChip(
                     label = "GitHub",
@@ -574,7 +570,7 @@ private fun TelegramLoginScreen(
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_github_brand),
-                        contentDescription = null,
+                        contentDescription = "GitHub",
                         colorFilter = ColorFilter.tint(Color.White),
                         modifier = Modifier.size(18.dp)
                     )
@@ -585,7 +581,11 @@ private fun TelegramLoginScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { providerNote = "Email sign-in is coming in a later build." }
                 ) {
-                    LucideIcon(LucideR.drawable.lucide_ic_message_circle, null, Color.White, Modifier.size(18.dp))
+                    Image(
+                        painter = painterResource(R.drawable.ic_email_brand),
+                        contentDescription = "Email",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
