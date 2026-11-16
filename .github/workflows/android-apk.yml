@@ -43,9 +43,25 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+          cache-read-only: false
 
       - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.internal.http.connectionTimeout=120000 -Dorg.gradle.internal.http.socketTimeout=120000"
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "Build attempt ${attempt}/3"
+            if gradle --no-daemon --refresh-dependencies :app:assembleDebug; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "All build attempts failed"
+              exit 1
+            fi
+            echo "Transient dependency failure (often Maven 429). Waiting before retry..."
+            sleep $((attempt * 45))
+          done
 
       - name: Record APK signing certificate
         run: |
