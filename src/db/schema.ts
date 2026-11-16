@@ -20,6 +20,23 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
 
+
+/** Linked login providers (Google / GitHub / …) for the same Nally user. */
+export const userIdentities = pgTable("user_identities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  providerUserId: text("provider_user_id").notNull(),
+  email: text("email"),
+  displayName: text("display_name"),
+  /** Snapshot of Telegram chat id so OAuth re-login can mint a mobile session. */
+  telegramChatId: text("telegram_chat_id"),
+  linkedAt: timestamp("linked_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("user_identities_provider_uid_idx").on(table.provider, table.providerUserId),
+  index("user_identities_user_id_idx").on(table.userId)
+]);
+
 export const academicProfiles = pgTable("academic_profiles", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
