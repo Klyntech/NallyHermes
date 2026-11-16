@@ -8,6 +8,8 @@
         </intent>
     </queries>
     <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:label="NallyHermes"
         android:supportsRtl="true"
