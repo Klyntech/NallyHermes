@@ -1186,7 +1186,11 @@ private fun ThinkingDots() {
 private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit, onVoice: () -> Unit, enabled: Boolean) {
     var trayOpen by rememberSaveable { mutableStateOf(false) }
     val glassShape = RoundedCornerShape(26.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, top = 4.dp, bottom = 2.dp)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 2.dp)
+    ) {
         AnimatedVisibility(visible = trayOpen) {
             ToolShortcutTray(
                 onSelect = { prefix ->
