@@ -4,9 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,7 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier.Modifier
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -39,7 +42,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * Full-native Markdown + GFM table renderer for Nally chat bubbles.
- * Handles headings, emphasis, strikethrough, inline code, links, lists,
+ * Headings, emphasis, strikethrough, inline code, links, lists,
  * fenced code blocks, blockquotes, horizontal rules, and pipe tables.
  */
 @Composable
@@ -63,7 +66,7 @@ fun MarkdownContent(
                     is MdBlock.OrderedList -> MarkdownOrderedList(block.items, textColor)
                     is MdBlock.CodeBlock -> MarkdownCodeBlock(block)
                     is MdBlock.Quote -> MarkdownQuote(block.text, mutedColor)
-                    is MdBlock.Table -> MarkdownTable(block, textColor, mutedColor)
+                    is MdBlock.Table -> MarkdownTable(block, textColor)
                     is MdBlock.Divider -> HorizontalDivider(
                         modifier = Modifier.padding(vertical = 4.dp),
                         color = mutedColor.copy(alpha = 0.35f)
@@ -94,8 +97,7 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
     val blocks = mutableListOf<MdBlock>()
     var i = 0
     while (i < lines.size) {
-        val line = lines[i]
-        val trimmed = line.trim()
+        val trimmed = lines[i].trim()
 
         if (trimmed.isEmpty()) {
             blocks.add(MdBlock.Blank)
@@ -103,7 +105,6 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
             continue
         }
 
-        // Fenced code block
         if (trimmed.startsWith("```")) {
             val lang = trimmed.removePrefix("```").trim().ifBlank { null }
             val body = StringBuilder()
@@ -113,12 +114,11 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
                 body.append(lines[i])
                 i++
             }
-            if (i < lines.size) i++ // closing fence
+            if (i < lines.size) i++
             blocks.add(MdBlock.CodeBlock(lang, body.toString()))
             continue
         }
 
-        // Table: header + separator + rows
         if (isTableHeader(lines, i)) {
             val headers = splitTableRow(lines[i])
             val aligns = parseAlignRow(lines[i + 1])
@@ -132,7 +132,6 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
             continue
         }
 
-        // Heading
         val heading = Regex("^(#{1,6})\\s+(.+)$").find(trimmed)
         if (heading != null) {
             blocks.add(MdBlock.Heading(heading.groupValues[1].length, heading.groupValues[2].trim()))
@@ -140,14 +139,12 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
             continue
         }
 
-        // Horizontal rule
         if (Regex("^(-{3,}|\\*{3,}|_{3,})$").matches(trimmed)) {
             blocks.add(MdBlock.Divider)
             i++
             continue
         }
 
-        // Blockquote
         if (trimmed.startsWith(">")) {
             val quoteLines = mutableListOf<String>()
             while (i < lines.size && lines[i].trim().startsWith(">")) {
@@ -158,7 +155,6 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
             continue
         }
 
-        // Unordered list
         if (Regex("^[-*+]\\s+.+$").matches(trimmed)) {
             val items = mutableListOf<String>()
             while (i < lines.size && Regex("^[-*+]\\s+.+$").matches(lines[i].trim())) {
@@ -169,7 +165,6 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
             continue
         }
 
-        // Ordered list
         if (Regex("^\\d+[.)]\\s+.+$").matches(trimmed)) {
             val items = mutableListOf<String>()
             while (i < lines.size && Regex("^\\d+[.)]\\s+.+$").matches(lines[i].trim())) {
@@ -180,7 +175,6 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
             continue
         }
 
-        // Paragraph (merge consecutive non-empty, non-special lines)
         val para = StringBuilder(trimmed)
         i++
         while (i < lines.size) {
@@ -195,7 +189,7 @@ private fun parseMarkdownBlocks(source: String): List<MdBlock> {
         }
         blocks.add(MdBlock.Paragraph(para.toString()))
     }
-    return blocks.filterNot { it is MdBlock.Blank && blocks.indexOf(it).let { idx -> idx == 0 || idx == blocks.lastIndex } }
+    return blocks.dropWhile { it is MdBlock.Blank }.dropLastWhile { it is MdBlock.Blank }
 }
 
 private fun isTableHeader(lines: List<String>, index: Int): Boolean {
@@ -297,27 +291,17 @@ private fun MarkdownCodeBlock(block: MdBlock.CodeBlock) {
 
 @Composable
 private fun MarkdownQuote(text: String, muted: Color) {
-    Row(Modifier.fillMaxWidth()) {
-        Spacer(
-            Modifier
-                .width(3.dp)
-                .height(IntrinsicSizeMinPlaceholder)
-                .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f))
-        )
-        // Use a fixed visual bar via border instead of intrinsic height gymnastics
-    }
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(start = 0.dp)) {
-            Spacer(
+            Box(
                 Modifier
                     .width(3.dp)
-                    .padding(vertical = 0.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
             )
             InlineMarkdownText(
                 text,
@@ -329,14 +313,10 @@ private fun MarkdownQuote(text: String, muted: Color) {
     }
 }
 
-// Dummy to satisfy unused path above — quote uses Surface path
-private val IntrinsicSizeMinPlaceholder = 1.dp
-
 @Composable
 private fun MarkdownTable(
     block: MdBlock.Table,
-    textColor: Color,
-    mutedColor: Color
+    textColor: Color
 ) {
     val scheme = MaterialTheme.colorScheme
     val colCount = maxOf(block.headers.size, block.rows.maxOfOrNull { it.size } ?: 0)
@@ -351,12 +331,10 @@ private fun MarkdownTable(
             .border(1.dp, scheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
             .background(scheme.surface.copy(alpha = 0.92f))
     ) {
-        // Header
         Row(Modifier.background(scheme.primaryContainer.copy(alpha = 0.55f))) {
             for (c in 0 until colCount) {
-                val cell = block.headers.getOrElse(c) { "" }
                 TableCell(
-                    text = cell,
+                    text = block.headers.getOrElse(c) { "" },
                     bold = true,
                     color = textColor,
                     align = block.aligns.getOrElse(c) { Align.LEFT }
@@ -372,9 +350,8 @@ private fun MarkdownTable(
                 )
             ) {
                 for (c in 0 until colCount) {
-                    val cell = row.getOrElse(c) { "" }
                     TableCell(
-                        text = cell,
+                        text = row.getOrElse(c) { "" },
                         bold = false,
                         color = textColor,
                         align = block.aligns.getOrElse(c) { Align.LEFT }
@@ -396,19 +373,18 @@ private fun TableCell(
     align: Align
 ) {
     val style = MaterialTheme.typography.bodySmall.copy(
-        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal
+        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+        textAlign = when (align) {
+            Align.LEFT -> TextAlign.Start
+            Align.CENTER -> TextAlign.Center
+            Align.RIGHT -> TextAlign.End
+        }
     )
-    val annotated = remember(text) { buildInlineAnnotated(text, color) }
+    val annotated = remember(text, color) { buildInlineAnnotated(text, color) }
     val uriHandler = LocalUriHandler.current
     ClickableText(
         text = annotated,
-        style = style.copy(
-            textAlign = when (align) {
-                Align.LEFT -> androidx.compose.ui.text.style.TextAlign.Start
-                Align.CENTER -> androidx.compose.ui.text.style.TextAlign.Center
-                Align.RIGHT -> androidx.compose.ui.text.style.TextAlign.End
-            }
-        ),
+        style = style,
         modifier = Modifier
             .width(128.dp)
             .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -442,7 +418,6 @@ private fun InlineMarkdownText(
 }
 
 private fun buildInlineAnnotated(source: String, baseColor: Color): AnnotatedString {
-    // Patterns: **bold**, *italic*, ~~strike~~, `code`, [label](url)
     val pattern = Regex(
         """(\*\*(.+?)\*\*)|(\*(.+?)\*)|(~~(.+?)~~)|(`([^`]+)`)|(\[([^\]]+)\]\(([^)]+)\))"""
     )
@@ -455,22 +430,22 @@ private fun buildInlineAnnotated(source: String, baseColor: Color): AnnotatedStr
                 }
             }
             when {
-                match.groups[2] != null -> { // **bold**
+                match.groups[2] != null -> {
                     withStyle(SpanStyle(color = baseColor, fontWeight = FontWeight.Bold)) {
                         append(match.groupValues[2])
                     }
                 }
-                match.groups[4] != null -> { // *italic*
+                match.groups[4] != null -> {
                     withStyle(SpanStyle(color = baseColor, fontStyle = FontStyle.Italic)) {
                         append(match.groupValues[4])
                     }
                 }
-                match.groups[6] != null -> { // ~~strike~~
+                match.groups[6] != null -> {
                     withStyle(SpanStyle(color = baseColor, textDecoration = TextDecoration.LineThrough)) {
                         append(match.groupValues[6])
                     }
                 }
-                match.groups[8] != null -> { // `code`
+                match.groups[8] != null -> {
                     withStyle(
                         SpanStyle(
                             color = baseColor,
@@ -481,7 +456,7 @@ private fun buildInlineAnnotated(source: String, baseColor: Color): AnnotatedStr
                         append(match.groupValues[8])
                     }
                 }
-                match.groups[10] != null -> { // [label](url)
+                match.groups[10] != null -> {
                     val label = match.groupValues[10]
                     val url = match.groupValues[11]
                     val start = length
