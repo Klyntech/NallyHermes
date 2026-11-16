@@ -4,12 +4,17 @@ import {
   authenticateMobileSession,
   consumeTelegramLoginChallenge,
   createMobileSessionForTelegramUser,
+  createMobileSessionFromIdentity,
   createTelegramLoginChallenge,
+  linkUserIdentity,
+  listLinkedIdentities,
   pairMobileSession,
   revokeMobileSession,
+  unlinkUserIdentity,
   type MobileSession
 } from "../db/mobileStore.js";
 import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
+import { OAuthVerificationError, verifyGitHubAccessToken, verifyGoogleIdToken } from "./oauth.js";
 
 const MAX_REQUEST_BYTES = 8_192;
 const CLIENT_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -138,6 +143,61 @@ export async function handleMobileApiRequest(
       return;
     }
 
+    // Public OAuth sign-in (requires a prior link from an already-paired device)
+    if (pathname === "/api/mobile/auth/google" && req.method === "POST") {
+      const body = await readJson(req);
+      const idToken = typeof body?.idToken === "string" ? body.idToken : "";
+      try {
+        const identity = await verifyGoogleIdToken(idToken);
+        const created = await createMobileSessionFromIdentity("google", identity.providerUserId);
+        if (!created) {
+          sendJson(res, 404, {
+            error: "No Nally account is linked to this Google account. Pair with a mobile code first, then link Google in Settings."
+          });
+          return;
+        }
+        sendJson(res, 200, {
+          accessToken: created.token,
+          expiresAt: created.expiresAt.toISOString(),
+          provider: "google"
+        });
+      } catch (error) {
+        if (error instanceof OAuthVerificationError) {
+          sendJson(res, 401, { error: error.message });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    if (pathname === "/api/mobile/auth/github" && req.method === "POST") {
+      const body = await readJson(req);
+      const accessToken = typeof body?.accessToken === "string" ? body.accessToken : "";
+      try {
+        const identity = await verifyGitHubAccessToken(accessToken);
+        const created = await createMobileSessionFromIdentity("github", identity.providerUserId);
+        if (!created) {
+          sendJson(res, 404, {
+            error: "No Nally account is linked to this GitHub account. Pair with a mobile code first, then link GitHub in Settings."
+          });
+          return;
+        }
+        sendJson(res, 200, {
+          accessToken: created.token,
+          expiresAt: created.expiresAt.toISOString(),
+          provider: "github"
+        });
+      } catch (error) {
+        if (error instanceof OAuthVerificationError) {
+          sendJson(res, 401, { error: error.message });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
     const token = getBearerToken(req);
     const session = token ? await (deps.authenticateSession ?? authenticateMobileSession)(token) : null;
     if (!session) {
@@ -146,7 +206,87 @@ export async function handleMobileApiRequest(
     }
 
     if (pathname === "/api/mobile/me" && req.method === "GET") {
-      sendJson(res, 200, { linked: true, expiresAt: session.expiresAt.toISOString() });
+      const identities = await listLinkedIdentities(session.userId);
+      sendJson(res, 200, {
+        linked: true,
+        expiresAt: session.expiresAt.toISOString(),
+        identities: identities.map((row) => ({
+          provider: row.provider,
+          email: row.email,
+          displayName: row.displayName,
+          linkedAt: row.linkedAt.toISOString()
+        }))
+      });
+      return;
+    }
+
+    if (pathname === "/api/mobile/account/identities" && req.method === "GET") {
+      const identities = await listLinkedIdentities(session.userId);
+      sendJson(res, 200, {
+        identities: identities.map((row) => ({
+          provider: row.provider,
+          email: row.email,
+          displayName: row.displayName,
+          linkedAt: row.linkedAt.toISOString()
+        }))
+      });
+      return;
+    }
+
+    if (pathname === "/api/mobile/account/link" && req.method === "POST") {
+      const body = await readJson(req);
+      const provider = typeof body?.provider === "string" ? body.provider : "";
+      try {
+        const verified = provider === "google"
+          ? await verifyGoogleIdToken(typeof body?.idToken === "string" ? body.idToken : "")
+          : provider === "github"
+            ? await verifyGitHubAccessToken(typeof body?.accessToken === "string" ? body.accessToken : "")
+            : null;
+        if (!verified) {
+          sendJson(res, 400, { error: "Provider must be google or github." });
+          return;
+        }
+        const linked = await linkUserIdentity({
+          userId: session.userId,
+          telegramChatId: session.telegramChatId,
+          provider: verified.provider,
+          providerUserId: verified.providerUserId,
+          email: verified.email,
+          displayName: verified.displayName
+        });
+        sendJson(res, 200, {
+          provider: linked.provider,
+          email: linked.email,
+          displayName: linked.displayName,
+          linkedAt: linked.linkedAt.toISOString()
+        });
+      } catch (error) {
+        if (error instanceof OAuthVerificationError) {
+          sendJson(res, 401, { error: error.message });
+          return;
+        }
+        if (error instanceof Error && error.message === "identity_claimed") {
+          sendJson(res, 409, { error: "That login is already linked to another Nally account." });
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    if (pathname === "/api/mobile/account/identities" && req.method === "DELETE") {
+      const body = await readJson(req);
+      const provider = typeof body?.provider === "string" ? body.provider.trim().toLowerCase() : "";
+      if (provider !== "google" && provider !== "github") {
+        sendJson(res, 400, { error: "Provider must be google or github." });
+        return;
+      }
+      const removed = await unlinkUserIdentity(session.userId, provider);
+      if (!removed) {
+        sendJson(res, 404, { error: "That login is not linked on this account." });
+        return;
+      }
+      sendJson(res, 200, { unlinked: true, provider });
       return;
     }
 
