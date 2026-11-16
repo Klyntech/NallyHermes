@@ -78,6 +78,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -267,54 +268,56 @@ fun NallyHermesApp(
                         onConnected = { paired = true; showPairingCode = false; authFeedback = null },
                         onBack = { authFeedback = null; showPairingCode = false }
                     )
-                    else -> AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = {
-                            // Spotify direction + Grok restraint
-                            val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                            (
-                                fadeIn(animationSpec = tween(280, easing = FastOutSlowInEasing)) +
-                                slideInHorizontally(
-                                    animationSpec = tween(320, easing = FastOutSlowInEasing),
-                                    initialOffsetX = { width -> direction * (width / 10) }
-                                ) +
-                                scaleIn(initialScale = 0.988f, animationSpec = tween(320, easing = FastOutSlowInEasing))
-                            ) togetherWith (
-                                fadeOut(animationSpec = tween(200, easing = FastOutSlowInEasing)) +
-                                slideOutHorizontally(
-                                    animationSpec = tween(260, easing = FastOutSlowInEasing),
-                                    targetOffsetX = { width -> -direction * (width / 14) }
-                                ) +
-                                scaleOut(targetScale = 0.988f, animationSpec = tween(220, easing = FastOutSlowInEasing))
-                            )
-                        },
-                        label = "tabTransition"
-                    ) { tab ->
-                        tabStateHolder.SaveableStateProvider(tab.name) {
-                            when (tab) {
-                                AppTab.CHAT -> ChatScreen(
-                                    messages = messages,
-                                    activity = activity,
-                                    paired = paired,
-                                    connectionMessage = connectionMessage,
-                                    listState = chatListState,
-                                    draft = chatDraft,
-                                    onDraftChange = { chatDraft = it },
-                                    onSend = { text ->
-                                        scope.launch {
-                                            try {
-                                                api.sendMessage(UUID.randomUUID().toString(), text)
-                                                connectionMessage = null
-                                            } catch (error: Exception) {
-                                                connectionMessage = error.message ?: "Message could not be sent."
-                                            }
+                    else -> // Chat stays composed so returning from Voice/Settings is instant.
+                    // Voice & Settings are light — they can enter/exit freely.
+                    Box(Modifier.fillMaxSize()) {
+                        val chatVisible = selectedTab == AppTab.CHAT
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .zIndex(if (chatVisible) 1f else 0f)
+                                .graphicsLayer { alpha = if (chatVisible) 1f else 0f }
+                        ) {
+                            ChatScreen(
+                                messages = messages,
+                                activity = activity,
+                                paired = paired,
+                                connectionMessage = connectionMessage,
+                                listState = chatListState,
+                                draft = chatDraft,
+                                onDraftChange = { chatDraft = it },
+                                onSend = { text ->
+                                    scope.launch {
+                                        try {
+                                            api.sendMessage(UUID.randomUUID().toString(), text)
+                                            connectionMessage = null
+                                        } catch (error: Exception) {
+                                            connectionMessage = error.message ?: "Message could not be sent."
                                         }
-                                    },
-                                    onSettings = { selectedTabName = AppTab.SETTINGS.name },
-                                    onVoice = { selectedTabName = AppTab.VOICE.name }
-                                )
-                                AppTab.VOICE -> VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
-                                AppTab.SETTINGS -> SettingsScreen(
+                                    }
+                                },
+                                onSettings = { selectedTabName = AppTab.SETTINGS.name },
+                                onVoice = { selectedTabName = AppTab.VOICE.name }
+                            )
+                        }
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = selectedTab == AppTab.VOICE,
+                            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)),
+                            exit = fadeOut(tween(120)),
+                            modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.VOICE) 2f else 0f)
+                        ) {
+                            VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
+                        }
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = selectedTab == AppTab.SETTINGS,
+                            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)),
+                            exit = fadeOut(tween(120)),
+                            modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.SETTINGS) 2f else 0f)
+                        ) {
+                            tabStateHolder.SaveableStateProvider(AppTab.SETTINGS.name) {
+                                SettingsScreen(
                                     api = api,
                                     onUnlinked = {
                                         paired = false
