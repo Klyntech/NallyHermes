@@ -83,6 +83,9 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
@@ -181,6 +184,7 @@ fun NallyHermesApp(
                             showPairingCode = false
                             loginNonce = null
                             authFeedback = null
+                            syncReady = false
                         } catch (error: Exception) {
                             authFeedback = error.message ?: "Telegram sign-in could not be completed."
                         } finally {
@@ -266,9 +270,15 @@ fun NallyHermesApp(
                         feedback = authFeedback,
                         onBusyChange = { authBusy = it },
                         onFeedback = { authFeedback = it },
-                        onConnected = { paired = true; showPairingCode = false; authFeedback = null },
+                        onConnected = {
+                            paired = true
+                            showPairingCode = false
+                            authFeedback = null
+                            syncReady = false
+                        },
                         onBack = { authFeedback = null; showPairingCode = false }
                     )
+                    "sync" -> SyncProgressScreen()
                     else -> // Chat stays composed so returning from Voice/Settings is instant.
                     // Voice & Settings are light — they can enter/exit freely.
                     Box(Modifier.fillMaxSize()) {
@@ -581,6 +591,120 @@ private fun PolishedLoginBackdrop() {
             ),
             radius = w * 0.35f,
             center = sheenCenter
+        )
+    }
+}
+
+@Composable
+private fun SyncProgressScreen() {
+    val lines = remember {
+        listOf(
+            "Syncing in progress…",
+            "This will only take a minute.",
+            "Linking your private Telegram chat…",
+            "Pulling your latest messages…",
+            "Almost there — setting things up.",
+            "Securing your session…",
+            "Warming up Nally for you…",
+            "Hang tight — sync is underway."
+        )
+    }
+    var lineIndex by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2_800)
+            lineIndex = (lineIndex + 1) % lines.size
+        }
+    }
+    val headline = lines[lineIndex]
+    val sub = remember(lineIndex) {
+        listOf(
+            "We’re matching this device with your NallyHermes Telegram chat.",
+            "Messages will appear here the moment sync finishes.",
+            "You can leave this screen open — we’ll move you to chat automatically.",
+            "Private, secure, and tied to the same chat you already use."
+        )[lineIndex % 4]
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0C0B))
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 36.dp)
+        ) {
+            WindowsStyleSpinner(Modifier.size(56.dp))
+            Spacer(Modifier.height(28.dp))
+            Text(
+                headline,
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                sub,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF9A9E96),
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+            Spacer(Modifier.height(28.dp))
+            Text(
+                "Please keep the app open",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF7A7E76)
+            )
+        }
+    }
+}
+
+@Composable
+private fun WindowsStyleSpinner(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "winSpinner")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1_050, easing = LinearEasing), RepeatMode.Restart),
+        label = "spin"
+    )
+    val accent = MaterialTheme.colorScheme.primary
+    Canvas(modifier) {
+        val stroke = size.minDimension * 0.09f
+        val inset = stroke / 2f
+        // Track
+        drawArc(
+            color = Color.White.copy(alpha = 0.10f),
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - stroke, size.height - stroke),
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+        // Active arc — Windows 11 style short leading segment
+        drawArc(
+            color = accent,
+            startAngle = rotation,
+            sweepAngle = 88f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - stroke, size.height - stroke),
+            style = Stroke(width = stroke, cap = StrokeCap.Round)
+        )
+        // Soft trailing hint
+        drawArc(
+            color = accent.copy(alpha = 0.28f),
+            startAngle = rotation - 42f,
+            sweepAngle = 36f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - stroke, size.height - stroke),
+            style = Stroke(width = stroke * 0.85f, cap = StrokeCap.Round)
         )
     }
 }
@@ -1027,41 +1151,148 @@ private fun ThinkingDots() {
 @Composable
 private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit, onVoice: () -> Unit, enabled: Boolean) {
     var trayOpen by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 13.dp, vertical = 8.dp)) {
+    val glassShape = RoundedCornerShape(26.dp)
+    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 14.dp, vertical = 8.dp)) {
         AnimatedVisibility(visible = trayOpen) {
-            ToolShortcutTray(onSelect = { prefix -> onValueChange(if (value.isBlank()) prefix else "$value$prefix"); trayOpen = false }, modifier = Modifier.padding(bottom = 8.dp))
+            ToolShortcutTray(
+                onSelect = { prefix ->
+                    onValueChange(if (value.isBlank()) prefix else "$value$prefix")
+                    trayOpen = false
+                },
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
         }
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(27.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.66f), RoundedCornerShape(27.dp)).padding(horizontal = 16.dp, vertical = 11.dp)) {
-            Box(Modifier.fillMaxWidth().padding(top = 1.dp, bottom = 9.dp)) {
-                if (value.isEmpty()) Text(if (enabled) "Message NallyHermes · / for tools" else "Sign in to send a message", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                BasicTextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(), textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { onSend() }), readOnly = !enabled, maxLines = 5)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                ComposerIcon(LucideR.drawable.lucide_ic_plus, "Show tools", trayOpen) { trayOpen = !trayOpen }
-                Spacer(Modifier.width(8.dp))
-                ComposerIcon(LucideR.drawable.lucide_ic_panels_top_left, "Ask Nally to use a tool", false) {
-                    val promptStarter = "Use the right available tool to "
-                    onValueChange(if (value.isBlank()) promptStarter else "$value$promptStarter")
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(glassShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.04f),
+                            Color.Black.copy(alpha = 0.22f)
+                        )
+                    )
+                )
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.26f),
+                            Color.White.copy(alpha = 0.06f),
+                            Color.Black.copy(alpha = 0.16f)
+                        )
+                    ),
+                    shape = glassShape
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            // Subtle grain
+            Box {
+                Canvas(Modifier.matchParentSize()) {
+                    val step = 3.4f
+                    var y = 0f
+                    var row = 0
+                    while (y < size.height) {
+                        var x = if (row % 2 == 0) 0f else step * 0.5f
+                        while (x < size.width) {
+                            val n = (x * 12.9898f + y * 78.233f) % 1f
+                            drawCircle(
+                                color = Color.White.copy(alpha = if (n > 0.74f) 0.04f else 0.015f),
+                                radius = 0.5f,
+                                center = Offset(x, y)
+                            )
+                            x += step
+                        }
+                        y += step
+                        row++
+                    }
                 }
-                Spacer(Modifier.weight(1f))
-                ComposerIcon(LucideR.drawable.lucide_ic_mic, "Voice setup", false, onVoice)
-                Spacer(Modifier.width(7.dp))
-                IconButton(onClick = onSend, enabled = enabled && value.isNotBlank(), modifier = Modifier.size(40.dp).clip(CircleShape).background(if (enabled && value.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)) {
-                    LucideIcon(LucideR.drawable.lucide_ic_arrow_up, "Send message", if (enabled && value.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(20.dp))
+                Column {
+                    Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp)) {
+                        if (value.isEmpty()) {
+                            Text(
+                                if (enabled) "Message NallyHermes · / for tools" else "Sign in to send a message",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        BasicTextField(
+                            value = value,
+                            onValueChange = onValueChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { onSend() }),
+                            readOnly = !enabled,
+                            maxLines = 5
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        ComposerIcon(LucideR.drawable.lucide_ic_plus, "Show tools", trayOpen) { trayOpen = !trayOpen }
+                        Spacer(Modifier.weight(1f))
+                        ComposerIcon(LucideR.drawable.lucide_ic_mic, "Voice setup", false, onVoice)
+                        Spacer(Modifier.width(6.dp))
+                        val canSend = enabled && value.isNotBlank()
+                        val sendInteraction = remember { MutableInteractionSource() }
+                        Box(
+                            Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (canSend) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                )
+                                .clickable(
+                                    enabled = canSend,
+                                    interactionSource = sendInteraction,
+                                    indication = null
+                                ) { onSend() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideIcon(
+                                LucideR.drawable.lucide_ic_arrow_up,
+                                "Send message",
+                                if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
-        Text(if (enabled) "Messages sync with your private Telegram chat" else "Sign in to start a synced conversation", Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(5.dp))
+        Text(
+            "Messages sync with your private Telegram chat",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            modifier = Modifier.padding(horizontal = 6.dp)
+        )
     }
 }
 
 @Composable
 private fun ComposerIcon(icon: Int, description: String, selected: Boolean, onClick: () -> Unit) {
     val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) { LucideIcon(icon, description, tint, Modifier.size(21.dp)) }
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        LucideIcon(icon, description, tint, Modifier.size(20.dp))
+    }
 }
+
 
 @Composable
 private fun ToolShortcutTray(onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
