@@ -42,6 +42,11 @@ const envSchema = z.object({
   LIGHTRAG_QUERY_TIMEOUT_MS: z.coerce.number().int().min(250).max(10_000).default(2_000),
   GOOGLE_CALENDAR_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   GOOGLE_CALENDAR_CLIENT_ID: z.string().optional(),
+  /** OAuth client ID used to verify Google ID tokens for mobile login / link. */
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  /** Optional GitHub OAuth App client id (documentation / future auth-code exchange). */
+  GITHUB_OAUTH_CLIENT_ID: z.string().optional(),
+  GITHUB_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CALENDAR_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CALENDAR_REFRESH_TOKEN: z.string().optional(),
   GOOGLE_CALENDAR_ID: z.string().default("primary"),
