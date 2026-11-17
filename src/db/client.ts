@@ -194,22 +194,22 @@ export async function ensureDatabase(): Promise<void> {
     "CREATE INDEX IF NOT EXISTS academic_profiles_user_id_idx ON academic_profiles(user_id)",
     "CREATE INDEX IF NOT EXISTS academic_documents_user_id_idx ON academic_documents(user_id)",
     "CREATE INDEX IF NOT EXISTS academic_documents_course_idx ON academic_documents(user_id, course)",
-    `CREATE INDEX IF NOT EXISTS academic_documents_native_search_idx ON academic_documents USING GIN (
+    `CREATE INDEX IF NOT EXISTS academic_documents_native_search_idx ON academic_documents USING GIN ((
       setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
       setweight(to_tsvector('english', coalesce(course, '')), 'B') ||
       to_tsvector('english', coalesce(extracted_text, ''))
-    )`,
+    ))`,
     `UPDATE academic_documents
       SET status = 'indexed', error = NULL
       WHERE extracted_text IS NOT NULL
         AND status IN ('extracted', 'indexing', 'extracted_index_failed')`,
-    `CREATE INDEX IF NOT EXISTS memories_native_search_idx ON memories USING GIN (
+    `CREATE INDEX IF NOT EXISTS memories_native_search_idx ON memories USING GIN ((
       setweight(to_tsvector('english', coalesce(content, '')), 'A') ||
       setweight(
         to_tsvector('english', coalesce(subject, '') || ' ' || coalesce(predicate, '') || ' ' || coalesce(object, '')),
         'B'
       )
-    )`,
+    ))`,
     "CREATE INDEX IF NOT EXISTS timetable_entries_user_id_idx ON timetable_entries(user_id)",
     "CREATE INDEX IF NOT EXISTS timetable_entries_schedule_idx ON timetable_entries(user_id, day_of_week, start_time)",
     "CREATE INDEX IF NOT EXISTS assessments_user_id_idx ON assessments(user_id)",
