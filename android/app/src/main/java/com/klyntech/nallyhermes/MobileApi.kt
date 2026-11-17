@@ -42,11 +42,14 @@ data class SyncedMessage(
     val thinking: MessageThinking? = null
 )
 
-internal data class MobileActivitySnapshot(
+data class MobileActivitySnapshot(
     val headline: String,
     val provider: String?,
     val isThinking: Boolean,
-    val requiresTelegramApproval: Boolean
+    val requiresTelegramApproval: Boolean,
+    val steps: List<ThinkingStep> = emptyList(),
+    val elapsedMs: Long = 0L,
+    val startedAt: Long = 0L
 )
 
 internal data class SyncSnapshot(
@@ -199,11 +202,23 @@ internal class MobileApi(context: Context) {
         }
         val activityJson = response.optJSONObject("activity")
         val activity = activityJson?.let {
+            val stepsArr = it.optJSONArray("steps")
+            val steps = buildList {
+                if (stepsArr != null) {
+                    for (t in 0 until stepsArr.length()) {
+                        val st = stepsArr.optJSONObject(t) ?: continue
+                        add(ThinkingStep(text = st.optString("text"), at = st.optLong("at").takeIf { v -> v > 0 }))
+                    }
+                }
+            }
             MobileActivitySnapshot(
                 headline = it.optString("headline", "Thinking…"),
                 provider = it.optString("provider").takeUnless(String::isBlank),
                 isThinking = it.optBoolean("isThinking"),
-                requiresTelegramApproval = it.optBoolean("requiresTelegramApproval")
+                requiresTelegramApproval = it.optBoolean("requiresTelegramApproval"),
+                steps = steps,
+                elapsedMs = it.optLong("elapsedMs"),
+                startedAt = it.optLong("startedAt")
             )
         }
         return SyncSnapshot(rows, response.optLong("nextSequence", afterSequence), activity)
