@@ -113,7 +113,6 @@ import com.klyntech.nallyhermes.MessageSource
 import com.klyntech.nallyhermes.MessageThinking
 import com.klyntech.nallyhermes.ThinkingStep
 import com.klyntech.nallyhermes.SyncedMessage
-import com.klyntech.nallyhermes.MobileActivitySnapshot
 import com.klyntech.nallyhermes.TelegramLoginChallenge
 import com.klyntech.nallyhermes.TelegramLoginEvent
 import com.klyntech.nallyhermes.R
@@ -1578,7 +1577,7 @@ private fun NoticeCard(title: String, message: String) {
 }
 
 @Composable
-fun AgentActivityCard(activity: AgentActivity, modifier: Modifier = Modifier) {
+private fun AgentActivityCard(activity: AgentActivity, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(activity.headline, activity.steps.size) { mutableStateOf(true) }
     val infinite = rememberInfiniteTransition(label = "agentThinking")
     val pulse by infinite.animateFloat(
