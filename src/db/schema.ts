@@ -95,6 +95,8 @@ export const messages = pgTable("messages", {
   sourceChannel: text("source_channel").notNull().default("telegram"),
   sourceMessageId: text("source_message_id"),
   status: text("status").notNull().default("complete"),
+  /** Structured sources + thinking trace for mobile / rich clients */
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [
   index("messages_conversation_id_idx").on(table.conversationId),
