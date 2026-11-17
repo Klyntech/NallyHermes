@@ -113,12 +113,20 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
   const startedAt = Date.now(); let started = false, inputStopped = false, closed = false, audioBytes = 0, frames = 0, outputBytes = 0, lastActivity = Date.now();
   let dg: WebSocket | null = null, tts: WebSocket | null = null, turnId = "", turnInterrupted = false, generation = 0, currentTranscript = "", finalTranscript = "";
   const send = (obj: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
+  // Confirm the transport is up before the client waits forever for Deepgram "ready".
+  send({
+    type: "hello",
+    protocolVersion: 1,
+    voiceEnabled: true,
+    sttConfigured: Boolean(config.DEEPGRAM_API_KEY?.trim()),
+    ttsConfigured: Boolean(config.ELEVENLABS_API_KEY?.trim() && config.ELEVENLABS_VOICE_ID?.trim())
+  });
   const closeUpstream = (s: WebSocket | null) => { if (s && s.readyState < WebSocket.CLOSING) s.close(); };
   const interrupt = () => { if (!turnId || turnInterrupted) return; turnInterrupted = true; generation++; closeUpstream(tts); tts = null; send({ type: "interrupted", turnId }); };
   const terminate = () => { if (closed) return; closed = true; clearInterval(idle); closeUpstream(dg); closeUpstream(tts); cleanup(); if (ws.readyState === WebSocket.OPEN) ws.close(1000, "session ended"); };
   const fail = (code: string, message: string, recoverable = false) => {
     try { send({ type: "error", code, message, recoverable }); } catch { /* ignore */ }
-    setTimeout(() => terminate(), 120);
+    setTimeout(() => terminate(), 400);
   };
   const idle = setInterval(() => { if (Date.now() - lastActivity > IDLE_TIMEOUT_MS || Date.now() - startedAt > MAX_SESSION_MS) fail("session_timeout", "Voice session timed out.", true); }, 5_000);
   const beginAnswer = async (text: string) => {
@@ -172,6 +180,14 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
     const control = parsed.value;
     if (control.type === "start") {
       if (started) { fail("already_started", "Session has already started."); return; }
+      if (!config.DEEPGRAM_API_KEY?.trim()) {
+        fail("stt_unconfigured", "Deepgram is not configured on the server (DEEPGRAM_API_KEY).", true);
+        return;
+      }
+      if (!config.ELEVENLABS_API_KEY?.trim() || !config.ELEVENLABS_VOICE_ID?.trim()) {
+        fail("tts_unconfigured", "ElevenLabs is not configured on the server (ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID).", true);
+        return;
+      }
       started = true;
       try {
         dg = providers.deepgram(control.language ?? config.DEEPGRAM_LANGUAGE);
@@ -196,8 +212,20 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
           if (msg.speech_final) { const utterance = finalTranscript; finalTranscript = ""; currentTranscript = ""; void beginAnswer(utterance); }
         } catch { /* provider keepalive or non-JSON frame */ }
       });
-      socket.on("error", () => { clearTimeout(timer); if (!closed) fail("stt_provider_error", "Speech recognition provider is unavailable.", true); });
-      socket.on("close", () => { clearTimeout(timer); if (!closed) fail("stt_disconnected", "Speech recognition disconnected.", true); });
+      socket.on("error", (err) => {
+        clearTimeout(timer);
+        if (!closed) {
+          const detail = err instanceof Error ? err.message : "provider error";
+          fail("stt_provider_error", `Speech recognition provider is unavailable (${detail}).`, true);
+        }
+      });
+      socket.on("close", (code, reason) => {
+        clearTimeout(timer);
+        if (!closed) {
+          const why = reason?.toString()?.trim() || `code ${code}`;
+          fail("stt_disconnected", `Speech recognition disconnected (${why}). Check DEEPGRAM_API_KEY.`, true);
+        }
+      });
     } else if (!started) fail("start_required", "Send start before other controls.");
     else if (control.type === "ping") send({ type: "pong"});
     else if (control.type === "stop_input") { inputStopped = true; if (dg?.readyState === WebSocket.OPEN) dg.send(JSON.stringify({ type: "Finalize" })); }
