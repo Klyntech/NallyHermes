@@ -57,7 +57,7 @@ const NOT_DISCLOSED =
   /\bnot\s+(?:separately\s+)?disclosed\b|\bnot\s+announced\b|\bundisclosed\b|\bunknown\s+pricing\b|\bn\/a\b(?=.*(?:price|cost|platform))/i;
 const MARKDOWN_TABLE_ROW = /^\s*\|.+\|\s*$/m;
 const PROOF_HINT =
-  /https?:\/\/|source\s*\/\s*last\s*checked|last\s*checked|sha\b|\b[0-9a-f]{7,40}\b|not\s+verified|\bpartial\b/i;
+  /https?:\/\/|sha\b|\b[0-9a-f]{7,40}\b|not\s+verified/i;
 const NUMERIC_CLAIM =
   /(?:\$\s*\d|\b\d+[\d,.]*\s*(?:\/\s*(?:m|million)\b)?|\b\d+\s*(?:commits?|repos?|branches?|models?|tokens?|USD|usd)\b)/i;
 
@@ -67,11 +67,12 @@ const NUMERIC_CLAIM =
  */
 export function auditFactualAnswer(
   answer: string,
-  options?: { hadResearchTools?: boolean }
+  options?: { hadResearchTools?: boolean; hasSources?: boolean }
 ): ClaimAuditResult {
   const text = answer.trim();
   const issues: ClaimAuditIssue[] = [];
   const hadResearchTools = options?.hadResearchTools ?? false;
+  const hasSources = options?.hasSources ?? false;
 
   if (APPROX_NUMBER.test(text)) {
     issues.push({
@@ -88,10 +89,10 @@ export function auditFactualAnswer(
   }
 
   const hasTable = MARKDOWN_TABLE_ROW.test(text) && (text.match(/\|/g)?.length ?? 0) >= 6;
-  if (hasTable && !PROOF_HINT.test(text)) {
+  if (hasTable && !hasSources && !PROOF_HINT.test(text)) {
     issues.push({
       code: "table_without_proof",
-      detail: "Factual table lacks proof links, SHA/id, or a Source / Last checked line."
+      detail: "Factual table lacks proof links, source identifiers, or verified tool-source metadata."
     });
   }
 
@@ -121,7 +122,7 @@ export function auditFactualAnswer(
     : [
         "Accuracy audit failed on your previous draft. Fix it before finishing:",
         ...issues.map((i) => `- (${i.code}) ${i.detail}`),
-        "Rules: pull primary evidence with web_search (depth advanced / research) and fetch; do not use ~ or 'not disclosed'; write Not verified only after checking; factual tables need proof links and Source / Last checked; label Partial when coverage is incomplete.",
+        "Rules: pull primary evidence with web_search and fetch when needed; do not use ~ or 'not disclosed'; write Not verified only after checking. Factual tables must be backed by sources; the application adds a clickable Sources footer automatically. Do not add retrieval timestamps or status labels such as Partial/Complete.",
         "Revise the answer now, or call tools if evidence is missing. Do not repeat the same unbacked table."
       ].join("\n");
 

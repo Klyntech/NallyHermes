@@ -34,15 +34,14 @@ describe("accuracy contract — claim audit", () => {
     assert.ok(result.issues.some((i) => i.code === "table_without_proof"));
   });
 
-  it("accepts tables with source line", () => {
+  it("accepts tables backed by structured source metadata", () => {
     const table = [
       "| Model | Price | Source |",
       "| --- | --- | --- |",
-      "| Opus 5.5 | $4 / $20 | https://www.anthropic.com/pricing |",
-      "",
-      "**Source / Last checked:** https://www.anthropic.com/pricing (2026-11-13T10:00:00Z)"
+      "| Opus 5.5 | $4 / $20 | Anthropic pricing |",
+      "| Sonnet 5.5 | $2 / $10 | Anthropic pricing |"
     ].join("\n");
-    const result = auditFactualAnswer(table, { hadResearchTools: true });
+    const result = auditFactualAnswer(table, { hadResearchTools: true, hasSources: true });
     assert.equal(result.ok, true, result.issues.map((i) => i.code).join(","));
   });
 

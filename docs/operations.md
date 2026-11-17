@@ -33,7 +33,7 @@ Send a PDF to the bot as a Telegram document. `/ingest` explains the accepted ca
 Course: Tort | Title: Negligence lecture 3
 ```
 
-The handler enforces Telegram’s declared size and `INGESTION_MAX_UPLOAD_BYTES`, stores the file beneath the user’s academic workspace, runs bounded `pdftotext -layout`, and records the result in Neon. `stored_no_text` indicates an empty or scanned/image-only PDF; `stored_extraction_failed` includes extraction diagnostics. When LightRAG is enabled, successful extraction is sent to `/v1/academic/insert`; only confirmed indexing becomes `indexed`, while provider failure becomes `extracted_index_failed`.
+The handler enforces Telegram’s declared size and `INGESTION_MAX_UPLOAD_BYTES`, stores the file beneath the user’s academic workspace, runs bounded `pdftotext -layout`, and records the result in Neon. `stored_no_text` indicates an empty or scanned/image-only PDF; `stored_extraction_failed` includes extraction diagnostics. Successful extracted text is searchable through Neon’s native GIN full-text index as soon as the row is committed; this avoids a detached LightRAG request and avoids blocking searches on an external reranker. New extracted documents are marked `indexed` for this native database index. At startup, extracted legacy rows previously marked `extracted`, `indexing`, or `extracted_index_failed` are normalized to `indexed`.
 
 ## Voice operations
 
@@ -61,7 +61,7 @@ The `nallputer` connector is disabled when `NALLPUTER_URL` is unset. The live ad
 - `/rerankbench` measures the configured NVIDIA reranker endpoint.
 - `/ingest` displays academic PDF guidance.
 - `GET /health` confirms process availability.
-- Render logs are the primary source for startup, webhook, model, database, approval, provider, LightRAG, ingestion, and voice failures.
+- Render logs are the primary source for startup, webhook, model, database, approval, provider, optional diagnostic LightRAG, ingestion, and voice failures. Normal memory and academic retrieval should not depend on LightRAG availability.
 
 ## Routine release checks
 

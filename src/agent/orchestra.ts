@@ -222,7 +222,7 @@ export const SPOKEN_STYLE_GUIDANCE = [
   "===SPOKEN===",
   "<what ElevenLabs will turn into speech and read aloud>",
   "===TEXT===",
-  "<what Telegram shows as text only — sources, links, tables, ids, anything that should not be spoken>",
+  "<what Telegram shows as text only — tables, ids, or other detail that should not be spoken>",
   "",
   "Rules for ===SPOKEN===:",
   "- Short sentences, plain words, lead with the result.",
@@ -232,7 +232,7 @@ export const SPOKEN_STYLE_GUIDANCE = [
   "- Do not narrate tool use. Do not pad with filler.",
   "",
   "Rules for ===TEXT===:",
-  "- Put links, Source / Last checked, tables, ids, and other unspeakable detail here.",
+  "- Put tables, ids, and other unspeakable detail here. The application adds verified clickable sources separately; do not include a Source / Last checked line or retrieval timestamp.",
   "- If there is nothing extra, leave ===TEXT=== completely empty. Do not write placeholders.",
   "- This text is shown in Telegram; it is not sent to TTS."
 ].join("\n");

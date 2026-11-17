@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, isNull, lte, or } from "drizzle-orm";
 import { lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isIP } from "node:net";
@@ -6,11 +6,11 @@ import { lookup } from "node:dns/promises";
 import { db } from "../../db/client.js";
 import { memories, scheduledJobs, users } from "../../db/schema.js";
 import { config } from "../../config.js";
-import { deleteMemory, diagnoseMemoryPipeline, indexMemory, retrieveMemory } from "../lightRag.js";
+import { diagnoseMemoryPipeline } from "../lightRag.js";
+import { searchSavedMemories } from "../nativeRag.js";
 import type { ToolProgressReporter } from "../progress.js";
 import { assertTimestampMatchesTimezone, formatDateTimeInTimezone, getUserTimezone, isValidTimezone } from "../clock.js";
 import { cancelWorkflow, createWorkflow, listWorkflows, pauseWorkflow } from "../workflows.js";
-import { shouldUseSemanticMemory } from "../memoryRouting.js";
 import { composeReminderMessage } from "../reminderMessage.js";
 import { calendarTool } from "../calendar.js";
 import { creepyScrape, isCreepyCrawleyConfigured } from "./creepyCrawley.js";
@@ -277,12 +277,6 @@ async function getUserId(telegramId: string): Promise<string> {
   return user.id;
 }
 
-function runLightRAGInBackground(operation: string, task: () => Promise<unknown>): void {
-  void task().catch((error) => {
-    console.warn(`Background LightRAG ${operation} failed:`, error);
-  });
-}
-
 type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string; kind?: "fact" | "preference" | "project" | "commitment" | "entity" | "episode"; subject?: string; predicate?: string; object?: string; confidence?: number; expires_at?: string };
 export async function memoryTool(telegramId: string, input: MemoryInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
@@ -294,29 +288,30 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new Error("expires_at must be a valid ISO-8601 timestamp.");
       const [saved] = await db.insert(memories).values({ userId, content: input.content.trim(), kind: input.kind ?? "fact", subject: input.subject?.trim().slice(0, 200) || null, predicate: input.predicate?.trim().slice(0, 200) || null, object: input.object?.trim().slice(0, 500) || null, confidence, source: "user", expiresAt: expiresAt ?? null, lastConfirmedAt: new Date() }).returning({ id: memories.id, content: memories.content, kind: memories.kind, subject: memories.subject, predicate: memories.predicate, object: memories.object, confidence: memories.confidence });
       if (!saved) throw new Error("Memory could not be saved.");
-      if (config.LIGHTRAG_ENABLED) {
-        runLightRAGInBackground("memory indexing", () => indexMemory(telegramId, saved.id, saved.content));
-      }
-      return { ...saved, indexing: config.LIGHTRAG_ENABLED ? "background" : "disabled" };
+      return { ...saved, search_index: "native_postgres_full_text" };
     }
     case "recall": {
-      const rows = await db.select({ id: memories.id, content: memories.content, updatedAt: memories.updatedAt })
-        .from(memories).where(input.query ? and(eq(memories.userId, userId), ilike(memories.content, `%${input.query.slice(0, 100)}%`)) : eq(memories.userId, userId))
-        .orderBy(desc(memories.updatedAt)).limit(20);
-      let semanticContext = "";
-      if (input.query && config.LIGHTRAG_ENABLED && shouldUseSemanticMemory(input.query)) {
-        try {
-          await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
-          semanticContext = await retrieveMemory(telegramId, input.query);
-        }
-        catch (error) { console.error("LightRAG memory retrieval failed:", error); }
-      }
+      if (input.query) await onProgress?.({ type: "tool_progress", tool: "memory", stage: "memory_retrieving" });
+      const rows = input.query
+        ? await searchSavedMemories(userId, input.query)
+        : await db.select({
+            id: memories.id,
+            content: memories.content,
+            kind: memories.kind,
+            subject: memories.subject,
+            predicate: memories.predicate,
+            object: memories.object,
+            confidence: memories.confidence,
+            updated_at: memories.updatedAt
+          }).from(memories).where(and(
+            eq(memories.userId, userId),
+            or(isNull(memories.expiresAt), gt(memories.expiresAt, new Date()))
+          )).orderBy(desc(memories.updatedAt)).limit(20);
       return {
-        memories: rows.map((memory) => ({ id: memory.id, content: memory.content, updated_at: memory.updatedAt })),
-        semantic_context: semanticContext,
-        retrieval_status: config.LIGHTRAG_ENABLED
-          ? (semanticContext ? "structured_and_semantic" : "structured_only")
-          : "structured_only"
+        memories: rows,
+        retrieval_method: input.query ? "native_postgres_full_text" : "recent_structured_memories",
+        retrieval_status: rows.length ? "matched" : "no_match",
+        note: "These are this user's saved memories, retrieved directly from the application database. No LightRAG indexing or cross-store context is used."
       };
     }
     case "forget": {
@@ -325,10 +320,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).limit(1);
       if (!existing) return { deleted: false };
       const removed = await db.delete(memories).where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id });
-      if (removed.length && config.LIGHTRAG_ENABLED) {
-        runLightRAGInBackground("memory deletion", () => deleteMemory(telegramId, input.id!));
-      }
-      return { deleted: removed.length > 0, semantic_index_cleanup: config.LIGHTRAG_ENABLED ? "background" : "disabled" };
+      return { deleted: removed.length > 0, search_index_cleanup: "not_required" };
     }
     case "update": {
       if (!input.id || !input.content?.trim() || input.content.length > 4000) throw new Error("A memory ID and new content (1–4000 characters) are required.");
@@ -338,13 +330,7 @@ export async function memoryTool(telegramId: string, input: MemoryInput, onProgr
       const [updated] = await db.update(memories).set({ content: input.content.trim(), kind: input.kind ?? undefined, subject: input.subject?.trim().slice(0, 200) || undefined, predicate: input.predicate?.trim().slice(0, 200) || undefined, object: input.object?.trim().slice(0, 500) || undefined, confidence: input.confidence === undefined ? undefined : Math.min(100, Math.max(0, Math.round(input.confidence))), lastConfirmedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(memories.id, input.id), eq(memories.userId, userId))).returning({ id: memories.id, content: memories.content });
       if (!updated) return { updated: false };
-      if (config.LIGHTRAG_ENABLED) {
-        runLightRAGInBackground("memory re-indexing", async () => {
-          await deleteMemory(telegramId, input.id!);
-          return indexMemory(telegramId, updated.id, updated.content);
-        });
-      }
-      return { ...updated, indexing: config.LIGHTRAG_ENABLED ? "background" : "disabled" };
+      return { ...updated, search_index: "native_postgres_full_text" };
     }
   }
 }

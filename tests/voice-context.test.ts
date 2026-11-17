@@ -32,13 +32,14 @@ test("context pack formats entity continuity hints for the model", () => {
   assert.match(text, /connectors_available=web_search,voice/);
 });
 
-test("partial composer is honest about timeouts and keeps findings", () => {
+test("fallback composer is honest about unfinished checks and keeps findings", () => {
   const text = composePartialAnswer({
     reason: "Request timed out while calling web_search",
     outcomes: [{ status: "completed", task: "Search scores", answer: "Barcelona leads 1-0." }]
   });
   assert.match(text, /Barcelona leads/);
-  assert.match(text, /time limit/i);
+  assert.match(text, /couldn't finish the remaining checks/i);
+  assert.doesNotMatch(text, /\bpartial\b|time limit/i);
 });
 
 test("spoken style guidance requires dual SPOKEN and TEXT sections", () => {
@@ -84,6 +85,11 @@ test("splitSpokenChannelReply strips links from unstructured answers", () => {
 
 test("stripUnspeakable removes urls", () => {
   assert.equal(stripUnspeakable("Go to https://x.com now").includes("https"), false);
+});
+
+test("stripUnspeakable skips the clickable Sources footer", () => {
+  const spoken = stripUnspeakable("The answer is verified.\n\n**Sources**\n- [Official page](https://example.com)");
+  assert.equal(spoken, "The answer is verified.");
 });
 
 test("toVoiceResponse clips long text for TTS", () => {

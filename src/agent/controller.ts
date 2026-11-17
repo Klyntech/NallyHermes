@@ -11,6 +11,8 @@ import { beginPhase, completeExecution, createExecutionState, endPhase, routeReq
 import { buildAdaptiveContextPack, formatContextPackForModel } from "./contextPack.js";
 import { composePartialAnswer } from "./partial.js";
 import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
+import { requiresAcademicSourceCheck } from "./academicSourceGate.js";
+import { appendSourcesFooter, extractAnswerSources, type AnswerSource } from "./sourceAttribution.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -23,6 +25,7 @@ type StepOutcome = {
   status: "completed" | "partial" | "failed";
   toolRounds: number;
   answer: string;
+  sources?: AnswerSource[];
   failureReason?: string;
 };
 
@@ -46,21 +49,6 @@ function historyUsedResearchTools(messages: ChatCompletionMessageParam[]): boole
 
 function remainingTime(deadline: number): number {
   return Math.max(1_000, deadline - Date.now());
-}
-
-function collectStepEvidence(messages: ChatCompletionMessageParam[]): string {
-  const observations = messages
-    .filter((message) => message.role === "tool")
-    .slice(-8)
-    .map((message) => ({
-      role: "tool",
-      content: typeof message.content === "string" ? message.content.slice(0, 4_000) : "[non-text tool result]"
-    }));
-  const assistantNotes = messages
-    .filter((message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim())
-    .slice(-4)
-    .map((message) => (message as { content: string }).content.slice(0, 4_000));
-  return JSON.stringify({ assistant_notes: assistantNotes, tool_observations: observations });
 }
 
 async function runPlannedStep(
@@ -114,8 +102,10 @@ async function runPlannedStep(
 
       const evaluation = evaluateTurn(message, round, maxToolRounds + 1);
       if (evaluation.kind === "complete") {
+        const sources = extractAnswerSources(messages);
         const audit = auditFactualAnswer(evaluation.answer, {
-          hadResearchTools: historyUsedResearchTools(messages)
+          hadResearchTools: historyUsedResearchTools(messages),
+          hasSources: sources.length > 0
         });
         if (!audit.ok && round < maxToolRounds) {
           messages.push({
@@ -130,6 +120,7 @@ async function runPlannedStep(
           status: audit.ok ? "completed" : "partial",
           toolRounds,
           answer: finalResponse(evaluation.answer),
+          sources,
           failureReason: audit.ok ? undefined : audit.issues.map((i) => i.code).join(", ")
         };
       }
@@ -184,34 +175,38 @@ async function runPlannedStep(
     failureReason = error instanceof Error ? error.message : "Unexpected step execution error.";
   }
 
-  const evidence = collectStepEvidence(messages);
   const hasEvidence = messages.some((message) => message.role === "tool");
+  const lastAssistantNote = [...messages].reverse().find(
+    (message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim()
+  );
   return {
     id: step.id,
     task: step.task,
     status: hasEvidence ? "partial" : "failed",
     toolRounds,
+    sources: extractAnswerSources(messages),
     answer: hasEvidence
-      ? "Step did not reach a verified final answer. Available observations: " + evidence
-      : "No usable result was produced.",
+      ? typeof lastAssistantNote?.content === "string"
+        ? lastAssistantNote.content.trim()
+        : "I found relevant material, but couldn't verify a final answer."
+      : "",
     failureReason
   };
 }
 
-function fallbackReport(outcomes: StepOutcome[], totalSteps: number, reason: string): string {
-  const completed = outcomes.filter((item) => item.status === "completed").length;
-  const partial = outcomes.filter((item) => item.status === "partial").length;
-  const lines = [
-    "Execution report",
-    `Completed steps: ${completed}/${totalSteps}; partial steps: ${partial}/${totalSteps}.`,
-    reason
-  ];
-  for (const item of outcomes) {
-    lines.push(`- ${item.task} — ${item.status}: ${item.answer}`);
-    if (item.failureReason) lines.push(`  Limitation: ${item.failureReason}`);
+function fallbackReport(outcomes: StepOutcome[], reason: string): string {
+  const findings = outcomes.filter((item) => item.status !== "failed" && item.answer.trim());
+  const unresolved = outcomes.filter((item) => item.status === "failed");
+  const lines = findings.map((item) => outcomes.length > 1 ? `**${item.task}**\n${item.answer}` : item.answer);
+  if (unresolved.length) {
+    const tasks = unresolved.map((item) => item.task).join(", ");
+    const detail = unresolved.find((item) => item.failureReason)?.failureReason;
+    lines.push(`I couldn't verify ${tasks}${detail ? `: ${detail}` : ""}.`);
   }
-  if (!outcomes.length) lines.push("No verified findings were produced before execution stopped.");
-  return lines.join("\n");
+  if (!lines.length) {
+    return `I couldn't verify the requested information${reason ? `: ${reason}` : "."}`;
+  }
+  return lines.join("\n\n");
 }
 
 async function synthesizeReport(
@@ -240,8 +235,9 @@ async function synthesizeReport(
         "Produce the best useful report you can for the user's original request using only the execution evidence provided.",
         "First assess whether the evidence already collected is sufficient for the user's actual request. If it is sufficient, use it directly and do not imply that more research was needed.",
         "Do not discard useful results or request more information merely to make the report exhaustive. Prefer the minimum sufficient evidence.",
-        "Execution may be incomplete. Synthesize all verified findings, including useful partial observations.",
-        "Clearly separate confirmed findings from uncertainty. Identify steps that remain incomplete and explain why when known.",
+        "Synthesize all verified findings in a natural, concise answer. Clearly distinguish confirmed findings from uncertainty.",
+        "If an important part could not be verified, explain what remains unverified in an ordinary sentence. Do not use status labels such as Partial, Complete, or an execution-step count.",
+        "Do not mention internal execution phases, tool limits, or retrieval timestamps.",
         "Never invent facts, sources, tool results, or claim unfinished work succeeded.",
         "Do not ask the user to clarify or retry merely because an execution limit was reached. Give the useful report first.",
         JSON.stringify(reportData)
@@ -260,7 +256,7 @@ async function synthesizeReport(
   } catch (error) {
     console.warn("Final execution report synthesis failed:", error);
   }
-  return fallbackReport(outcomes, totalSteps, reason);
+  return fallbackReport(outcomes, reason);
 }
 
 async function runPlannedRequest(
@@ -438,6 +434,7 @@ async function runPlannedRequest(
         ...previous,
         toolRounds: previous.toolRounds + recovered.toolRounds,
         answer: previous.answer + "\nRecovery attempt: " + recovered.answer,
+        sources: [...(previous.sources ?? []), ...(recovered.sources ?? [])],
         failureReason: recovered.failureReason ?? previous.failureReason
       };
       await onProgress?.({
@@ -449,7 +446,9 @@ async function runPlannedRequest(
   }
 
   await onProgress?.({ type: "verifying" });
-  return synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
+  const answer = await synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
+  const sources = outcomes.flatMap((outcome) => outcome.sources ?? []);
+  return appendSourcesFooter(answer, sources);
 }
 
 /**
@@ -473,6 +472,8 @@ export async function runAgent(
 ): Promise<string | null> {
   const channel = requestOptions?.channel ?? "telegram";
   const responseStyle = requestOptions?.responseStyle;
+  const academicSourceCheck = requiresAcademicSourceCheck(userMessage);
+  const forceAcademicTool = academicSourceCheck && (!workflowAllowedTools || workflowAllowedTools.has("academic"));
   const route = routeRequest(userMessage, { channel, responseStyle });
   const state = createExecutionState(
     {
@@ -547,6 +548,14 @@ export async function runAgent(
   const prepared = await prepareRequest(history, userMessage, telegramId);
   const messages = [...prepared.messages];
   messages.push({ role: "system", content: formatContextPackForModel(pack) });
+  if (academicSourceCheck) {
+    messages.push({
+      role: "system",
+      content: forceAcademicTool
+        ? "The user explicitly asks about their academic library or study materials, or asks whether information came from them. You MUST call the academic tool with operation=search before answering. Decide the search query from the current question and relevant recent conversation. A source claim is valid only if the academic tool returns matching source excerpts. If it returns no source, say the library did not provide evidence; do not infer provenance from web/general knowledge or personal memories."
+        : "The user explicitly asks about academic-library provenance, but this execution is not allowed to use the academic tool. Do not claim the answer came from the library; say you cannot verify that source in this workflow."
+    });
+  }
   if (state.responseStyle === "spoken") {
     messages.push({ role: "system", content: SPOKEN_STYLE_GUIDANCE });
   }
@@ -564,7 +573,7 @@ export async function runAgent(
 
   await reportProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
-  if (route.usePlanner) {
+  if (route.usePlanner && !academicSourceCheck) {
     beginPhase(state, "planning");
     try {
       plan = await createExecutionPlan(llm, history, userMessage);
@@ -596,7 +605,9 @@ export async function runAgent(
       tools: workflowAllowedTools
         ? agentTools.filter((tool) => tool.type === "function" && workflowAllowedTools.has(tool.function.name))
         : agentTools,
-      tool_choice: "auto",
+      tool_choice: forceAcademicTool && round === 0
+        ? { type: "function", function: { name: "academic" } }
+        : "auto",
       temperature: 0.4
     }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
     const message = response.choices[0]?.message;
@@ -608,8 +619,10 @@ export async function runAgent(
 
     const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
     if (evaluation.kind === "complete") {
+      const sources = extractAnswerSources(messages);
       const audit = auditFactualAnswer(evaluation.answer, {
-        hadResearchTools: historyUsedResearchTools(messages)
+        hadResearchTools: historyUsedResearchTools(messages),
+        hasSources: sources.length > 0
       });
       if (!audit.ok && round < config.AGENT_MAX_MODEL_ROUNDS - 1) {
         messages.push({
@@ -626,7 +639,7 @@ export async function runAgent(
         accuracy_audit: audit.ok ? "pass" : audit.issues.map((i) => i.code)
       }));
       await reportProgress({ type: "response_ready" });
-      return finalResponse(evaluation.answer);
+      return appendSourcesFooter(finalResponse(evaluation.answer), sources);
     }
     if (evaluation.kind === "limit_reached") {
       stopReason = "The direct tool-round budget was reached before the model completed its answer.";
@@ -711,5 +724,5 @@ export async function runAgent(
   if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "partial");
   console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason, stop: stopReason }));
   await reportProgress({ type: "response_ready" });
-  return answer;
+  return appendSourcesFooter(answer, extractAnswerSources(messages));
 }

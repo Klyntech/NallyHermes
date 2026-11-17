@@ -32,19 +32,19 @@ export function composePartialAnswer(input: {
   const limitation = (() => {
     switch (classified.kind) {
       case "timeout":
-        return "I hit a time limit before finishing everything.";
+        return "I couldn't finish the remaining checks.";
       case "transient":
-        return "A temporary provider or network issue stopped the rest of the work.";
+        return "A temporary service issue stopped the remaining checks.";
       case "permission":
-        return "I could not complete a step because of a permission or policy limit.";
+        return "I couldn't complete one step because access wasn't available.";
       case "not_found":
-        return "Something required for the next step was missing or not configured.";
+        return "I couldn't continue because something needed for the next step wasn't available.";
       case "conflict":
-        return "A conflict blocked the remaining steps.";
+        return "I found conflicting information that I couldn't resolve with the available evidence.";
       case "validation":
-        return "A step failed validation, so I stopped rather than guessing.";
+        return "One result didn't pass validation, so I didn't rely on it.";
       default:
-        return input.reason.trim() || "I had to stop before the full answer was ready.";
+        return "I couldn't finish the remaining checks.";
     }
   })();
 
@@ -64,7 +64,7 @@ export function composePartialAnswer(input: {
   const failed = (input.outcomes ?? []).filter((o) => o.status === "failed" && o.failureReason);
   if (failed.length) {
     lines.push(
-      "Blocked steps: " +
+      "I also couldn't complete: " +
         failed
           .slice(0, 3)
           .map((o) => o.failureReason)

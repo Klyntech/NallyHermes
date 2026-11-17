@@ -19,6 +19,11 @@ const WWW_RE = /\bwww\.\S+/gi;
 /** Strip URLs and collapse leftover punctuation for safer TTS. */
 export function stripUnspeakable(text: string): string {
   let out = text.replace(URL_RE, "").replace(WWW_RE, "");
+  const lines = out.split("\n");
+  const sourceHeading = lines.findIndex((line) =>
+    /^\s*(?:#{1,6}\s*)?(?:\*\*)?\s*(?:sources?|references?)\s*(?:\*\*)?\s*:?[ \t]*$/i.test(line)
+  );
+  if (sourceHeading >= 0) out = lines.slice(0, sourceHeading).join("\n");
   // Drop orphan "Source / Last checked:" lines that only had links
   out = out
     .split("\n")
@@ -73,4 +78,3 @@ export function splitSpokenChannelReply(raw: string): SpokenChannelReply {
       : "";
   return { spoken, text, structured: false };
 }
-

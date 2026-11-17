@@ -3,8 +3,7 @@ import { promisify } from "node:util";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
-import { indexAcademicDocument } from "../agent/lightRag.js";
-import { addAcademicDocument, updateAcademicDocumentStatus } from "./store.js";
+import { addAcademicDocument } from "./store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,7 +51,7 @@ export async function ingestAcademicDocument(telegramId: string, input: { title:
       // Node's child-process maxBuffer even when the uploaded PDF is under 20 MB.
       await execFileAsync("pdftotext", ["-layout", filePath, extractedPath], { timeout: 60_000, maxBuffer: 1_000_000 });
       extractedText = (await readFile(extractedPath, "utf8")).trim();
-      status = extractedText ? "extracted" : "stored_no_text";
+      status = extractedText ? "indexed" : "stored_no_text";
       if (!extractedText) error = "pdftotext completed successfully but produced no text; the PDF may be scanned/image-only or use an unsupported encoding.";
     } catch (cause) {
       status = "stored_extraction_failed";
@@ -76,19 +75,8 @@ export async function ingestAcademicDocument(telegramId: string, input: { title:
     status,
     error
   });
-  if (!extractedText || status === "stored_extraction_failed" || !config.LIGHTRAG_ENABLED) return document;
-  const indexing = await updateAcademicDocumentStatus(telegramId, document.id, "indexing") ?? document;
-  void indexAcademicDocument(telegramId, document.id, input.title, input.course, extractedText, filePath)
-    .then(async (indexed) => {
-      if (indexed) await updateAcademicDocumentStatus(telegramId, document.id, "indexed");
-      else await updateAcademicDocumentStatus(telegramId, document.id, "extracted_index_failed", "LightRAG did not confirm indexing.");
-    })
-    .catch(async (cause) => {
-      const detail = cause instanceof Error ? cause.message.slice(0, 1000) : "LightRAG indexing failed.";
-      console.error("Background LightRAG academic indexing failed:", detail);
-      await updateAcademicDocumentStatus(telegramId, document.id, "extracted_index_failed", detail).catch((error) => {
-        console.error("Could not persist academic indexing failure:", error);
-      });
-    });
-  return indexing;
+  // Extracted text is stored in the authoritative document row. The database's
+  // GIN full-text index updates transactionally, so no detached Python indexing
+  // request can delay search or leave the document temporarily invisible.
+  return document;
 }

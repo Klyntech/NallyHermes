@@ -18,6 +18,12 @@ test("converts common Markdown formatting to Telegram HTML", () => {
   assert.match(html, /• first\n• second/);
 });
 
+test("renders a Sources footer as a clickable link", () => {
+  const html = markdownToTelegramHtml("**Sources**\n\n- [Official article](https://example.com/source)");
+  assert.match(html, /<b>Sources<\/b>/);
+  assert.match(html, /<a href="https:\/\/example\.com\/source">Official article<\/a>/);
+});
+
 test("renders fenced code as escaped preformatted text", () => {
   const html = markdownToTelegramHtml("```html\n<div>safe & sound</div>\n```");
   assert.equal(html, "<pre><code>&lt;div&gt;safe &amp; sound&lt;/div&gt;</code></pre>");

@@ -1,9 +1,8 @@
-import { and, desc, eq, ilike } from "drizzle-orm";
+import { and, desc, eq, ilike, isNotNull } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import { academicDocuments, users } from "../../db/schema.js";
-import { config } from "../../config.js";
 import { deleteAcademicDocument, updateAcademicDocumentMetadata } from "../../academic/store.js";
-import { retrieveAcademic } from "../lightRag.js";
+import { searchAcademicSources } from "../nativeRag.js";
 import type { ToolProgressReporter } from "../progress.js";
 
 async function getUserId(telegramId: string): Promise<string> {
@@ -106,7 +105,8 @@ export async function academicTool(
           id: academicDocuments.id,
           title: academicDocuments.title,
           course: academicDocuments.course,
-          status: academicDocuments.status
+          status: academicDocuments.status,
+          has_text: isNotNull(academicDocuments.extractedText)
         })
         .from(academicDocuments)
         .where(
@@ -117,44 +117,26 @@ export async function academicTool(
         .orderBy(desc(academicDocuments.createdAt))
         .limit(50);
 
-      const lower = query.toLowerCase();
-      const keywordHits = catalog
-        .filter(
-          (doc) =>
-            doc.title.toLowerCase().includes(lower) ||
-            (doc.course ?? "").toLowerCase().includes(lower)
-        )
-        .slice(0, 10);
-
-      let semanticContext = "";
-      let retrievalStatus: "semantic" | "catalog_only" | "unavailable" = "catalog_only";
-      if (config.LIGHTRAG_ENABLED) {
-        try {
-          const scopedQuery = course
-            ? `Academic course ${course}. ${query}`
-            : `Academic library. ${query}`;
-          semanticContext = await retrieveAcademic(telegramId, scopedQuery);
-          retrievalStatus = semanticContext ? "semantic" : "catalog_only";
-        } catch (error) {
-          console.error("Academic semantic search failed:", error);
-          retrievalStatus = "unavailable";
-        }
-      }
+      const sources = await searchAcademicSources(userId, query, course);
+      const searchableCount = catalog.filter((doc) => doc.has_text).length;
 
       return {
         query,
         course: course ?? null,
-        keyword_hits: keywordHits,
+        sources: sources.map((source) => ({
+          document_id: source.document_id,
+          title: source.title,
+          course: source.course,
+          original_name: source.original_name,
+          relevance: source.relevance,
+          excerpt: source.excerpt
+        })),
         catalog_size: catalog.length,
-        indexed_count: catalog.filter((doc) => doc.status === "indexed").length,
-        semantic_context: semanticContext,
-        retrieval_status: retrievalStatus,
-        note:
-          retrievalStatus === "semantic"
-            ? "Treat semantic_context as source material. Prefer quoting or paraphrasing with the document title when possible."
-            : retrievalStatus === "unavailable"
-              ? "Semantic index was unreachable; only catalogue matches are available."
-              : "No semantic passages returned; use keyword_hits or get a specific document_id."
+        searchable_count: searchableCount,
+        retrieval_status: sources.length ? "native_full_text" : "no_match",
+        note: sources.length
+          ? "These excerpts are retrieved only from this user's extracted academic documents. Cite the document title and course. Bracketed text marks query matches."
+          : "No matching passage was found in the extracted academic library. Do not present general knowledge as if it came from these documents; say the library did not return a source."
       };
     }
 
@@ -170,7 +152,7 @@ export async function academicTool(
         course: deleted.course,
         previous_status: deleted.status,
         file_removed: deleted.file_removed,
-        note: "Catalogue entry removed. Semantic index passages may still exist until a dedicated academic delete is available in LightRAG."
+        note: "The document and its extracted text were removed from the native search source. Any legacy LightRAG copy is not used for normal academic answers."
       };
     }
 

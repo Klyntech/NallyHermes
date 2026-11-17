@@ -5,7 +5,7 @@ export const academicAgentTool: ChatCompletionTool = {
   function: {
     name: "academic",
     description:
-      "Work with the user's ingested academic library: list indexed PDFs/notes, search their extracted content, read one document, rename metadata, or delete a document. Use for statutes, lecture notes, case materials, and course readings—not for personal facts (use memory) or general web research. delete and rename change library state and require clear user intent.",
+      "Work with the user's ingested academic library: list PDFs/notes, search extracted text using the isolated native database index, read one document, rename metadata, or delete a document. Use for statutes, lecture notes, case materials, course readings, and any question asking whether information is in/from the user's library. Never substitute personal memories or general web knowledge for a library result. Personal facts belong in memory; general/current research belongs on the web. delete and rename change library state and require clear user intent.",
     parameters: {
       type: "object",
       properties: {
@@ -13,7 +13,7 @@ export const academicAgentTool: ChatCompletionTool = {
           type: "string",
           enum: ["list", "search", "get", "delete", "rename"],
           description:
-            "list: catalogue documents; search: semantic/keyword query over indexed academic text; get: one document by id; delete: remove a document by id; rename: update title and/or course for a document."
+            "list: catalogue documents; search: source-scoped full-text search over extracted academic documents (returns document IDs, titles, courses, and matching excerpts); get: one document by id; delete: remove a document by id; rename: update title and/or course for a document."
         },
         query: {
           type: "string",

@@ -65,7 +65,8 @@ flowchart TD
 - **grammY** — Telegram Bot API, webhook updates, files, and callback queries.
 - **NVIDIA NIM** — agent model, embeddings, and reranking endpoints.
 - **Neon PostgreSQL + Drizzle ORM** — users, conversations, memories, academic records, schedules, workflows, and approval state.
-- **Optional LightRAG / FastAPI sidecar** — semantic and graph retrieval over user-scoped memory and academic text.
+- **Neon PostgreSQL full-text search** — native, user-scoped retrieval for saved memories and academic document excerpts; no Python service or remote reranker is in the normal search path.
+- **Optional LightRAG / FastAPI sidecar** — retained for explicit diagnostics and reranker benchmarks, not normal memory or library retrieval.
 - **Creepy Crawley + optional Tavily** — primary and fallback web search/fetch backends.
 - **Deepgram + ElevenLabs** — Telegram speech-to-text and text-to-speech when voice is enabled.
 - **FFmpeg / Poppler** — bounded Telegram audio normalization and PDF text extraction.
@@ -106,9 +107,9 @@ The current flow is:
 3. Store metadata in Neon.
 4. For PDFs, run `pdftotext -layout` with a bounded timeout and temporary output file.
 5. Preserve an explicit status rather than presenting failed extraction as searchable content.
-6. If LightRAG is enabled and text was extracted, index it through the authenticated `/v1/academic/insert` endpoint.
+6. When extracted text is written to Neon, the database's GIN full-text index updates with the row; no detached indexing request is required.
 
-Document statuses include `stored`, `stored_no_text`, `stored_extraction_failed`, `extracted`, `indexed`, and `extracted_index_failed`. Neon is the source of truth for metadata and extracted text; LightRAG is an optional retrieval index. `/ingest` explains the accepted format. Course/title metadata can arrive in the original caption or in a follow-up label message.
+Document statuses include `stored`, `stored_no_text`, `stored_extraction_failed`, and `indexed`. On startup, legacy extracted/indexing/index-failed rows with extracted text are normalized to `indexed`; no Python-side index rebuild is required. Academic search is isolated to the user's extracted documents and returns excerpts with document title/course provenance; it never searches personal memories. `/ingest` explains the accepted format. Course/title metadata can arrive in the original caption or in a follow-up label message.
 
 ## Telegram voice
 
@@ -142,7 +143,7 @@ The VM scaffold itself lives on the separate `NallPuter` branch; its architectur
 ├── tests/                 # automated regression tests
 ├── skills/                # repository-local progressive-disclosure skills
 ├── docs/                  # architecture, operations, and feature contracts
-├── memory-service/        # optional LightRAG FastAPI sidecar
+├── memory-service/        # optional LightRAG diagnostics sidecar
 ├── Dockerfile             # Node 22 + Poppler + FFmpeg image
 └── start.sh               # optional sidecar supervision and Node startup
 ```
@@ -164,7 +165,7 @@ cp .env.example .env
 npm run dev
 ```
 
-LightRAG is disabled by default. Enable it only after configuring `LIGHTRAG_API_TOKEN`, `LIGHTRAG_LLM_MODEL`, embedding settings, and the local sidecar.
+Native Postgres full-text search is the default for academic and saved-memory lookup. LightRAG is disabled by default and is no longer required for normal retrieval; enable it only when using `/memorycheck` or `/rerankbench`, after configuring `LIGHTRAG_API_TOKEN`, `LIGHTRAG_LLM_MODEL`, embedding settings, and the local sidecar.
 
 ## Commands and validation
 
