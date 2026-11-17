@@ -13,24 +13,24 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-internal data class MessageSource(
+data class MessageSource(
     val kind: String,
     val title: String,
     val url: String?,
     val course: String? = null
 )
 
-internal data class ThinkingStep(
+data class ThinkingStep(
     val text: String,
     val at: Long? = null
 )
 
-internal data class MessageThinking(
+data class MessageThinking(
     val durationMs: Long,
     val steps: List<ThinkingStep>
 )
 
-internal data class SyncedMessage(
+data class SyncedMessage(
     val id: String,
     val sequence: Long,
     val role: String,
