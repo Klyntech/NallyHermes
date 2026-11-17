@@ -1229,7 +1229,11 @@ private fun ChatScreen(
                         if (message.role == "user") {
                             UserMessage(message.text, message.status)
                         } else {
-                            AssistantMessage(message.text)
+                            AssistantMessage(
+                                text = message.text,
+                                sources = message.sources,
+                                thinking = message.thinking
+                            )
                         }
                     }
                     if (activity != null) item(key = "agent-activity") {
@@ -1343,8 +1347,21 @@ private fun UserMessage(text: String, status: String?, modifier: Modifier = Modi
 }
 
 @Composable
-private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
-    val (answerBody, sourcesFooter) = remember(text) { splitSourcesFooter(text) }
+private fun AssistantMessage(
+    text: String,
+    sources: List<MessageSource> = emptyList(),
+    thinking: MessageThinking? = null,
+    modifier: Modifier = Modifier
+) {
+    val (answerBody, legacySourcesMarkdown) = remember(text) { splitSourcesFooter(text) }
+    val structured = sources
+    val pageCount = when {
+        structured.isNotEmpty() -> structured.size
+        legacySourcesMarkdown != null -> legacySourcesMarkdown.lines().count { it.trim().startsWith("-") || it.trim().startsWith("*") }
+        else -> 0
+    }
+    var thinkingOpen by rememberSaveable(text) { mutableStateOf(false) }
+    var sourcesOpen by rememberSaveable(text) { mutableStateOf(false) }
     Column(modifier = modifier.fillMaxWidth().padding(end = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Box(Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
@@ -1352,36 +1369,159 @@ private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
             }
             Text("Nally", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (thinking != null && (thinking.durationMs > 0 || thinking.steps.isNotEmpty())) {
+            ThoughtProcessCard(
+                durationMs = thinking.durationMs,
+                steps = thinking.steps,
+                expanded = thinkingOpen,
+                onToggle = { thinkingOpen = !thinkingOpen },
+                modifier = Modifier.padding(start = 27.dp)
+            )
+        }
         MarkdownContent(
             markdown = answerBody,
             modifier = Modifier.padding(start = 27.dp),
             textColor = MaterialTheme.colorScheme.onSurface,
             mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        androidx.compose.animation.AnimatedVisibility(
-            visible = sourcesFooter != null,
-            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                slideInVertically(animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)) { it / 8 },
-            exit = fadeOut(tween(120, easing = FastOutSlowInEasing))
+        if (pageCount > 0) {
+            SourcesCapsule(
+                count = pageCount,
+                sources = structured,
+                expanded = sourcesOpen,
+                onToggle = { sourcesOpen = !sourcesOpen },
+                legacyMarkdown = legacySourcesMarkdown,
+                modifier = Modifier.padding(start = 27.dp, top = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThoughtProcessCard(
+    durationMs: Long,
+    steps: List<ThinkingStep>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val seconds = ((durationMs + 500) / 1000).coerceAtLeast(if (durationMs > 0) 1 else 0)
+    val interaction = remember { MutableInteractionSource() }
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .clickable(interactionSource = interaction, indication = null, onClick = onToggle)
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            sourcesFooter?.let { markdown ->
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 27.dp, top = 2.dp)
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f))
-                        .border(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                            RoundedCornerShape(15.dp)
+            LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.size(14.dp))
+            Text(
+                if (seconds > 0) "Thought for ${seconds}s" else "Thought process",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(if (expanded) "▾" else "▸", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+        }
+        androidx.compose.animation.AnimatedVisibility(visible = expanded) {
+            Column(
+                Modifier
+                    .padding(top = 4.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                steps.forEach { step ->
+                    Text("· ${step.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (steps.isEmpty()) {
+                    Text("Steps were not recorded for this reply.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourcesCapsule(
+    count: Int,
+    sources: List<MessageSource>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    legacyMarkdown: String?,
+    modifier: Modifier = Modifier
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val label = if (count == 1) "1 source" else "$count pages"
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color(0xFF1A1B1A))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(999.dp))
+                .clickable(interactionSource = interaction, indication = null, onClick = onToggle)
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Stacked host badges
+            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+                val hosts = sources.mapNotNull { src ->
+                    src.url?.let {
+                        try { java.net.URI(it).host?.removePrefix("www.") } catch (_: Exception) { null }
+                    }
+                }.distinct().take(3)
+                if (hosts.isEmpty()) {
+                    Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xFF3B82F6)))
+                } else {
+                    hosts.forEachIndexed { index, host ->
+                        val color = sourceHostColor(host, index)
+                        Box(
+                            Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .border(1.dp, Color(0xFF1A1B1A), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                host.take(1).uppercase(),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+            Text(label, style = MaterialTheme.typography.labelMedium, color = Color(0xFFE8EAE4))
+        }
+        androidx.compose.animation.AnimatedVisibility(visible = expanded) {
+            Column(
+                Modifier
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(15.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (sources.isNotEmpty()) {
+                    sources.forEach { src ->
+                        val line = if (src.url != null) "[${src.title}](${src.url})" else src.title
+                        MarkdownContent(
+                            markdown = "- $line",
+                            modifier = Modifier.fillMaxWidth(),
+                            textColor = MaterialTheme.colorScheme.primary,
+                            mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text("Sources", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else if (legacyMarkdown != null) {
                     MarkdownContent(
-                        markdown = markdown,
+                        markdown = legacyMarkdown,
                         modifier = Modifier.fillMaxWidth(),
                         textColor = MaterialTheme.colorScheme.primary,
                         mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1390,6 +1530,19 @@ private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+private fun sourceHostColor(host: String, index: Int): Color {
+    val palette = listOf(
+        Color(0xFF1877F2), // facebook-ish
+        Color(0xFFEA4335),
+        Color(0xFF34A853),
+        Color(0xFF4285F4),
+        Color(0xFFA855F7),
+        Color(0xFF0EA5E9)
+    )
+    val h = host.lowercase().hashCode()
+    return palette[Math.floorMod(h + index, palette.size)]
 }
 
 private fun splitSourcesFooter(markdown: String): Pair<String, String?> {
