@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { config } from "../config.js";
 import { getOrCreateConversation, loadConversationMessages } from "../db/conversationStore.js";
 import {
   authenticateMobileSession,
@@ -150,6 +151,18 @@ export async function handleMobileApiRequest(
 
     if (pathname === "/api/mobile/me" && req.method === "GET") {
       sendJson(res, 200, { linked: true, expiresAt: session.expiresAt.toISOString() });
+      return;
+    }
+
+    if (pathname === "/api/mobile/voice-health" && req.method === "GET") {
+      sendJson(res, 200, {
+        ok: true,
+        voiceEnabled: config.VOICE_ENABLED,
+        sttConfigured: Boolean(config.DEEPGRAM_API_KEY?.trim()),
+        ttsConfigured: Boolean(config.ELEVENLABS_API_KEY?.trim() && config.ELEVENLABS_VOICE_ID?.trim()),
+        websocketPath: "/api/mobile/voice",
+        protocolVersion: 1
+      });
       return;
     }
 
