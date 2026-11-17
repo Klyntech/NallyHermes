@@ -33,6 +33,10 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
         orbRenderer.setState(state)
     }
 
+    fun setAudioLevel(value: Float) {
+        orbRenderer.setLevel(value.coerceIn(0f, 1f))
+    }
+
     private data class Params(
         val tint: FloatArray, val deep: FloatArray,
         val speed: Float, val energy: Float, val dim: Float
@@ -47,7 +51,7 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
         private var width = 1
         private var height = 1
         private var pulse = 0f
-        private var level = 0f
+        @Volatile private var level = 0f
         private lateinit var vertices: FloatBuffer
         private var aPos = 0
         private var uRes = 0
