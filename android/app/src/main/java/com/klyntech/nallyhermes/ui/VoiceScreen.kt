@@ -176,14 +176,15 @@ private fun beginVoiceSession(api: MobileApi, context: Context, scope: Coroutine
         onState(VoiceUiState.Connecting)
         try {
             val ticket = api.createVoiceTicket()
+            var serverErrorShown = false
             val voice = NativeVoiceSession(context.applicationContext, api.voiceWebSocketUrl(ticket)) { event ->
                 Handler(Looper.getMainLooper()).post {
                     when (event) {
                         NativeVoiceSession.Event.Connected -> onState(VoiceUiState.Connecting)
                         is NativeVoiceSession.Event.State -> onState(event.state)
                         is NativeVoiceSession.Event.Caption -> onCaption(event.text)
-                        is NativeVoiceSession.Event.Error -> onError(event.message)
-                        NativeVoiceSession.Event.Ended -> onState(VoiceUiState.Ended)
+                        is NativeVoiceSession.Event.Error -> { serverErrorShown = true; onError(event.message) }
+                        NativeVoiceSession.Event.Ended -> if (!serverErrorShown) onState(VoiceUiState.Ended)
                     }
                 }
             }
