@@ -90,7 +90,14 @@ internal fun VoiceScreen(onSettings: () -> Unit, api: MobileApi, onTextSubmitted
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             gateVisible = false
-            beginVoiceSession(api, context, scope, { session = it }, { state = it }, { caption = it }, { localNotice = it; state = VoiceUiState.Denied })
+            beginVoiceSession(
+                api, context, scope,
+                onSession = { session = it },
+                onState = { state = it },
+                onCaption = { caption = it },
+                onError = { msg -> localNotice = msg; gateVisible = true },
+                onEnded = { session = null; gateVisible = true }
+            )
         } else { state = VoiceUiState.Denied; localNotice = "Microphone permission is needed. Allow it to start a call." }
     }
     DisposableEffect(lifecycle, session, state) {
@@ -161,7 +168,14 @@ internal fun VoiceScreen(onSettings: () -> Unit, api: MobileApi, onTextSubmitted
                     localNotice = null
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         gateVisible = false
-                        beginVoiceSession(api, context, scope, { session = it }, { state = it }, { caption = it }, { localNotice = it; state = VoiceUiState.Denied })
+                        beginVoiceSession(
+                api, context, scope,
+                onSession = { session = it },
+                onState = { state = it },
+                onCaption = { caption = it },
+                onError = { msg -> localNotice = msg; gateVisible = true },
+                onEnded = { session = null; gateVisible = true }
+            )
                     } else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp)) { Text(if (state == VoiceUiState.Denied) "Try again" else "Start", style = MaterialTheme.typography.titleMedium) }
             }
@@ -169,9 +183,16 @@ internal fun VoiceScreen(onSettings: () -> Unit, api: MobileApi, onTextSubmitted
     }
 }
 
-private fun beginVoiceSession(api: MobileApi, context: Context, scope: CoroutineScope,
-    onSession: (NativeVoiceSession?) -> Unit, onState: (VoiceUiState) -> Unit,
-    onCaption: (String?) -> Unit, onError: (String) -> Unit) {
+private fun beginVoiceSession(
+    api: MobileApi,
+    context: Context,
+    scope: CoroutineScope,
+    onSession: (NativeVoiceSession?) -> Unit,
+    onState: (VoiceUiState) -> Unit,
+    onCaption: (String?) -> Unit,
+    onError: (String) -> Unit,
+    onEnded: () -> Unit = {}
+) {
     scope.launch {
         onState(VoiceUiState.Connecting)
         try {
@@ -183,13 +204,28 @@ private fun beginVoiceSession(api: MobileApi, context: Context, scope: Coroutine
                         NativeVoiceSession.Event.Connected -> onState(VoiceUiState.Connecting)
                         is NativeVoiceSession.Event.State -> onState(event.state)
                         is NativeVoiceSession.Event.Caption -> onCaption(event.text)
-                        is NativeVoiceSession.Event.Error -> { serverErrorShown = true; onError(event.message) }
-                        NativeVoiceSession.Event.Ended -> if (!serverErrorShown) onState(VoiceUiState.Ended)
+                        is NativeVoiceSession.Event.Error -> {
+                            serverErrorShown = true
+                            onError(event.message)
+                        }
+                        NativeVoiceSession.Event.Ended -> {
+                            if (!serverErrorShown) {
+                                onState(VoiceUiState.Ended)
+                                onError("Call ended before the voice session became ready. Check server VOICE_ENABLED, Deepgram keys, and WSS support.")
+                            } else {
+                                onState(VoiceUiState.Ended)
+                            }
+                            onEnded()
+                        }
                     }
                 }
             }
-            onSession(voice); voice.connect()
-        } catch (error: Exception) { onState(VoiceUiState.Denied); onError(error.message ?: "Could not create a secure voice session.") }
+            onSession(voice)
+            voice.connect()
+        } catch (error: Exception) {
+            onState(VoiceUiState.Denied)
+            onError(error.message ?: "Could not create a secure voice session (ticket). Is the app paired and is voice enabled on the server?")
+        }
     }
 }
 
