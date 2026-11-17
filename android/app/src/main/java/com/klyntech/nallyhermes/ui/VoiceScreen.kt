@@ -111,7 +111,10 @@ internal fun VoiceScreen(onSettings: () -> Unit, api: MobileApi, onTextSubmitted
         lifecycle.lifecycle.addObserver(observer)
         onDispose { lifecycle.lifecycle.removeObserver(observer) }
     }
-    DisposableEffect(session) { onDispose { session?.stop("voice screen closed") } }
+    // Only stop when leaving the Voice screen, not when the session object reference updates.
+    DisposableEffect(Unit) {
+        onDispose { session?.stop("voice screen closed") }
+    }
     val colors = MaterialTheme.colorScheme
     Column(modifier.fillMaxSize().imePadding().background(colors.background).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -211,7 +214,7 @@ private fun beginVoiceSession(
                         NativeVoiceSession.Event.Ended -> {
                             if (!serverErrorShown) {
                                 onState(VoiceUiState.Ended)
-                                onError("Call ended before the voice session became ready. Check server VOICE_ENABLED, Deepgram keys, and WSS support.")
+                                onError("Call ended before voice was ready. Open Settings or retry — the detailed reason is shown above when the server reports one.")
                             } else {
                                 onState(VoiceUiState.Ended)
                             }
