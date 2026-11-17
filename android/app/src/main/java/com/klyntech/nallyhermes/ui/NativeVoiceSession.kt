@@ -47,6 +47,7 @@ internal class NativeVoiceSession(
     private val stopped = AtomicBoolean(false)
     @Volatile private var muted = false
     @Volatile private var socket: WebSocket? = null
+    @Volatile private var startSent = false
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var track: AudioTrack? = null
     private var captureJob: Job? = null
@@ -59,8 +60,20 @@ internal class NativeVoiceSession(
         val request = Request.Builder().url(websocketUrl).build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                // A screen/lifecycle cancellation can happen while OkHttp is still connecting.
+                // Never enqueue an application-level close before the protocol start message.
+                if (stopped.get()) {
+                    webSocket.close(1000, "cancelled before start")
+                    return
+                }
                 callback(Event.Connected)
-                webSocket.send(JSONObject().put("type", "start").put("protocolVersion", 1).toString())
+                val sent = webSocket.send(JSONObject().put("type", "start").put("protocolVersion", 1).toString())
+                if (sent) {
+                    startSent = true
+                } else {
+                    callback(Event.Error("Could not start the voice session."))
+                    stop("start send failed")
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -264,8 +277,11 @@ internal class NativeVoiceSession(
 
     fun stop(reason: String = "user ended") {
         if (!stopped.compareAndSet(false, true)) return
-        socket?.send(JSONObject().put("type", "close").toString())
-        socket?.close(1000, reason.take(120))
+        val ws = socket
+        // OkHttp queues send() calls made before onOpen. Sending "close" while connecting
+        // can therefore reach the server before "start" and trigger start_required.
+        if (startSent) ws?.send(JSONObject().put("type", "close").toString())
+        ws?.close(1000, reason.take(120))
         cleanup()
     }
 
