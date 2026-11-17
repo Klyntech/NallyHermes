@@ -142,6 +142,18 @@ export async function handleMobileApiRequest(
       return;
     }
 
+    if (pathname === "/api/mobile/voice-health" && req.method === "GET") {
+      sendJson(res, 200, {
+        ok: true,
+        voiceEnabled: config.VOICE_ENABLED,
+        sttConfigured: Boolean(config.DEEPGRAM_API_KEY?.trim()),
+        ttsConfigured: Boolean(config.ELEVENLABS_API_KEY?.trim() && config.ELEVENLABS_VOICE_ID?.trim()),
+        websocketPath: "/api/mobile/voice",
+        protocolVersion: 1
+      });
+      return;
+    }
+
     const token = getBearerToken(req);
     const session = token ? await (deps.authenticateSession ?? authenticateMobileSession)(token) : null;
     if (!session) {
@@ -154,17 +166,6 @@ export async function handleMobileApiRequest(
       return;
     }
 
-    if (pathname === "/api/mobile/voice-health" && req.method === "GET") {
-      sendJson(res, 200, {
-        ok: true,
-        voiceEnabled: config.VOICE_ENABLED,
-        sttConfigured: Boolean(config.DEEPGRAM_API_KEY?.trim()),
-        ttsConfigured: Boolean(config.ELEVENLABS_API_KEY?.trim() && config.ELEVENLABS_VOICE_ID?.trim()),
-        websocketPath: "/api/mobile/voice",
-        protocolVersion: 1
-      });
-      return;
-    }
 
     if (pathname === "/api/mobile/voice-ticket" && req.method === "POST") {
       const ticket = await (deps.createVoiceTicket ?? mintVoiceTicket)(session);
