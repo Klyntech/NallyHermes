@@ -340,11 +340,31 @@ fun NallyHermesApp(
                     // Voice & Settings are light — they can enter/exit freely.
                     Box(Modifier.fillMaxSize()) {
                         val chatVisible = selectedTab == AppTab.CHAT
+                        val chatAlpha by animateFloatAsState(
+                            targetValue = if (chatVisible) 1f else 0f,
+                            animationSpec = tween(190, easing = FastOutSlowInEasing),
+                            label = "chatTabAlpha"
+                        )
+                        val chatScale by animateFloatAsState(
+                            targetValue = if (chatVisible) 1f else 0.992f,
+                            animationSpec = tween(220, easing = FastOutSlowInEasing),
+                            label = "chatTabScale"
+                        )
+                        val chatShift by animateFloatAsState(
+                            targetValue = if (chatVisible) 0f else -0.018f,
+                            animationSpec = tween(190, easing = FastOutSlowInEasing),
+                            label = "chatTabShift"
+                        )
                         Box(
                             Modifier
                                 .fillMaxSize()
                                 .zIndex(if (chatVisible) 1f else 0f)
-                                .graphicsLayer { alpha = if (chatVisible) 1f else 0f }
+                                .graphicsLayer {
+                                    alpha = chatAlpha
+                                    scaleX = chatScale
+                                    scaleY = chatScale
+                                    translationX = size.width * chatShift
+                                }
                         ) {
                             ChatScreen(
                                 messages = messages,
@@ -371,8 +391,10 @@ fun NallyHermesApp(
 
                         androidx.compose.animation.AnimatedVisibility(
                             visible = selectedTab == AppTab.VOICE,
-                            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)),
-                            exit = fadeOut(tween(120)),
+                            enter = fadeIn(tween(190, easing = FastOutSlowInEasing)) +
+                                scaleIn(initialScale = 0.985f, animationSpec = tween(220, easing = FastOutSlowInEasing)),
+                            exit = fadeOut(tween(140, easing = FastOutSlowInEasing)) +
+                                scaleOut(targetScale = 0.992f, animationSpec = tween(140, easing = FastOutSlowInEasing)),
                             modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.VOICE) 2f else 0f)
                         ) {
                             VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
@@ -380,8 +402,10 @@ fun NallyHermesApp(
 
                         androidx.compose.animation.AnimatedVisibility(
                             visible = selectedTab == AppTab.SETTINGS,
-                            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)),
-                            exit = fadeOut(tween(120)),
+                            enter = fadeIn(tween(190, easing = FastOutSlowInEasing)) +
+                                scaleIn(initialScale = 0.985f, animationSpec = tween(220, easing = FastOutSlowInEasing)),
+                            exit = fadeOut(tween(140, easing = FastOutSlowInEasing)) +
+                                scaleOut(targetScale = 0.992f, animationSpec = tween(140, easing = FastOutSlowInEasing)),
                             modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.SETTINGS) 2f else 0f)
                         ) {
                             tabStateHolder.SaveableStateProvider(AppTab.SETTINGS.name) {
@@ -1320,6 +1344,7 @@ private fun UserMessage(text: String, status: String?, modifier: Modifier = Modi
 
 @Composable
 private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
+    val (answerBody, sourcesFooter) = remember(text) { splitSourcesFooter(text) }
     Column(modifier = modifier.fillMaxWidth().padding(end = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Box(Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
@@ -1328,12 +1353,52 @@ private fun AssistantMessage(text: String, modifier: Modifier = Modifier) {
             Text("Nally", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         MarkdownContent(
-            markdown = text,
+            markdown = answerBody,
             modifier = Modifier.padding(start = 27.dp),
             textColor = MaterialTheme.colorScheme.onSurface,
             mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        androidx.compose.animation.AnimatedVisibility(
+            visible = sourcesFooter != null,
+            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                slideInVertically(animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)) { it / 8 },
+            exit = fadeOut(tween(120, easing = FastOutSlowInEasing))
+        ) {
+            sourcesFooter?.let { markdown ->
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 27.dp, top = 2.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f))
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                            RoundedCornerShape(15.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text("Sources", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    MarkdownContent(
+                        markdown = markdown,
+                        modifier = Modifier.fillMaxWidth(),
+                        textColor = MaterialTheme.colorScheme.primary,
+                        mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
+}
+
+private fun splitSourcesFooter(markdown: String): Pair<String, String?> {
+    val lines = markdown.split('\n')
+    val footerIndex = lines.indexOfFirst { it.trim().equals("**Sources**", ignoreCase = true) }
+    if (footerIndex < 0) return markdown to null
+    val body = lines.take(footerIndex).joinToString("\n").trimEnd()
+    val sources = lines.drop(footerIndex + 1).joinToString("\n").trim()
+    return body to sources.takeIf { it.isNotEmpty() }
 }
 
 @Composable
@@ -1383,12 +1448,13 @@ private fun ThinkingDots() {
 @Composable
 private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSend: () -> Unit, onVoice: () -> Unit, enabled: Boolean) {
     var trayOpen by rememberSaveable { mutableStateOf(false) }
-    val glassShape = RoundedCornerShape(26.dp)
+    val glassShape = RoundedCornerShape(28.dp)
     val density = LocalDensity.current
     val imeUp = WindowInsets.ime.getBottom(density) > with(density) { 6.dp.toPx() }
     Column(
         Modifier
             .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow))
             .padding(
                 start = 12.dp,
                 end = 12.dp,
@@ -1396,7 +1462,13 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                 bottom = if (imeUp) 6.dp else 2.dp
             )
     ) {
-        AnimatedVisibility(visible = trayOpen) {
+        AnimatedVisibility(
+            visible = trayOpen,
+            enter = fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                slideInVertically(animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)) { it / 7 },
+            exit = fadeOut(tween(130, easing = FastOutSlowInEasing)) +
+                slideOutVertically(animationSpec = tween(150, easing = FastOutSlowInEasing)) { it / 12 }
+        ) {
             ToolShortcutTray(
                 onSelect = { prefix ->
                     onValueChange(if (value.isBlank()) prefix else "$value$prefix")
@@ -1457,7 +1529,7 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                     Box(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp)) {
                         if (value.isEmpty()) {
                             Text(
-                                if (enabled) "Message NallyHermes · / for tools" else "Sign in to send a message",
+                                if (enabled) "Message Nally · / for tools" else "Sign in to send a message",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -1482,15 +1554,24 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                         ComposerIcon(LucideR.drawable.lucide_ic_mic, "Voice setup", false, onVoice)
                         Spacer(Modifier.width(6.dp))
                         val canSend = enabled && value.isNotBlank()
+                        val sendBackground by animateColorAsState(
+                            targetValue = if (canSend) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            animationSpec = tween(170, easing = FastOutSlowInEasing),
+                            label = "composerSendColor"
+                        )
+                        val sendScale by animateFloatAsState(
+                            targetValue = if (canSend) 1f else 0.94f,
+                            animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
+                            label = "composerSendScale"
+                        )
                         val sendInteraction = remember { MutableInteractionSource() }
                         Box(
                             Modifier
                                 .size(38.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    if (canSend) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                )
+                                .background(sendBackground)
+                                .graphicsLayer { scaleX = sendScale; scaleY = sendScale }
                                 .clickable(
                                     enabled = canSend,
                                     interactionSource = sendInteraction,
@@ -1509,21 +1590,22 @@ private fun MessageComposer(value: String, onValueChange: (String) -> Unit, onSe
                 }
             }
         }
-        if (!imeUp) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Messages sync with your private Telegram chat",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                modifier = Modifier.padding(horizontal = 6.dp)
-            )
-        }
     }
 }
 
 @Composable
 private fun ComposerIcon(icon: Int, description: String, selected: Boolean, onClick: () -> Unit) {
     val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.06f else 1f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
+        label = "composerIconScale"
+    )
+    val rotation by animateFloatAsState(
+        targetValue = if (selected) 45f else 0f,
+        animationSpec = spring(dampingRatio = 0.78f, stiffness = 460f),
+        label = "composerIconRotation"
+    )
     val interaction = remember { MutableInteractionSource() }
     Box(
         Modifier
@@ -1536,7 +1618,12 @@ private fun ComposerIcon(icon: Int, description: String, selected: Boolean, onCl
             ),
         contentAlignment = Alignment.Center
     ) {
-        LucideIcon(icon, description, tint, Modifier.size(20.dp))
+        LucideIcon(
+            icon,
+            description,
+            tint,
+            Modifier.size(20.dp).graphicsLayer { scaleX = scale; scaleY = scale; rotationZ = rotation }
+        )
     }
 }
 
