@@ -106,6 +106,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.composables.icons.lucide.R as LucideR
 import com.klyntech.nallyhermes.MobileApi
+import com.klyntech.nallyhermes.MobileActivitySnapshot
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.klyntech.nallyhermes.MessageSource
 import com.klyntech.nallyhermes.MessageThinking
 import com.klyntech.nallyhermes.ThinkingStep
@@ -131,7 +134,9 @@ private data class AgentActivity(
     val detail: String? = null,
     val provider: String? = null,
     val isThinking: Boolean = false,
-    val isComplete: Boolean = false
+    val isComplete: Boolean = false,
+    val steps: List<ThinkingStep> = emptyList(),
+    val elapsedMs: Long = 0L
 )
 
 @Composable
@@ -1241,7 +1246,15 @@ private fun ChatScreen(
                     }
                     if (activity != null) item(key = "agent-activity") {
                         if (activity.requiresTelegramApproval) NoticeCard("Approval in Telegram", "Open your private NallyHermes Telegram chat to review the requested action.")
-                        else AgentActivityCard(AgentActivity(headline = activity.headline, provider = activity.provider, isThinking = activity.isThinking))
+                        else AgentActivityCard(
+                            AgentActivity(
+                                headline = activity.headline,
+                                provider = activity.provider,
+                                isThinking = activity.isThinking,
+                                steps = activity.steps,
+                                elapsedMs = activity.elapsedMs
+                            )
+                        )
                     }
                     connectionMessage?.let { error -> item(key = "connection-error") { NoticeCard("Sync issue", error) } }
                 }
@@ -1469,34 +1482,30 @@ private fun SourcesCapsule(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Stacked host badges
+            // Real favicons for pages Nally searched / read
             Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
                 val hosts = sources.mapNotNull { src ->
                     src.url?.let {
                         try { java.net.URI(it).host?.removePrefix("www.") } catch (_: Exception) { null }
                     }
-                }.distinct().take(3)
+                }.distinct().take(4)
                 if (hosts.isEmpty()) {
                     Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xFF3B82F6)))
                 } else {
-                    hosts.forEachIndexed { index, host ->
-                        val color = sourceHostColor(host, index)
-                        Box(
-                            Modifier
+                    val ctx = LocalContext.current
+                    hosts.forEach { host ->
+                        AsyncImage(
+                            model = ImageRequest.Builder(ctx)
+                                .data("https://www.google.com/s2/favicons?domain=$host&sz=64")
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = host,
+                            modifier = Modifier
                                 .size(18.dp)
                                 .clip(CircleShape)
-                                .background(color)
-                                .border(1.dp, Color(0xFF1A1B1A), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                host.take(1).uppercase(),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                                .background(Color(0xFF2A2B2A))
+                                .border(1.dp, Color(0xFF1A1B1A), CircleShape)
+                        )
                     }
                 }
             }
@@ -1569,25 +1578,88 @@ private fun NoticeCard(title: String, message: String) {
 }
 
 @Composable
-private fun AgentActivityCard(activity: AgentActivity, modifier: Modifier = Modifier) {
+fun AgentActivityCard(activity: AgentActivity, modifier: Modifier = Modifier) {
+    var expanded by rememberSaveable(activity.headline, activity.steps.size) { mutableStateOf(true) }
     val infinite = rememberInfiniteTransition(label = "agentThinking")
-    val pulse by infinite.animateFloat(initialValue = 0.44f, targetValue = 1f, animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "thinkingPulse")
-    val scale by animateFloatAsState(if (activity.isThinking && !activity.isComplete) pulse else 1f, label = "activityIcon")
-    Row(modifier.fillMaxWidth().animateContentSize().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.93f))
-        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f), RoundedCornerShape(18.dp)).padding(horizontal = 13.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-        Box(Modifier.size(34.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = scale)), contentAlignment = Alignment.Center) {
-            if (activity.provider != null) BrandIcon(activity.provider, Modifier.size(17.dp))
-            else LucideIcon(if (activity.isComplete) LucideR.drawable.lucide_ic_circle_check else LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.primary.copy(alpha = scale), Modifier.size(18.dp))
+    val pulse by infinite.animateFloat(
+        initialValue = 0.44f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "thinkingPulse"
+    )
+    val seconds = ((activity.elapsedMs + 500) / 1000).coerceAtLeast(if (activity.elapsedMs > 0) 1 else 0)
+    val interaction = remember { MutableInteractionSource() }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.93f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(interactionSource = interaction, indication = null) { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (activity.isThinking) pulse else 1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                LucideIcon(LucideR.drawable.lucide_ic_sparkles, null, MaterialTheme.colorScheme.primary, Modifier.size(14.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (activity.isThinking) {
+                        if (seconds > 0) "Thinking · ${seconds}s" else "Thinking…"
+                    } else activity.headline,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    activity.headline,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) 3 else 1
+                )
+            }
+            Text(if (expanded) "▾" else "▸", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(activity.headline, style = MaterialTheme.typography.labelLarge)
-            activity.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        androidx.compose.animation.AnimatedVisibility(visible = expanded && activity.steps.isNotEmpty()) {
+            Column(
+                Modifier.padding(top = 10.dp, start = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                activity.steps.takeLast(12).forEach { step ->
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            Modifier
+                                .padding(top = 5.dp)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                        )
+                        Text(
+                            step.text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
-        if (activity.isThinking && !activity.isComplete) ThinkingDots()
-        else if (activity.isComplete) LucideIcon(LucideR.drawable.lucide_ic_circle_check, "Complete", MaterialTheme.colorScheme.primary, Modifier.size(18.dp))
     }
 }
+
 
 @Composable
 private fun ThinkingDots() {
