@@ -95,6 +95,7 @@ export async function appendConversationMessage(input: {
   sourceChannel: "telegram" | "android" | "agent";
   sourceMessageId?: string;
   status?: "pending" | "awaiting_approval" | "complete" | "failed";
+  metadata?: Record<string, unknown>;
 }): Promise<{ id: string; sequence: number }> {
   const [created] = await db.insert(messages).values({
     conversationId: input.conversationId,
@@ -102,7 +103,8 @@ export async function appendConversationMessage(input: {
     content: input.content,
     sourceChannel: input.sourceChannel,
     sourceMessageId: input.sourceMessageId ?? null,
-    status: input.status ?? "complete"
+    status: input.status ?? "complete",
+    metadata: input.metadata ?? {}
   }).returning({ id: messages.id, sequence: messages.sequence });
   if (!created) throw new Error("Conversation message could not be stored.");
   await db.update(conversations)
@@ -120,7 +122,8 @@ export async function setConversationMessageStatus(
 
 export async function completeLatestAwaitingMessage(
   conversationId: string,
-  assistantMessage: string
+  assistantMessage: string,
+  metadata?: Record<string, unknown>
 ): Promise<boolean> {
   const [pending] = await db.select({ id: messages.id })
     .from(messages)
@@ -136,7 +139,8 @@ export async function completeLatestAwaitingMessage(
     conversationId,
     role: "assistant",
     content: assistantMessage,
-    sourceChannel: "agent"
+    sourceChannel: "agent",
+    metadata
   });
   await setConversationMessageStatus(pending.id, "complete");
   return true;
@@ -154,6 +158,7 @@ export async function loadConversationMessages(
   sourceChannel: string;
   status: string;
   createdAt: Date;
+  metadata: Record<string, unknown>;
 }>> {
   const columns = {
     id: messages.id,
@@ -162,7 +167,8 @@ export async function loadConversationMessages(
     content: messages.content,
     sourceChannel: messages.sourceChannel,
     status: messages.status,
-    createdAt: messages.createdAt
+    createdAt: messages.createdAt,
+    metadata: messages.metadata
   };
   const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
   if (afterSequence <= 0) {
