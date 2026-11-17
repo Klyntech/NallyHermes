@@ -155,7 +155,13 @@ export async function handleMobileApiRequest(
 
     if (pathname === "/api/mobile/voice-ticket" && req.method === "POST") {
       const ticket = await (deps.createVoiceTicket ?? mintVoiceTicket)(session);
-      sendJson(res, 201, { ticket: ticket.ticket, expiresAt: ticket.expiresAt.toISOString(), websocketPath: "/api/mobile/voice" });
+      sendJson(res, 201, {
+        ticket: ticket.ticket,
+        expiresAt: ticket.expiresAt.toISOString(),
+        websocketPath: "/api/mobile/voice",
+        protocolVersion: 1,
+        input: { encoding: "pcm_s16le", sampleRate: 16000, channels: 1 }
+      });
       return;
     }
 
