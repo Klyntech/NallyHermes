@@ -13,6 +13,23 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
+internal data class MessageSource(
+    val kind: String,
+    val title: String,
+    val url: String?,
+    val course: String? = null
+)
+
+internal data class ThinkingStep(
+    val text: String,
+    val at: Long? = null
+)
+
+internal data class MessageThinking(
+    val durationMs: Long,
+    val steps: List<ThinkingStep>
+)
+
 internal data class SyncedMessage(
     val id: String,
     val sequence: Long,
@@ -20,7 +37,9 @@ internal data class SyncedMessage(
     val text: String,
     val source: String,
     val status: String,
-    val createdAt: String
+    val createdAt: String,
+    val sources: List<MessageSource> = emptyList(),
+    val thinking: MessageThinking? = null
 )
 
 internal data class MobileActivitySnapshot(
@@ -134,6 +153,35 @@ internal class MobileApi(context: Context) {
         val rows = buildList {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
+                val sourcesJson = item.optJSONArray("sources")
+                val sources = buildList {
+                    if (sourcesJson != null) {
+                        for (s in 0 until sourcesJson.length()) {
+                            val row = sourcesJson.optJSONObject(s) ?: continue
+                            add(
+                                MessageSource(
+                                    kind = row.optString("kind", "web"),
+                                    title = row.optString("title"),
+                                    url = row.optString("url").takeIf { it.isNotBlank() },
+                                    course = row.optString("course").takeIf { it.isNotBlank() }
+                                )
+                            )
+                        }
+                    }
+                }
+                val thinkingJson = item.optJSONObject("thinking")
+                val thinking = thinkingJson?.let { th ->
+                    val stepsArr = th.optJSONArray("steps")
+                    val steps = buildList {
+                        if (stepsArr != null) {
+                            for (t in 0 until stepsArr.length()) {
+                                val st = stepsArr.optJSONObject(t) ?: continue
+                                add(ThinkingStep(text = st.optString("text"), at = st.optLong("at").takeIf { it > 0 }))
+                            }
+                        }
+                    }
+                    MessageThinking(durationMs = th.optLong("durationMs"), steps = steps)
+                }
                 add(
                     SyncedMessage(
                         id = item.optString("id"),
@@ -142,7 +190,9 @@ internal class MobileApi(context: Context) {
                         text = item.optString("text"),
                         source = item.optString("source"),
                         status = item.optString("status"),
-                        createdAt = item.optString("createdAt")
+                        createdAt = item.optString("createdAt"),
+                        sources = sources,
+                        thinking = thinking
                     )
                 )
             }
