@@ -426,8 +426,8 @@ private fun GlVoiceOrb(state: VoiceUiState, level: Float, modifier: Modifier = M
         factory = { orbView },
         modifier = modifier,
         update = {
-            it.setVoiceState(state)
-            it.setLevel(level)
+            it.setVoiceUiState(state)
+            it.setAudioLevel(level)
         }
     )
 }
