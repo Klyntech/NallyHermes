@@ -44,22 +44,68 @@ const defaultProviders: Providers = {
   }
 };
 
+function rejectUpgrade(socket: { write: (chunk: string) => void; destroy: () => void }, status: number, reason: string, code: string): void {
+  const body = JSON.stringify({ error: reason, code });
+  socket.write(
+    `HTTP/1.1 ${status} ${reason}\r\n` +
+      "Content-Type: application/json\r\n" +
+      `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+      "Connection: close\r\n\r\n" +
+      body
+  );
+  socket.destroy();
+}
+
 export function attachVoiceWebSocket(server: Server, consumeTicket = consumeVoiceTicket, providers: Providers = defaultProviders): void {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 32_768, perMessageDeflate: false });
   const activeBySession = new Set<string>();
+  if (!config.VOICE_ENABLED) {
+    console.warn("[voice] VOICE_ENABLED is false — /api/mobile/voice upgrades will return 503.");
+  } else {
+    console.info("[voice] WebSocket upgrade handler attached at /api/mobile/voice");
+  }
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    if (url.pathname !== "/api/mobile/voice") { socket.destroy(); return; }
-    const origin = req.headers.origin;
-    if (origin && !ALLOWED_ORIGINS.has(origin)) { socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
-    if (!config.VOICE_ENABLED || wss.clients.size >= MAX_CONNECTIONS) { socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
+    if (url.pathname !== "/api/mobile/voice") {
+      // Do not destroy unknown paths; other upgrade handlers may own them.
+      return;
+    }
+    const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+    // Empty allow-list = allow any origin (native clients often omit Origin).
+    if (origin && ALLOWED_ORIGINS.size > 0 && !ALLOWED_ORIGINS.has(origin)) {
+      rejectUpgrade(socket, 403, "Origin not allowed for voice", "origin_forbidden");
+      return;
+    }
+    if (!config.VOICE_ENABLED) {
+      rejectUpgrade(socket, 503, "Realtime voice is not enabled on this server", "voice_disabled");
+      return;
+    }
+    if (wss.clients.size >= MAX_CONNECTIONS) {
+      rejectUpgrade(socket, 503, "Voice service is at capacity", "voice_capacity");
+      return;
+    }
     const ticket = url.searchParams.get("ticket");
-    if (!ticket || url.searchParams.size !== 1) { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
+    if (!ticket) {
+      rejectUpgrade(socket, 401, "Missing voice ticket", "ticket_missing");
+      return;
+    }
     void consumeTicket(ticket).then((session) => {
-      if (!session) { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
-      if (activeBySession.has(session.sessionId)) { socket.write("HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n"); socket.destroy(); return; }
-      wss.handleUpgrade(req, socket, head, (ws) => { activeBySession.add(session.sessionId); handleSocket(ws, session, () => activeBySession.delete(session.sessionId), providers); });
-    }).catch((error) => { console.error("Voice ticket validation failed:", error); socket.destroy(); });
+      if (!session) {
+        rejectUpgrade(socket, 401, "Voice ticket is invalid or expired", "ticket_invalid");
+        return;
+      }
+      if (activeBySession.has(session.sessionId)) {
+        rejectUpgrade(socket, 429, "A voice call is already active for this account", "session_busy");
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        activeBySession.add(session.sessionId);
+        handleSocket(ws, session, () => activeBySession.delete(session.sessionId), providers);
+      });
+    }).catch((error) => {
+      console.error("Voice ticket validation failed:", error);
+      rejectUpgrade(socket, 500, "Voice ticket validation failed", "ticket_error");
+    });
   });
 }
 
@@ -70,7 +116,10 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
   const closeUpstream = (s: WebSocket | null) => { if (s && s.readyState < WebSocket.CLOSING) s.close(); };
   const interrupt = () => { if (!turnId || turnInterrupted) return; turnInterrupted = true; generation++; closeUpstream(tts); tts = null; send({ type: "interrupted", turnId }); };
   const terminate = () => { if (closed) return; closed = true; clearInterval(idle); closeUpstream(dg); closeUpstream(tts); cleanup(); if (ws.readyState === WebSocket.OPEN) ws.close(1000, "session ended"); };
-  const fail = (code: string, message: string, recoverable = false) => { send({ type: "error", code, message, recoverable }); terminate(); };
+  const fail = (code: string, message: string, recoverable = false) => {
+    try { send({ type: "error", code, message, recoverable }); } catch { /* ignore */ }
+    setTimeout(() => terminate(), 120);
+  };
   const idle = setInterval(() => { if (Date.now() - lastActivity > IDLE_TIMEOUT_MS || Date.now() - startedAt > MAX_SESSION_MS) fail("session_timeout", "Voice session timed out.", true); }, 5_000);
   const beginAnswer = async (text: string) => {
     const myGeneration = ++generation; turnId = randomBytes(12).toString("hex"); turnInterrupted = false; outputBytes = 0;
@@ -124,7 +173,14 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
     if (control.type === "start") {
       if (started) { fail("already_started", "Session has already started."); return; }
       started = true;
-      try { dg = providers.deepgram(control.language ?? config.DEEPGRAM_LANGUAGE); } catch { fail("stt_unavailable", "Speech recognition could not be started.", true); return; }
+      try {
+        dg = providers.deepgram(control.language ?? config.DEEPGRAM_LANGUAGE);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "unknown";
+        console.error("[voice] Deepgram start failed:", detail);
+        fail("stt_unavailable", `Speech recognition could not be started (${detail}).`, true);
+        return;
+      }
       const socket = dg, timer = setTimeout(() => { if (!started || socket.readyState !== WebSocket.OPEN) fail("stt_timeout", "Speech recognition setup timed out.", true); }, config.VOICE_STT_TIMEOUT_MS);
       socket.on("open", () => { clearTimeout(timer); if (!closed && ws.readyState === WebSocket.OPEN) send({ type: "ready", protocolVersion: 1, input: { encoding: "pcm_s16le", sampleRate: 16000, channels: 1 } }); });
       socket.on("message", (raw, binary) => {
