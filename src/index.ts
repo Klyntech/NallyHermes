@@ -15,6 +15,7 @@ import {
 import { createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
 import { handleMobileApiRequest } from "./mobile/http.js";
 import { respond } from "./agent/orchestrator.js";
+import { splitAnswerAndSources } from "./agent/sourceAttribution.js";
 import { isVoiceConfigured, speechToText, prepareSpokenDelivery } from "./agent/voice/index.js";
 import { normalizeTelegramAudio, readResponseWithLimit } from "./agent/voice/audio.js";
 import { checkMemoryPipeline, startScheduleWorker } from "./agent/tools/extended.js";
@@ -157,8 +158,71 @@ type MobileActivity = {
   requiresTelegramApproval: boolean;
   updatedAt: number;
   expiresAt: number;
+  steps?: Array<{ text: string; at: number }>;
+  startedAt?: number;
+  elapsedMs?: number;
 };
 const mobileActivities = new Map<string, MobileActivity>();
+
+type ThinkingTrace = {
+  startedAt: number;
+  steps: Array<{ text: string; at: number }>;
+};
+const mobileThinkingTraces = new Map<string, ThinkingTrace>();
+
+function beginThinkingTrace(telegramId: string): void {
+  mobileThinkingTraces.set(telegramId, { startedAt: Date.now(), steps: [] });
+}
+
+function noteThinkingStep(telegramId: string, text: string): void {
+  let trace = mobileThinkingTraces.get(telegramId);
+  if (!trace) {
+    trace = { startedAt: Date.now(), steps: [] };
+    mobileThinkingTraces.set(telegramId, trace);
+  }
+  const last = trace.steps[trace.steps.length - 1];
+  if (last && last.text === text) return;
+  trace.steps.push({ text, at: Date.now() });
+  if (trace.steps.length > 40) trace.steps.shift();
+}
+
+function takeThinkingTrace(telegramId: string): {
+  durationMs: number;
+  steps: Array<{ text: string; at: number }>;
+} | null {
+  const trace = mobileThinkingTraces.get(telegramId);
+  mobileThinkingTraces.delete(telegramId);
+  if (!trace) return null;
+  return {
+    durationMs: Math.max(0, Date.now() - trace.startedAt),
+    steps: trace.steps
+  };
+}
+
+function buildAssistantMetadata(answer: string, telegramId: string): {
+  contentForMobile: string;
+  metadata: Record<string, unknown>;
+} {
+  const { body, sources } = splitAnswerAndSources(answer);
+  const thinking = takeThinkingTrace(telegramId);
+  const metadata: Record<string, unknown> = {};
+  if (sources.length) {
+    metadata.sources = sources.map((s) => ({
+      kind: s.kind,
+      title: s.title,
+      url: s.url ?? null,
+      course: s.course ?? null,
+      documentId: s.documentId ?? null
+    }));
+  }
+  if (thinking && (thinking.steps.length > 0 || thinking.durationMs > 0)) {
+    metadata.thinking = {
+      durationMs: thinking.durationMs,
+      steps: thinking.steps.map((step) => ({ text: step.text, at: step.at }))
+    };
+  }
+  return { contentForMobile: body, metadata };
+}
 
 function publishMobileActivity(telegramId: string, event: ProgressEvent): void {
   if (event.type === "response_ready") {
@@ -167,18 +231,23 @@ function publishMobileActivity(telegramId: string, event: ProgressEvent): void {
   }
   const display = displayProgress(event);
   if (!display) return;
+  noteThinkingStep(telegramId, display.text);
   const approval = event.type === "tool_progress" && event.stage === "approval_required";
   const provider = event.type === "tool_start" || event.type === "tool_complete" || event.type === "tool_error"
     ? event.tool
     : event.type === "tool_progress" ? event.tool : null;
   const now = Date.now();
+  const trace = mobileThinkingTraces.get(telegramId);
   mobileActivities.set(telegramId, {
     headline: approval ? "Approval needed in Telegram" : display.text,
     provider,
     isThinking: !approval && Boolean(display.animateThinking),
     requiresTelegramApproval: approval,
     updatedAt: now,
-    expiresAt: now + (approval ? 60 * 60_000 : 5 * 60_000)
+    expiresAt: now + (approval ? 60 * 60_000 : 5 * 60_000),
+    steps: trace?.steps.slice(-12),
+    startedAt: trace?.startedAt,
+    elapsedMs: trace ? now - trace.startedAt : undefined
   });
 }
 
@@ -224,6 +293,7 @@ async function submitMobileMessage(
     try {
       const persistedHistory = await loadConversationHistory(conversationId);
       const history = [...persistedHistory];
+      beginThinkingTrace(session.telegramId);
       const answer = await respond(history, input.text, session.telegramId, async (event) => {
         publishMobileActivity(session.telegramId, event);
         await notifyApprovalIfNeeded(Number(session.telegramChatId), event);
@@ -233,7 +303,14 @@ async function submitMobileMessage(
         mobileSubmitInFlight.delete(`${session.telegramId}:${input.clientMessageId}`);
         return { state: "awaiting_approval" as const };
       }
-      await appendConversationMessage({ conversationId, role: "assistant", content: answer, sourceChannel: "agent" });
+      const packaged = buildAssistantMetadata(answer, session.telegramId);
+      await appendConversationMessage({
+        conversationId,
+        role: "assistant",
+        content: answer,
+        sourceChannel: "agent",
+        metadata: packaged.metadata
+      });
       await setConversationMessageStatus(userRecord.id, "complete");
       void bot.api.sendMessage(Number(session.telegramChatId), `NallyHermes · Android reply\n\n${answer.slice(0, 3_800)}`)
         .catch((error) => console.warn("Could not echo Android reply to Telegram:", error));
@@ -857,6 +934,7 @@ bot.on("message:text", async (ctx) => {
         status: "pending"
       });
       persistedUserMessageId = userRecord.id;
+      beginThinkingTrace(telegramId);
       const answer = await respond(history, ctx.message.text, telegramId, onProgress, undefined, undefined, { conversationId });
       if (answer === null) {
         await setConversationMessageStatus(userRecord.id, "awaiting_approval");
@@ -864,7 +942,14 @@ bot.on("message:text", async (ctx) => {
         return;
       }
       await closeProgress();
-      await appendConversationMessage({ conversationId, role: "assistant", content: answer, sourceChannel: "agent" });
+      const packaged = buildAssistantMetadata(answer, telegramId);
+      await appendConversationMessage({
+        conversationId,
+        role: "assistant",
+        content: answer,
+        sourceChannel: "agent",
+        metadata: packaged.metadata
+      });
       await setConversationMessageStatus(userRecord.id, "complete");
       history.push({ role: "user", content: ctx.message.text }, { role: "assistant", content: answer });
       saveHistory(historyKey, history);

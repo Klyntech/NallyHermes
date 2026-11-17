@@ -147,6 +147,7 @@ export async function ensureDatabase(): Promise<void> {
     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS source_channel text NOT NULL DEFAULT 'telegram'",
     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS source_message_id text",
     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'complete'",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb",
     "CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations(user_id)",
     "CREATE INDEX IF NOT EXISTS conversations_user_chat_idx ON conversations(user_id, telegram_chat_id)",
     "CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id)",

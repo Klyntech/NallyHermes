@@ -144,3 +144,43 @@ export function appendSourcesFooter(answer: string, sources: AnswerSource[]): st
   });
   return `${body}\n\n**Sources**\n${items.join("\n")}`;
 }
+
+
+/** Split a stored assistant answer into body + structured sources (from appendSourcesFooter). */
+export function splitAnswerAndSources(answer: string): { body: string; sources: AnswerSource[] } {
+  const lines = answer.replace(/\r\n/g, "\n").split("\n");
+  const heading = lines.findIndex((line) =>
+    /^\s*(?:\*\*)?sources?(?:\*\*)?\s*$/i.test(line.trim()) ||
+    /^\s*(?:\*\*)?sources?(?:\*\*)?\s*:?\s*$/i.test(line.trim())
+  );
+  if (heading < 0) {
+    return { body: answer.trim(), sources: [] };
+  }
+  const body = lines.slice(0, heading).join("\n").trim();
+  const sources: AnswerSource[] = [];
+  const seen = new Set<string>();
+  for (const raw of lines.slice(heading + 1)) {
+    const line = raw.trim();
+    if (!line || line === "---") continue;
+    const link = /^\s*[-*]\s*\[([^\]]+)\]\((https?:[^)\s]+)\)\s*$/i.exec(line);
+    if (link) {
+      const title = displayTitle(link[1], "Source");
+      const url = safeWebUrl(link[2]);
+      if (!url) continue;
+      const key = `url:${url.toLowerCase().replace(/#.*$/, "")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sources.push({ kind: "web", title, url });
+      continue;
+    }
+    const plain = /^\s*[-*]\s+(.+?)\s*$/.exec(line);
+    if (plain) {
+      const title = displayTitle(plain[1], "Academic document");
+      const key = `academic:${title}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sources.push({ kind: "academic", title });
+    }
+  }
+  return { body: body || answer.trim(), sources: sources.slice(0, 8) };
+}

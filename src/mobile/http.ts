@@ -10,6 +10,7 @@ import {
   type MobileSession
 } from "../db/mobileStore.js";
 import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
+import { splitAnswerAndSources } from "../agent/sourceAttribution.js";
 
 const MAX_REQUEST_BYTES = 8_192;
 const CLIENT_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -161,15 +162,33 @@ export async function handleMobileApiRequest(
       const messages = await loadConversationMessages(conversationId, afterSequence, 200);
       const nextSequence = messages.length ? messages[messages.length - 1]!.sequence : afterSequence;
       sendJson(res, 200, {
-        messages: messages.map((message) => ({
-          id: message.id,
-          sequence: message.sequence,
-          role: message.role,
-          text: message.content,
-          source: message.sourceChannel,
-          status: message.status,
-          createdAt: message.createdAt.toISOString()
-        })),
+        messages: messages.map((message) => {
+          const meta = (message.metadata && typeof message.metadata === "object")
+            ? message.metadata as Record<string, unknown>
+            : {};
+          const parsed = splitAnswerAndSources(message.content);
+          const sources = Array.isArray(meta.sources) && meta.sources.length
+            ? meta.sources
+            : parsed.sources.map((s) => ({
+                kind: s.kind,
+                title: s.title,
+                url: s.url ?? null,
+                course: s.course ?? null,
+                documentId: s.documentId ?? null
+              }));
+          const thinking = meta.thinking && typeof meta.thinking === "object" ? meta.thinking : undefined;
+          return {
+            id: message.id,
+            sequence: message.sequence,
+            role: message.role,
+            text: parsed.body,
+            source: message.sourceChannel,
+            status: message.status,
+            createdAt: message.createdAt.toISOString(),
+            sources: sources.length ? sources : undefined,
+            thinking
+          };
+        }),
         nextSequence,
         activity: deps.getActivity(session.telegramId)
       });
