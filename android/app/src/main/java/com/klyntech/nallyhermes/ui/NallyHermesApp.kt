@@ -106,6 +106,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.composables.icons.lucide.R as LucideR
 import com.klyntech.nallyhermes.MobileApi
+import com.klyntech.nallyhermes.MessageSource
+import com.klyntech.nallyhermes.MessageThinking
+import com.klyntech.nallyhermes.ThinkingStep
+import com.klyntech.nallyhermes.SyncedMessage
 import com.klyntech.nallyhermes.SyncedMessage
 import com.klyntech.nallyhermes.MobileActivitySnapshot
 import com.klyntech.nallyhermes.TelegramLoginChallenge
@@ -1346,6 +1350,7 @@ private fun UserMessage(text: String, status: String?, modifier: Modifier = Modi
     }
 }
 
+@Composable
 @Composable
 private fun AssistantMessage(
     text: String,
