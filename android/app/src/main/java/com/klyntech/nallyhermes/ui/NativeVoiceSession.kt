@@ -48,6 +48,8 @@ internal class NativeVoiceSession(
     @Volatile private var muted = false
     @Volatile private var socket: WebSocket? = null
     @Volatile private var startSent = false
+    @Volatile private var phase = "init"
+    @Volatile private var lastServerError: String? = null
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var track: AudioTrack? = null
     private var captureJob: Job? = null
@@ -66,12 +68,14 @@ internal class NativeVoiceSession(
                     webSocket.close(1000, "cancelled before start")
                     return
                 }
+                phase = "socket_open"
                 callback(Event.Connected)
                 val sent = webSocket.send(JSONObject().put("type", "start").put("protocolVersion", 1).toString())
                 if (sent) {
                     startSent = true
+                    phase = "start_sent"
                 } else {
-                    callback(Event.Error("Could not start the voice session."))
+                    callback(Event.Error("Could not send the voice start message to the server."))
                     stop("start send failed")
                 }
             }
@@ -121,9 +125,21 @@ internal class NativeVoiceSession(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                val priorError = lastServerError
                 cleanup()
-                if (!stopped.get() && reason.isNotBlank() && reason != "session ended") {
-                    callback(Event.Error(reason.take(180)))
+                if (priorError == null && phase != "ready" && phase != "server_error") {
+                    val detail = buildString {
+                        append("Call dropped during '")
+                        append(phase)
+                        append("' (WS ")
+                        append(code)
+                        if (reason.isNotBlank()) {
+                            append(": ")
+                            append(reason.take(80))
+                        }
+                        append(").")
+                    }
+                    callback(Event.Error(detail))
                 }
                 callback(Event.Ended)
             }
@@ -136,7 +152,25 @@ internal class NativeVoiceSession(
             return
         }
         when (event.optString("type")) {
+            "hello" -> {
+                phase = "hello"
+                val stt = event.optBoolean("sttConfigured", true)
+                val tts = event.optBoolean("ttsConfigured", true)
+                if (!stt) {
+                    lastServerError = "Server is missing DEEPGRAM_API_KEY."
+                    callback(Event.Error(lastServerError!!))
+                    stop("stt unconfigured")
+                    return
+                }
+                if (!tts) {
+                    lastServerError = "Server is missing ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID."
+                    callback(Event.Error(lastServerError!!))
+                    stop("tts unconfigured")
+                    return
+                }
+            }
             "ready" -> {
+                phase = "ready"
                 val input = event.optJSONObject("input")
                 if (event.optInt("protocolVersion") != 1 || input == null || input.optString("encoding") != "pcm_s16le" ||
                     input.optInt("sampleRate") != 16_000 || input.optInt("channels") != 1) {
@@ -184,7 +218,11 @@ internal class NativeVoiceSession(
             }
             "pong" -> Unit
             "error" -> {
-                val message = event.optString("message").ifBlank { "Voice service error." }
+                val message = event.optString("message").ifBlank {
+                    event.optString("code").ifBlank { "Voice service error." }
+                }
+                lastServerError = message
+                phase = "server_error"
                 callback(Event.Error(message))
                 stop(message)
             }
