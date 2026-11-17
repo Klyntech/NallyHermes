@@ -1,35 +1,41 @@
-# Native full-duplex voice: v1 transport contract
+# Native full-duplex voice: protocol v1
 
-## Current status
+## Current implementation status
 
-This is the initial transport-contract milestone for the Android client on the v3.4 backend baseline. `src/mobile/voiceProtocol.ts` defines the JSON control plane and binary input-frame guard, with unit tests in `tests/voice-protocol.test.ts`. This is not yet a functioning voice session: there is no authenticated WebSocket upgrade, provider bridge, Android audio capture/playback, or end-to-end conversation path in this milestone.
+The initial voice vertical slice is implemented on the `Manus-Work-Full-Deplex-v3.5` branch. The Android client exchanges its existing bearer session for a 60-second, single-use ticket, upgrades to an authenticated WebSocket, captures mono PCM16 at 16 kHz only after runtime microphone permission, and sends bounded binary frames. The server opens a Deepgram live transcription socket, sends transcript events, routes finalized speech through the existing Nally `respond` pipeline (`channel: "voice"`, `responseStyle: "spoken"`), persists completed exchanges, and streams ElevenLabs TTS audio back over the same socket. Android plays the returned PCM chunks through `AudioTrack` and closes resources when the screen leaves or the app backgrounds.
 
-## Baseline constraints
+The Voice screen uses the supplied mockup's layered orb treatment and state behavior, implemented natively in Compose and adapted to the app's MaterialTheme colors, typography, surfaces, and spacing. The orb responds to connection, listening, thinking, speaking, interruption, and unavailable states.
 
-The v3.4 voice code processes completed audio uploads through Deepgram and creates a complete ElevenLabs audio response. It does not expose a live audio socket. `runAgent` in `src/agent/controller.ts` also returns a completed answer; progress events are not model-token deltas. The Android branch has a Voice-screen placeholder and no microphone permission/capture implementation.
-
-The app branch and v3.4 backend are not directly interchangeable. The Android branch additionally calls Google/GitHub login and account-link endpoints that are absent from the v3.4 `src/mobile/http.ts`. Voice work should reuse v3.4 pairing/session authorization and must not assume all other Android account features already work against that backend.
+This is an implementation slice, not a production-readiness signoff. The provider path has not been exercised with live credentials, and the Android project could not be compiled in the sandbox because no Gradle wrapper/system Gradle or Android SDK is available. Server-focused mobile/protocol tests, TypeScript typecheck, production build, and whitespace checks pass. Automated tests for the provider lifecycle, ticket replay/expiry against a live database, and Android audio runtime behavior remain to be added.
 
 ## Protocol v1
 
-The intended connection is authenticated with a short-lived, single-use voice ticket minted over the existing HTTPS mobile API. Provider credentials remain exclusively on the backend. Client control events are small JSON text frames; microphone audio is sent as raw binary PCM frames to avoid base64 expansion. A `start` message negotiates protocol version 1 and may include a bounded BCP-47 language hint. The backend sends `ready` with the required `pcm_s16le`, 16 kHz, mono input format.
+A client obtains a ticket through authenticated `POST /api/mobile/voice-ticket`, then connects to `/api/mobile/voice?ticket=…`. The ticket is random, stored as an HMAC hash, expires after 60 seconds, and is atomically consumed during upgrade. The mobile bearer token is never placed in the WebSocket URL; provider credentials remain server-side. `VOICE_ENABLED` must be enabled and Deepgram/ElevenLabs credentials and voice ID configured.
 
-The client may send `stop_input` to finish an utterance while keeping the session open, `interrupt` to cancel current response playback/generation, `ping` for an application-level heartbeat, and `close` to end the session. The server can send interim/final `transcript` events, `assistant_start`, `text_delta`, `audio_start`, binary audio chunks, `audio_end`, `assistant_end`, `interrupted`, `pong`, and bounded `error` events. Transcript speech arriving during output must be able to interrupt that turn; audio output is dropped for the canceled turn before the next response starts.
+Control events are small JSON text frames; audio uses binary frames. The client starts with protocol version 1. Server `ready` negotiates mono `pcm_s16le` at 16 kHz for microphone input. TTS events announce the same raw PCM16/16 kHz/mono format, followed by binary chunks. Control events include interim/final transcripts, assistant start/text, audio start/end, assistant end, interruption, ping/pong, and bounded errors.
 
-Raw audio is untrusted input. The WebSocket layer must enforce authentication, origin policy, frame-size and total-session limits, idle timeout, connection limits, bounded outbound queues, and explicit teardown of upstream provider sockets. Ticket replay must fail. Do not put long-lived mobile tokens or provider credentials in a query string.
+The server enforces ticket replay protection, frame/transcript/audio/output limits, session duration and idle timeouts, process-level connection limits, one active socket per mobile session per process, upstream teardown, and bounded/backpressure-aware sends. Origin headers are allowlisted by `MOBILE_VOICE_ALLOWED_ORIGINS`; native clients without an Origin header are permitted. A reverse proxy must support WebSocket upgrades and retain suitable timeout/body limits.
 
-## Provider pipeline to implement
+## Streaming and interruption behavior
 
-The existing backend integrations suggest a server-only bridge using Deepgram live transcription, the current NVIDIA NIM agent, and ElevenLabs streaming TTS. NVIDIA NIM documents streaming Chat Completions, but v3.4's agent controller currently makes non-streaming calls and has tool/planning rounds that must remain intact. The provider bridge therefore needs an explicit incremental-output callback in the agent path, with cancellation propagated from a user interruption. Keep text-only/mobile chat as the fallback if realtime setup or any provider fails.
+Microphone input stays open while Nally is speaking. Deepgram's speech-start/interim events cancel the active TTS socket and mark the assistant turn interrupted, so the client can barge in. Finalized transcripts use the existing agent orchestration and its tool/approval safeguards. Requests that require approval return an explicit approval-needed error; approval currently still takes place in Telegram.
 
-Deepgram live transcription uses a provider-authenticated WebSocket and emits interim/final transcript results. ElevenLabs streaming TTS accepts partial text over WebSocket and emits audio chunks; its documented streaming TTS endpoint does not support some newest model families, so the exact model must be configured and tested before release. Keep all provider sockets and keys on the server.
+The agent controller returns a complete answer, so the text itself is currently delivered as one text event rather than NIM token-by-token deltas. ElevenLabs audio is chunk-streamed. The running agent call is not yet aborted at the model/tool layer after barge-in; its stale result is discarded before speech playback/persistence. This is a known efficiency limitation, not a silent claim of LLM streaming.
+
+The Android keyboard control intentionally routes typed text to the existing Chat endpoint because protocol v1 has no text-input event. Captions are local UI visibility controls; transcript/text updates are still available from the server.
 
 ## Production gates
 
-Before enabling this in the production app, complete authenticated one-time voice tickets, server WebSocket upgrade/bridge, microphone permission and AudioRecord/AudioTrack lifecycle, interruption/cancellation, reconnect/expiry behavior, and Android foreground/background handling. Add tests for ticket replay/expiry, binary framing, oversized and malformed input, disconnect cleanup, provider failure, and concurrent user isolation. Verify reverse-proxy WebSocket support and limits in the deployed host. The current v3.4 process uses in-memory live activity, so session recovery must rely on durable conversation state rather than that activity map.
+Before enabling for general production use:
+
+- Run live-provider integration tests for Deepgram authentication, transcript segmentation, ElevenLabs `pcm_16000` support with the configured model/voice, PCM playback, provider disconnects, and barge-in. No live provider credentials were used in implementation checks.
+- Add automated provider lifecycle/state-transition tests, durable ticket replay/expiry tests, and concurrency/isolation tests. The single-session limit is process-local; multi-instance deployments need a shared lease/connection limit if one-active-session-per-user must be global.
+- Add model/tool cancellation propagation where safe; never interrupt a mutating operation in a way that leaves its outcome uncertain.
+- Validate Android playback routing, acoustic echo cancellation/noise handling, audio focus, microphone permission denial/recovery, low-memory/background behavior, and accessibility/reduced-motion behavior on real devices.
+- Confirm runtime configuration, database schema bootstrap, WSS proxy behavior/timeouts, and monitoring/retention policy. Keep audio/transcripts private and avoid logging raw audio or secrets.
 
 ## References
 
 - [Deepgram live audio WebSocket reference](https://developers.deepgram.com/reference/speech-to-text/listen-streaming)
-- [ElevenLabs real-time TTS WebSocket guide](https://elevenlabs.io/docs/eleven-api/guides/how-to/websockets/realtime-tts)
+- [ElevenLabs streaming TTS WebSocket reference](https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-to-speech-voice-id-stream-input)
 - [NVIDIA NIM API reference](https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html)

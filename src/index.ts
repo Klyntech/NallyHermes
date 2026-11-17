@@ -14,6 +14,7 @@ import {
 } from "./db/conversationStore.js";
 import { createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
 import { handleMobileApiRequest } from "./mobile/http.js";
+import { attachVoiceWebSocket } from "./mobile/voiceSession.js";
 import { respond } from "./agent/orchestrator.js";
 import { splitAnswerAndSources } from "./agent/sourceAttribution.js";
 import { isVoiceConfigured, speechToText, prepareSpokenDelivery } from "./agent/voice/index.js";
@@ -1080,6 +1081,8 @@ const server = createServer((req, res) => {
     }
   });
 });
+
+attachVoiceWebSocket(server);
 
 await new Promise<void>((resolve, reject) => {
   server.once("error", reject);

@@ -28,7 +28,7 @@ Nally interprets requests with an OpenAI-compatible NVIDIA NIM model, while dete
 | Scheduling | One-time and daily/weekly/monthly reminders delivered proactively through Telegram |
 | Workflows | Durable recurring multi-step runs with tool allowlists, read-only or confirm-mutations policy, retries, and run history |
 | Academic | Telegram PDF ingestion, Poppler extraction, metadata enrichment, indexed search, and `list/search/get/delete/rename` operations |
-| Voice | Bounded Telegram voice/audio input, FFmpeg normalization, Deepgram STT, ElevenLabs TTS, retries, deduplication, and spoken/text delivery |
+| Voice | Telegram voice notes plus a native Android realtime WebSocket path with Deepgram streaming STT, existing Nally orchestration, and chunked ElevenLabs PCM playback |
 | Connectors | Calendar, GitHub, Notion, Gmail, and NallPuter dispatchers with credential gates and mutation approval |
 | Telegram UX | Live progress edits, rich-message transport when supported, HTML fallback, message splitting, inline mutation approval, and webhook idempotency |
 | Skills | Proven repository-local skill packages selected by relevance and injected progressively into trusted context |
@@ -68,7 +68,7 @@ flowchart TD
 - **Neon PostgreSQL full-text search** — native, user-scoped retrieval for saved memories and academic document excerpts; no Python service or remote reranker is in the normal search path.
 - **Optional LightRAG / FastAPI sidecar** — retained for explicit diagnostics and reranker benchmarks, not normal memory or library retrieval.
 - **Creepy Crawley + optional Tavily** — primary and fallback web search/fetch backends.
-- **Deepgram + ElevenLabs** — Telegram speech-to-text and text-to-speech when voice is enabled.
+- **Deepgram + ElevenLabs** — Telegram voice notes and, when enabled, Android live transcription and streamed PCM speech output.
 - **FFmpeg / Poppler** — bounded Telegram audio normalization and PDF text extraction.
 
 ## Agent tools
@@ -205,7 +205,13 @@ The native Android client connects to `https://nally.onrender.com`. Its primary 
 
 Until Telegram Login is configured, the client offers a fallback: in a **private chat** with Nally, send `/mobile`; enter the returned single-use 10-digit code in the app within five minutes. The code proves access to that Telegram chat and is not a Telegram bot token. The API exchanges it for the same 30-day session type; only a keyed HMAC of the code/session token is stored. Pairing consumes the code through a single atomic database update because Neon HTTP does not support Drizzle transactions. Unlinking the device revokes its session. Pairing codes are never returned by an unauthenticated API response.
 
-The protected `/api/mobile/` API provides pairing, session revocation, message submission, an ordered shared transcript and the current sanitized agent activity. Ordinary text messages sent from Android are mirrored into the linked private Telegram chat with an explicit `From NallyHermes Android` label; their agent replies are likewise labeled. Telegram and Android text turns are persisted in one ordered conversation, with in-progress, approval-required and failed states. Tool operations that require approval still require a Telegram approval button and are not silently authorized by the app. The Android client polls the transcript/activity endpoints over HTTPS; this is a polling integration, not a streaming socket. The live activity snapshot is process-local and can reset if Render restarts during a request. Telegram attachments and native voice capture are not part of this text-sync flow.
+The protected `/api/mobile/` API provides pairing, session revocation, message submission, an ordered shared transcript and the current sanitized agent activity. Ordinary text messages sent from Android are mirrored into the linked private Telegram chat with an explicit `From NallyHermes Android` label; their agent replies are likewise labeled. Telegram and Android text turns are persisted in one ordered conversation, with in-progress, approval-required and failed states. Tool operations that require approval still require a Telegram approval button and are not silently authorized by the app. The Android client polls the transcript/activity endpoints over HTTPS for text chat; this is separate from the realtime voice socket. The live activity snapshot is process-local and can reset if Render restarts during a request. Telegram attachments are not part of this text-sync flow.
+
+## Native Android realtime voice
+
+The Android Voice screen requests `RECORD_AUDIO` only after the user taps **Start**. It exchanges the existing app session for a short-lived, single-use ticket, then streams mono 16 kHz PCM to the authenticated `/api/mobile/voice` WebSocket. The server uses Deepgram live transcription, Nally's existing agent orchestration and approval rules, and ElevenLabs streamed PCM output. Input remains open while the assistant speaks; detected user speech interrupts audio playback. The app closes the session when the voice screen is dismissed or the app backgrounds. Audio frames are transient; completed transcript/answer text is stored in the user's conversation.
+
+Enable `VOICE_ENABLED=true` and configure `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID` on the server. Set `MOBILE_VOICE_ALLOWED_ORIGINS` for browser clients; native Android connections do not send an Origin header. Text input from the voice screen routes to Chat, and requests requiring tool approval still require the Telegram approval controls. The agent returns a complete answer before streamed TTS starts, and a barge-in cancels speech output but does not yet abort an already-running model/tool operation. See [the native full-duplex voice contract](docs/voice/full-duplex.md) for implementation status and production gates.
 
 ## Privacy, safety, and beta limitations
 

@@ -99,6 +99,28 @@ internal class MobileApi(context: Context) {
         return builder
     }
 
+    data class VoiceTicket(val ticket: String, val websocketPath: String)
+
+    /** Exchanges the durable mobile credential for a one-use, short-lived voice credential. */
+    suspend fun createVoiceTicket(): VoiceTicket {
+        val response = execute(request("/api/mobile/voice-ticket")
+            .post("{}".toRequestBody(jsonType)).build())
+        val ticket = response.optString("ticket")
+        val path = response.optString("websocketPath")
+        require(ticket.length in 40..64 && path == "/api/mobile/voice") {
+            "The server returned an invalid voice session ticket."
+        }
+        return VoiceTicket(ticket, path)
+    }
+
+    /** WebSocket URL contains only the one-use voice ticket, never the mobile access token. */
+    fun voiceWebSocketUrl(ticket: VoiceTicket): String {
+        val root = baseUrl.trim().trimEnd('/')
+        require(root.startsWith("https://", ignoreCase = true)) { "A secure voice connection is unavailable." }
+        return root.replaceFirst(Regex("^https://", RegexOption.IGNORE_CASE), "wss://") +
+            ticket.websocketPath + "?ticket=" + URLEncoder.encode(ticket.ticket, "UTF-8")
+    }
+
     private suspend fun execute(request: Request): JSONObject = withContext(Dispatchers.IO) {
         http.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()

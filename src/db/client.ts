@@ -174,6 +174,16 @@ export async function ensureDatabase(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     "CREATE INDEX IF NOT EXISTS mobile_sessions_user_id_idx ON mobile_sessions(user_id)",
+    `CREATE TABLE IF NOT EXISTS mobile_voice_tickets (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      ticket_hash text NOT NULL UNIQUE,
+      mobile_session_id uuid NOT NULL REFERENCES mobile_sessions(id) ON DELETE CASCADE,
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at timestamptz NOT NULL,
+      consumed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS mobile_voice_tickets_expiry_idx ON mobile_voice_tickets(expires_at)",
     `CREATE TABLE IF NOT EXISTS mobile_login_challenges (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       nonce_hash text NOT NULL UNIQUE,

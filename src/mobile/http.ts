@@ -11,6 +11,7 @@ import {
 } from "../db/mobileStore.js";
 import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
 import { splitAnswerAndSources } from "../agent/sourceAttribution.js";
+import { mintVoiceTicket } from "./voiceSession.js";
 
 const MAX_REQUEST_BYTES = 8_192;
 const CLIENT_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,6 +29,7 @@ export type MobileApiDependencies = {
   createTelegramSession?: typeof createMobileSessionForTelegramUser;
   submitMessage: (session: MobileSession, input: { clientMessageId: string; text: string }) => Promise<SubmitResult>;
   getActivity: (telegramId: string) => unknown | null;
+  createVoiceTicket?: (session: MobileSession) => Promise<{ ticket: string; expiresAt: Date }>;
 };
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -151,6 +153,12 @@ export async function handleMobileApiRequest(
       return;
     }
 
+    if (pathname === "/api/mobile/voice-ticket" && req.method === "POST") {
+      const ticket = await (deps.createVoiceTicket ?? mintVoiceTicket)(session);
+      sendJson(res, 201, { ticket: ticket.ticket, expiresAt: ticket.expiresAt.toISOString(), websocketPath: "/api/mobile/voice" });
+      return;
+    }
+
     if (pathname === "/api/mobile/messages" && req.method === "GET") {
       const rawCursor = url.searchParams.get("afterSequence") ?? "0";
       const afterSequence = Number(rawCursor);
@@ -223,6 +231,10 @@ export async function handleMobileApiRequest(
 
     sendJson(res, 404, { error: "Mobile API route not found." });
   } catch (error) {
+    if (error instanceof Error && error.message === "voice_disabled") {
+      sendJson(res, 503, { error: "Realtime voice is not enabled on this server." });
+      return;
+    }
     if (error instanceof TelegramLoginError) {
       sendJson(res, error.status, { error: error.message });
       return;

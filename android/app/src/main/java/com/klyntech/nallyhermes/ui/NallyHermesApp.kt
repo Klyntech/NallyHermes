@@ -404,7 +404,21 @@ fun NallyHermesApp(
                                 scaleOut(targetScale = 0.992f, animationSpec = tween(140, easing = FastOutSlowInEasing)),
                             modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.VOICE) 2f else 0f)
                         ) {
-                            VoiceScreen(onSettings = { selectedTabName = AppTab.SETTINGS.name })
+                            VoiceScreen(
+                                api = api,
+                                onSettings = { selectedTabName = AppTab.SETTINGS.name },
+                                onTextSubmitted = { text ->
+                                    scope.launch {
+                                        try {
+                                            api.sendMessage(UUID.randomUUID().toString(), text)
+                                            connectionMessage = null
+                                            selectedTabName = AppTab.CHAT.name
+                                        } catch (error: Exception) {
+                                            connectionMessage = error.message ?: "Message could not be sent."
+                                        }
+                                    }
+                                }
+                            )
                         }
 
                         androidx.compose.animation.AnimatedVisibility(
@@ -1877,29 +1891,6 @@ private fun ToolShortcutTray(onSelect: (String) -> Unit, modifier: Modifier = Mo
             }
         }
         Text("Adds a prompt starter; tools run only when Nally receives your request.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun VoiceScreen(onSettings: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(Modifier.fillMaxWidth().padding(top = 22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Voice", style = MaterialTheme.typography.headlineLarge)
-            Text("A quieter way to talk things through.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.weight(1f))
-        Box(Modifier.size(224.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)).border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), CircleShape), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(154.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.96f)), contentAlignment = Alignment.Center) {
-                LucideIcon(LucideR.drawable.lucide_ic_mic, "Voice", MaterialTheme.colorScheme.primary, Modifier.size(48.dp))
-            }
-        }
-        Spacer(Modifier.height(27.dp))
-        Text("Voice is waiting for setup", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(7.dp))
-        Text("Voice is still being prepared for this native client. Your live, synced text conversation is ready in Chat.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onSettings) { Text("View account settings") }
-        Spacer(Modifier.weight(1f))
     }
 }
 

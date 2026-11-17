@@ -183,3 +183,26 @@ test("authenticated mobile submissions pass the paired identity and client id to
     text: "Hello Nally"
   });
 });
+
+test("voice tickets require mobile auth and return only a short-lived socket ticket", async () => {
+  await withServer(async (baseUrl) => {
+    const unauthenticated = await fetch(`${baseUrl}/api/mobile/voice-ticket`, { method: "POST" });
+    assert.equal(unauthenticated.status, 401);
+    const response = await fetch(`${baseUrl}/api/mobile/voice-ticket`, {
+      method: "POST",
+      headers: { authorization: "Bearer valid-test-token-123456789012345678901234567890123456" }
+    });
+    assert.equal(response.status, 201);
+    assert.deepEqual(await response.json(), {
+      ticket: "t".repeat(43),
+      expiresAt: "2026-01-01T00:01:00.000Z",
+      websocketPath: "/api/mobile/voice"
+    });
+  }, {
+    authenticateSession: async () => testSession,
+    createVoiceTicket: async (session) => {
+      assert.equal(session.telegramId, testSession.telegramId);
+      return { ticket: "t".repeat(43), expiresAt: new Date("2026-01-01T00:01:00.000Z") };
+    }
+  });
+});

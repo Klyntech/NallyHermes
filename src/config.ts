@@ -76,6 +76,7 @@ const envSchema = z.object({
   AGENT_MAX_READ_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
   // Voice (Deepgram STT + ElevenLabs TTS). Disabled unless VOICE_ENABLED=true.
   VOICE_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  MOBILE_VOICE_ALLOWED_ORIGINS: z.string().default(""),
   DEEPGRAM_API_KEY: z.string().optional(),
   DEEPGRAM_MODEL: z.string().default("nova-2"),
   DEEPGRAM_LANGUAGE: z.string().default("en"),

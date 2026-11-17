@@ -19,7 +19,7 @@ export type MobileVoiceServerControl =
   | { type: "transcript"; text: string; final: boolean }
   | { type: "assistant_start"; turnId: string }
   | { type: "text_delta"; turnId: string; text: string }
-  | { type: "audio_start"; turnId: string; encoding: "mp3" }
+  | { type: "audio_start"; turnId: string; encoding: "pcm_s16le"; sampleRate: 16000; channels: 1 }
   | { type: "audio_end"; turnId: string }
   | { type: "assistant_end"; turnId: string }
   | { type: "interrupted"; turnId: string }

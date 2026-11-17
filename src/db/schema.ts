@@ -125,6 +125,16 @@ export const mobileSessions = pgTable("mobile_sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => [index("mobile_sessions_user_id_idx").on(table.userId)]);
 
+export const mobileVoiceTickets = pgTable("mobile_voice_tickets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ticketHash: text("ticket_hash").notNull().unique(),
+  mobileSessionId: uuid("mobile_session_id").notNull().references(() => mobileSessions.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [index("mobile_voice_tickets_expiry_idx").on(table.expiresAt)]);
+
 export const mobileLoginChallenges = pgTable("mobile_login_challenges", {
   id: uuid("id").defaultRandom().primaryKey(),
   nonceHash: text("nonce_hash").notNull().unique(),
