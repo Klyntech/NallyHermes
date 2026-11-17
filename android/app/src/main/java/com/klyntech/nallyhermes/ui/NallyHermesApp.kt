@@ -110,7 +110,6 @@ import com.klyntech.nallyhermes.MessageSource
 import com.klyntech.nallyhermes.MessageThinking
 import com.klyntech.nallyhermes.ThinkingStep
 import com.klyntech.nallyhermes.SyncedMessage
-import com.klyntech.nallyhermes.SyncedMessage
 import com.klyntech.nallyhermes.MobileActivitySnapshot
 import com.klyntech.nallyhermes.TelegramLoginChallenge
 import com.klyntech.nallyhermes.TelegramLoginEvent
@@ -1350,7 +1349,6 @@ private fun UserMessage(text: String, status: String?, modifier: Modifier = Modi
     }
 }
 
-@Composable
 @Composable
 private fun AssistantMessage(
     text: String,
