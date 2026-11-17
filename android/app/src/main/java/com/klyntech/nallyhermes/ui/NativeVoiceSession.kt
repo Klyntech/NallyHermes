@@ -95,14 +95,36 @@ internal class NativeVoiceSession(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (!stopped.get()) {
-                    callback(Event.Error(response?.message?.takeIf { it.isNotBlank() } ?: t.message ?: "Voice connection failed."))
-                    cleanup()
+                if (stopped.get()) return
+                val status = response?.code
+                val body = try { response?.body?.string()?.take(240) } catch (_: Exception) { null }
+                val message = when {
+                    status == 401 -> "Voice ticket rejected (login expired or ticket already used). Pair again or retry Start."
+                    status == 403 -> "Voice connection blocked by the server (origin or policy)."
+                    status == 429 -> "A voice call is already active. End it and try again."
+                    status == 503 -> body?.takeIf { it.contains("voice", ignoreCase = true) }
+                        ?: "Realtime voice is not enabled or the server is at capacity. Check VOICE_ENABLED on the backend."
+                    !body.isNullOrBlank() -> {
+                        // Prefer JSON {"error":"..."} from rejectUpgrade
+                        val extracted = try {
+                            val o = org.json.JSONObject(body)
+                            o.optString("error").ifBlank { o.optString("message") }
+                        } catch (_: Exception) { body }
+                        extracted.ifBlank { t.message ?: "Voice connection failed." }
+                    }
+                    !t.message.isNullOrBlank() -> t.message!!
+                    else -> "Voice connection failed (network or TLS)."
                 }
+                callback(Event.Error(message))
+                cleanup()
+                callback(Event.Ended)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 cleanup()
+                if (!stopped.get() && reason.isNotBlank() && reason != "session ended") {
+                    callback(Event.Error(reason.take(180)))
+                }
                 callback(Event.Ended)
             }
         })
