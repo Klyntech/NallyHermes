@@ -161,15 +161,24 @@ export async function handleMobileApiRequest(
       const messages = await loadConversationMessages(conversationId, afterSequence, 200);
       const nextSequence = messages.length ? messages[messages.length - 1]!.sequence : afterSequence;
       sendJson(res, 200, {
-        messages: messages.map((message) => ({
-          id: message.id,
-          sequence: message.sequence,
-          role: message.role,
-          text: message.content,
-          source: message.sourceChannel,
-          status: message.status,
-          createdAt: message.createdAt.toISOString()
-        })),
+        messages: messages.map((message) => {
+          const meta = (message.metadata && typeof message.metadata === "object")
+            ? message.metadata as Record<string, unknown>
+            : {};
+          const sources = Array.isArray(meta.sources) ? meta.sources : undefined;
+          const thinking = meta.thinking && typeof meta.thinking === "object" ? meta.thinking : undefined;
+          return {
+            id: message.id,
+            sequence: message.sequence,
+            role: message.role,
+            text: message.content,
+            source: message.sourceChannel,
+            status: message.status,
+            createdAt: message.createdAt.toISOString(),
+            sources,
+            thinking
+          };
+        }),
         nextSequence,
         activity: deps.getActivity(session.telegramId)
       });
