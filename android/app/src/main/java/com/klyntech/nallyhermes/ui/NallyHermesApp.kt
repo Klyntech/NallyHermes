@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import com.klyntech.nallyhermes.WakeWordService
+import com.klyntech.nallyhermes.WakeWordPrefs
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -1898,7 +1901,17 @@ private fun ToolShortcutTray(onSelect: (String) -> Unit, modifier: Modifier = Mo
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Web search" to "Sea@Composable
+            listOf("Web search" to "Search the web for ", "Calendar" to "Check my calendar for ", "Memory" to "Recall what you know about ").forEach { (label, prefix) ->
+                Surface(modifier = Modifier.weight(1f).clickable { onSelect(prefix) }, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.74f), shape = RoundedCornerShape(14.dp)) {
+                    Text(label, Modifier.padding(horizontal = 8.dp, vertical = 10.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                }
+            }
+        }
+        Text("Adds a prompt starter; tools run only when Nally receives your request.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun SettingsScreen(
     api: MobileApi,
     onUnlinked: () -> Unit,
@@ -1909,23 +1922,20 @@ private fun SettingsScreen(
     var identities by remember { mutableStateOf<List<MobileApi.LinkedIdentity>>(emptyList()) }
     var appearanceLabel by remember { mutableStateOf("System") }
     var voiceLabel by remember { mutableStateOf("Default") }
+    var wakeWordEnabled by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
-        try {
-            identities = api.listIdentities()
-        } catch (_: Exception) {
-            // older servers may not expose identities yet
-        }
+        try { identities = api.listIdentities() } catch (_: Exception) {}
+        wakeWordEnabled = WakeWordPrefs.isEnabled(context)
     }
+
     fun refreshIdentities() {
         scope.launch {
-            try {
-                identities = api.listIdentities()
-            } catch (error: Exception) {
-                feedback = error.message ?: "Could not refresh linked logins."
-            }
+            try { identities = api.listIdentities() }
+            catch (error: Exception) { feedback = error.message ?: "Could not refresh linked logins." }
         }
     }
 
@@ -1933,194 +1943,124 @@ private fun SettingsScreen(
     val githubLinked = identities.any { it.provider == "github" }
 
     Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(horizontal = 18.dp)
-            .padding(bottom = 100.dp)
+        modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 18.dp).padding(bottom = 100.dp)
     ) {
-        Text(
-            "Settings",
-            Modifier.padding(top = 22.dp, bottom = 4.dp),
-            style = MaterialTheme.typography.headlineLarge
-        )
-        Text(
-            "Account, voice, and app preferences.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("Settings", Modifier.padding(top = 22.dp, bottom = 4.dp), style = MaterialTheme.typography.headlineLarge)
+        Text("Account, voice, and app preferences.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(22.dp))
 
-        // ——— App ———
         SettingsSectionLabel("App")
         SettingsGroup {
-            SettingsNavRow(
-                icon = Icons.Filled.Brightness6,
-                title = "Appearance",
-                subtitle = appearanceLabel,
-                onClick = {
-                    appearanceLabel = when (appearanceLabel) {
-                        "System" -> "Dark"
-                        "Dark" -> "Light"
-                        else -> "System"
-                    }
-                    feedback = "Theme set to $appearanceLabel (applies on next full theme wiring)."
-                }
-            )
+            SettingsNavRow(Icons.Filled.Brightness6, "Appearance", appearanceLabel) {
+                appearanceLabel = when (appearanceLabel) { "System" -> "Dark"; "Dark" -> "Light"; else -> "System" }
+                feedback = "Theme preference: $appearanceLabel"
+            }
             SettingsDivider()
-            SettingsNavRow(
-                icon = Icons.Filled.Widgets,
-                title = "Widget",
-                subtitle = "Home screen shortcuts",
-                onClick = { feedback = "Widgets coming soon — pin Nally to your home screen." }
-            )
+            SettingsNavRow(Icons.Filled.Widgets, "Widget", "Add from home screen") {
+                feedback = "Long-press home screen, open Widgets, choose NallyHermes."
+            }
             SettingsDivider()
-            SettingsNavRow(
-                icon = Icons.Filled.Extension,
-                title = "Skills",
-                subtitle = "Agent capabilities",
-                onClick = { feedback = "Skills catalog will list enabled tools and workflows." }
-            )
+            SettingsNavRow(Icons.Filled.Extension, "Skills", "Agent capabilities") {
+                feedback = "Skills catalog will list enabled tools and workflows."
+            }
         }
 
         Spacer(Modifier.height(20.dp))
-
-        // ——— Nally ———
         SettingsSectionLabel("Nally")
         SettingsGroup {
-            SettingsNavRow(
-                icon = Icons.Filled.Hub,
-                title = "Connectors",
-                subtitle = "Link external services",
-                onClick = { feedback = "Connectors: wire Google Drive, calendar, and more from the backend registry." }
-            )
+            SettingsNavRow(Icons.Filled.Hub, "Connectors", "Link external services") {
+                feedback = "Connectors will wire Drive, calendar, and more."
+            }
         }
 
         Spacer(Modifier.height(20.dp))
-
-        // ——— Voice ———
         SettingsSectionLabel("Voice")
         SettingsGroup {
+            SettingsNavRow(Icons.Filled.RecordVoiceOver, "Voice", voiceLabel) {
+                voiceLabel = if (voiceLabel == "Default") "Aria" else "Default"
+                feedback = "Voice persona: $voiceLabel"
+            }
+            SettingsDivider()
             SettingsNavRow(
-                icon = Icons.Filled.RecordVoiceOver,
-                title = "Voice",
-                subtitle = voiceLabel,
-                onClick = {
-                    voiceLabel = if (voiceLabel == "Default") "Aria" else "Default"
-                    feedback = "Voice persona: $voiceLabel"
+                Icons.Filled.Mic,
+                "Wake word",
+                if (wakeWordEnabled) "On · say Hey Nally" else "Off",
+                trailing = if (wakeWordEnabled) "On" else "Off"
+            ) {
+                val next = !wakeWordEnabled
+                wakeWordEnabled = next
+                WakeWordPrefs.setEnabled(context, next)
+                if (next) {
+                    WakeWordService.start(context)
+                    feedback = "Wake word on. Say Hey Nally when idle. Paused during live voice calls."
+                } else {
+                    WakeWordService.stop(context)
+                    feedback = "Wake word off."
                 }
-            )
+            }
         }
 
         Spacer(Modifier.height(20.dp))
-
-        // ——— Account ———
         SettingsSectionLabel("Account")
         SettingsGroup {
-            SettingsNavRow(
-                icon = Icons.Filled.PhoneAndroid,
-                title = "Telegram",
-                subtitle = "Linked · messages sync both ways",
-                onClick = { feedback = "Telegram is your primary identity for this device." }
-            )
+            SettingsNavRow(Icons.Filled.PhoneAndroid, "Telegram", "Linked · sync both ways") {
+                feedback = "Telegram is your primary identity for this device."
+            }
             SettingsDivider()
             SettingsNavRow(
-                icon = Icons.Filled.Link,
-                title = "Google",
-                subtitle = identities.firstOrNull { it.provider == "google" }?.email
-                    ?: if (googleLinked) "Linked" else "Not linked",
-                trailing = if (googleLinked) "Unlink" else "Link",
-                onClick = {
-                    if (googleLinked) {
-                        scope.launch {
-                            busy = true
-                            feedback = null
-                            try {
-                                api.unlinkIdentity("google")
-                                refreshIdentities()
-                                feedback = "Google unlinked."
-                            } catch (error: Exception) {
-                                feedback = error.message ?: "Could not unlink Google."
-                            } finally {
-                                busy = false
-                            }
-                        }
-                    } else {
-                        feedback = "Google linking uses Sign-In + linkGoogle(idToken) after the oauth backend is live."
+                Icons.Filled.Link, "Google",
+                identities.firstOrNull { it.provider == "google" }?.email ?: if (googleLinked) "Linked" else "Not linked",
+                trailing = if (googleLinked) "Unlink" else "Link"
+            ) {
+                if (googleLinked) {
+                    scope.launch {
+                        busy = true; feedback = null
+                        try { api.unlinkIdentity("google"); refreshIdentities(); feedback = "Google unlinked." }
+                        catch (e: Exception) { feedback = e.message ?: "Could not unlink Google." }
+                        finally { busy = false }
                     }
-                }
-            )
+                } else feedback = "Google linking needs Sign-In + backend oauth."
+            }
             SettingsDivider()
             SettingsNavRow(
-                icon = Icons.Filled.Link,
-                title = "GitHub",
-                subtitle = identities.firstOrNull { it.provider == "github" }?.displayName
+                Icons.Filled.Link, "GitHub",
+                identities.firstOrNull { it.provider == "github" }?.displayName
                     ?: identities.firstOrNull { it.provider == "github" }?.email
                     ?: if (githubLinked) "Linked" else "Not linked",
-                trailing = if (githubLinked) "Unlink" else "Link",
-                onClick = {
-                    if (githubLinked) {
-                        scope.launch {
-                            busy = true
-                            feedback = null
-                            try {
-                                api.unlinkIdentity("github")
-                                refreshIdentities()
-                                feedback = "GitHub unlinked."
-                            } catch (error: Exception) {
-                                feedback = error.message ?: "Could not unlink GitHub."
-                            } finally {
-                                busy = false
-                            }
-                        }
-                    } else {
-                        feedback = "GitHub linking needs OAuth access token → linkGitHub(accessToken)."
-                    }
-                }
-            )
-            SettingsDivider()
-            SettingsNavRow(
-                icon = Icons.Filled.Logout,
-                title = "Unlink this device",
-                subtitle = "Sign out and clear the secure token",
-                destructive = true,
-                onClick = {
-                    if (busy) return@SettingsNavRow
+                trailing = if (githubLinked) "Unlink" else "Link"
+            ) {
+                if (githubLinked) {
                     scope.launch {
-                        busy = true
-                        feedback = null
-                        try {
-                            api.revoke()
-                            onUnlinked()
-                        } catch (error: Exception) {
-                            feedback = error.message ?: "Could not unlink this device."
-                        } finally {
-                            busy = false
-                        }
+                        busy = true; feedback = null
+                        try { api.unlinkIdentity("github"); refreshIdentities(); feedback = "GitHub unlinked." }
+                        catch (e: Exception) { feedback = e.message ?: "Could not unlink GitHub." }
+                        finally { busy = false }
                     }
+                } else feedback = "GitHub linking needs OAuth access token."
+            }
+            SettingsDivider()
+            SettingsNavRow(Icons.Filled.Logout, "Unlink this device", "Sign out and clear token", destructive = true) {
+                if (busy) return@SettingsNavRow
+                scope.launch {
+                    busy = true; feedback = null
+                    try { api.revoke(); onUnlinked() }
+                    catch (e: Exception) { feedback = e.message ?: "Could not unlink." }
+                    finally { busy = false }
                 }
-            )
+            }
         }
 
         feedback?.let {
             Spacer(Modifier.height(14.dp))
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("About")
         SettingsGroup {
-            SettingsNavRow(
-                icon = Icons.Filled.PhoneAndroid,
-                title = "NallyHermes Android",
-                subtitle = "Native Compose · token stored on device",
-                onClick = { feedback = "NallyHermes for Android" }
-            )
+            SettingsNavRow(Icons.Filled.PhoneAndroid, "NallyHermes Android", "Native Compose") {
+                feedback = "NallyHermes for Android"
+            }
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -2128,31 +2068,20 @@ private fun SettingsScreen(
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp, top = 2.dp)
-    )
+    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp, top = 2.dp))
 }
 
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), content = content)
     }
 }
 
 @Composable
 private fun SettingsDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 56.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-    )
+    HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 }
 
 @Composable
@@ -2166,66 +2095,26 @@ private fun SettingsNavRow(
 ) {
     val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+        Modifier.fillMaxWidth().clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
-            Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
+            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp)
-            )
+            Icon(icon, null, tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(title, style = MaterialTheme.typography.titleSmall, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (!trailing.isNullOrBlank()) {
-            Text(
-                trailing,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Text(trailing, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         } else {
-            Icon(
-                Icons.Filled.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(18.dp)) {
-            Row(Modifier.fillMaxWidth().padding(17.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                LucideIcon(LucideR.drawable.lucide_ic_smartphone, null, MaterialTheme.colorScheme.primary, Modifier.size(20.dp))
-                Column {
-                    Text("NallyHermes Android", style = MaterialTheme.typography.titleSmall)
-                    Text("Native Compose · secure token stored on device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f), modifier = Modifier.size(20.dp))
         }
     }
 }
