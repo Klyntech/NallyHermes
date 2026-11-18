@@ -57,7 +57,7 @@ internal class NativeVoiceSession(
     @Volatile private var track: AudioTrack? = null
     private var captureJob: Job? = null
     private var playbackJob: Job? = null
-    private val playbackChunks = LinkedBlockingQueue<ByteArray>(24)
+    private val playbackChunks = LinkedBlockingQueue<ByteArray>(64)
     private val playbackLock = Any()
     private val playbackQueuedBytes = AtomicInteger(0)
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -439,7 +439,9 @@ internal class NativeVoiceSession(
     private companion object {
         const val MAX_SOCKET_QUEUE_BYTES = 64L * 1024L
         const val MAX_PLAYBACK_FRAME_BYTES = 32_000
-        const val MAX_PLAYBACK_QUEUE_BYTES = 256 * 1024
+        // About 32 seconds of 16 kHz mono PCM: bounded enough for mobile memory,
+        // with room for a fast TTS burst while AudioTrack drains at playback speed.
+        const val MAX_PLAYBACK_QUEUE_BYTES = 1 * 1024 * 1024
         val sharedClient = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)

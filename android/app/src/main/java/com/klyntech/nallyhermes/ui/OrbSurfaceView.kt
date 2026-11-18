@@ -43,10 +43,12 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
         setEGLContextClientVersion(2)
         setEGLConfigChooser(8, 8, 8, 8, 0, 0)
         setPreserveEGLContextOnPause(false)
+        setZOrderOnTop(true)
         holder.setFormat(PixelFormat.TRANSLUCENT)
         // The orb is a soft visual, so a fixed buffer keeps fragment-shader cost bounded on high-DPI screens.
         holder.setFixedSize(ORB_BUFFER_SIZE, ORB_BUFFER_SIZE)
-        setZOrderMediaOverlay(true)
+        // GLSurfaceView otherwise composites an opaque black buffer on several Android GPUs.
+        // The fragment shader outputs premultiplied alpha; keep only the orb visible above Compose.
         setRenderer(orbRenderer)
         renderMode = RENDERMODE_WHEN_DIRTY
     }

@@ -104,24 +104,33 @@ internal fun VoiceScreen(
     var draft by remember { mutableStateOf("") }
     var endArmed by remember { mutableStateOf(false) }
     var audioLevel by remember { mutableFloatStateOf(0f) }
+    var sessionStarting by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
+            sessionStarting = true
             gateVisible = false
             localNotice = null
             beginVoiceSession(
                 api, context, scope,
-                onSession = { session = it },
+                onSession = { session = it; sessionStarting = false },
                 onState = {
                     state = it
                     if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f
                 },
                 onCaption = { caption = it },
                 onAudioLevel = { audioLevel = it },
-                onError = { msg -> localNotice = msg; gateVisible = true },
-                onEnded = { session = null; audioLevel = 0f; gateVisible = true }
+                onError = { msg ->
+                    session?.stop("voice error")
+                    session = null
+                    sessionStarting = false
+                    localNotice = msg
+                    gateVisible = true
+                },
+                onEnded = { session = null; sessionStarting = false; audioLevel = 0f; gateVisible = true }
             )
         } else {
+            sessionStarting = false
             state = VoiceUiState.Denied
             localNotice = "Microphone permission is needed. Allow it to start a call."
         }
@@ -362,6 +371,8 @@ internal fun VoiceScreen(
                 Spacer(Modifier.height(28.dp))
                 Button(
                     onClick = {
+                        if (sessionStarting || session != null) return@Button
+                        sessionStarting = true
                         localNotice = null
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                             PackageManager.PERMISSION_GRANTED
@@ -369,15 +380,21 @@ internal fun VoiceScreen(
                             gateVisible = false
                             beginVoiceSession(
                                 api, context, scope,
-                                onSession = { session = it },
+                                onSession = { session = it; sessionStarting = false },
                                 onState = {
                                     state = it
                                     if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f
                                 },
                                 onCaption = { caption = it },
                                 onAudioLevel = { audioLevel = it },
-                                onError = { msg -> localNotice = msg; gateVisible = true },
-                                onEnded = { session = null; audioLevel = 0f; gateVisible = true }
+                                onError = { msg ->
+                                    session?.stop("voice error")
+                                    session = null
+                                    sessionStarting = false
+                                    localNotice = msg
+                                    gateVisible = true
+                                },
+                                onEnded = { session = null; sessionStarting = false; audioLevel = 0f; gateVisible = true }
                             )
                         } else {
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
