@@ -41,6 +41,8 @@ dependencies {
         exclude(group = "androidx.compose.foundation", module = "foundation")
     }
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // On-device openWakeWord (AudioRecord + ONNX) — not SpeechRecognizer
+    implementation("com.github.msnilsen:openwakeword-android:0.1.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
