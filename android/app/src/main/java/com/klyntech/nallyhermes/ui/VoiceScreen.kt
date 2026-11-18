@@ -66,6 +66,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.klyntech.nallyhermes.MobileApi
+import com.klyntech.nallyhermes.WakeWordService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -564,6 +565,7 @@ private fun beginVoiceSession(
 ) {
     scope.launch {
         onState(VoiceUiState.Connecting)
+        WakeWordService.pauseForVoiceCall(context)
         try {
             val ticket = api.createVoiceTicket()
             var serverErrorShown = false
@@ -579,6 +581,7 @@ private fun beginVoiceSession(
                             onError(event.message)
                         }
                         NativeVoiceSession.Event.Ended -> {
+                            WakeWordService.resumeAfterVoiceCall(context)
                             if (!serverErrorShown) {
                                 onState(VoiceUiState.Ended)
                                 onError("Call ended before voice was ready.")
@@ -593,6 +596,7 @@ private fun beginVoiceSession(
             onSession(voice)
             voice.connect()
         } catch (error: Exception) {
+            WakeWordService.resumeAfterVoiceCall(context)
             onState(VoiceUiState.Denied)
             onError(error.message ?: "Could not create a secure voice session.")
         }
