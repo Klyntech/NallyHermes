@@ -38,8 +38,13 @@ class MainActivity : ComponentActivity() {
         }
         handleLoginIntent(intent)
         handleVoiceIntent(intent)
-        if (WakeWordPrefs.isEnabled(this) && !WakeWordPrefs.voiceCallActive) {
-            WakeWordService.start(this)
+        // Fail-soft: a bad wake-word enable must never block app launch
+        try {
+            if (WakeWordPrefs.isEnabled(this) && !WakeWordPrefs.voiceCallActive) {
+                WakeWordService.start(this)
+            }
+        } catch (_: Exception) {
+            WakeWordPrefs.setEnabled(this, false)
         }
     }
 
