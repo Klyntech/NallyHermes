@@ -1977,7 +1977,7 @@ private fun SettingsScreen(
             SettingsNavRow(
                 LucideR.drawable.lucide_ic_audio_lines,
                 "Wake word",
-                if (wakeWordEnabled) "On · say Hey Nally" else "Off",
+                if (wakeWordEnabled) "On · say Hey Jarvis" else "Off",
                 trailing = if (wakeWordEnabled) "On" else "Off"
             ) {
                 val next = !wakeWordEnabled
@@ -1986,7 +1986,7 @@ private fun SettingsScreen(
                     val ok = WakeWordService.start(context)
                     wakeWordEnabled = ok && WakeWordPrefs.isEnabled(context)
                     feedback = if (wakeWordEnabled) {
-                        "Wake word on (platform SpeechRecognizer). Say Hey Nally. Paused during live calls."
+                        "Wake word on (openWakeWord, on-device). Say Hey Jarvis. Steady mic · paused during live calls."
                     } else {
                         WakeWordPrefs.lastError
                             ?: "Could not start wake word. Grant mic (+ notifications on Android 13+) and try again."
