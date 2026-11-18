@@ -32,18 +32,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import com.klyntech.nallyhermes.WakeWordService
 import com.klyntech.nallyhermes.WakeWordPrefs
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Widgets
-import androidx.compose.material.icons.filled.Brightness6
-import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
@@ -80,7 +68,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -1956,16 +1943,16 @@ private fun SettingsScreen(
 
         SettingsSectionLabel("App")
         SettingsGroup {
-            SettingsNavRow(Icons.Filled.Brightness6, "Appearance", appearanceLabel) {
+            SettingsNavRow(LucideR.drawable.lucide_ic_sun, "Appearance", appearanceLabel) {
                 appearanceLabel = when (appearanceLabel) { "System" -> "Dark"; "Dark" -> "Light"; else -> "System" }
                 feedback = "Theme preference: $appearanceLabel"
             }
             SettingsDivider()
-            SettingsNavRow(Icons.Filled.Widgets, "Widget", "Add from home screen") {
+            SettingsNavRow(LucideR.drawable.lucide_ic_layout_grid, "Widget", "Add from home screen") {
                 feedback = "Long-press home screen, open Widgets, choose NallyHermes."
             }
             SettingsDivider()
-            SettingsNavRow(Icons.Filled.Extension, "Skills", "Agent capabilities") {
+            SettingsNavRow(LucideR.drawable.lucide_ic_sparkles, "Skills", "Agent capabilities") {
                 feedback = "Skills catalog will list enabled tools and workflows."
             }
         }
@@ -1973,7 +1960,7 @@ private fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("Nally")
         SettingsGroup {
-            SettingsNavRow(Icons.Filled.Hub, "Connectors", "Link external services") {
+            SettingsNavRow(LucideR.drawable.lucide_ic_plug, "Connectors", "Link external services") {
                 feedback = "Connectors will wire Drive, calendar, and more."
             }
         }
@@ -1981,13 +1968,13 @@ private fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("Voice")
         SettingsGroup {
-            SettingsNavRow(Icons.Filled.RecordVoiceOver, "Voice", voiceLabel) {
+            SettingsNavRow(LucideR.drawable.lucide_ic_mic, "Voice", voiceLabel) {
                 voiceLabel = if (voiceLabel == "Default") "Aria" else "Default"
                 feedback = "Voice persona: $voiceLabel"
             }
             SettingsDivider()
             SettingsNavRow(
-                Icons.Filled.Mic,
+                LucideR.drawable.lucide_ic_audio_lines,
                 "Wake word",
                 if (wakeWordEnabled) "On · say Hey Nally" else "Off",
                 trailing = if (wakeWordEnabled) "On" else "Off"
@@ -2008,12 +1995,13 @@ private fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("Account")
         SettingsGroup {
-            SettingsNavRow(Icons.Filled.PhoneAndroid, "Telegram", "Linked · sync both ways") {
+            SettingsNavRow(LucideR.drawable.lucide_ic_smartphone, "Telegram", "Linked · sync both ways") {
                 feedback = "Telegram is your primary identity for this device."
             }
             SettingsDivider()
             SettingsNavRow(
-                Icons.Filled.Link, "Google",
+                LucideR.drawable.lucide_ic_link,
+                "Google",
                 identities.firstOrNull { it.provider == "google" }?.email ?: if (googleLinked) "Linked" else "Not linked",
                 trailing = if (googleLinked) "Unlink" else "Link"
             ) {
@@ -2028,7 +2016,8 @@ private fun SettingsScreen(
             }
             SettingsDivider()
             SettingsNavRow(
-                Icons.Filled.Link, "GitHub",
+                LucideR.drawable.lucide_ic_link,
+                "GitHub",
                 identities.firstOrNull { it.provider == "github" }?.displayName
                     ?: identities.firstOrNull { it.provider == "github" }?.email
                     ?: if (githubLinked) "Linked" else "Not linked",
@@ -2044,7 +2033,12 @@ private fun SettingsScreen(
                 } else feedback = "GitHub linking needs OAuth access token."
             }
             SettingsDivider()
-            SettingsNavRow(Icons.Filled.Logout, "Unlink this device", "Sign out and clear token", destructive = true) {
+            SettingsNavRow(
+                LucideR.drawable.lucide_ic_log_out,
+                "Unlink this device",
+                "Sign out and clear token",
+                destructive = true
+            ) {
                 if (busy) return@SettingsNavRow
                 scope.launch {
                     busy = true; feedback = null
@@ -2063,7 +2057,7 @@ private fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("About")
         SettingsGroup {
-            SettingsNavRow(Icons.Filled.PhoneAndroid, "NallyHermes Android", "Native Compose") {
+            SettingsNavRow(LucideR.drawable.lucide_ic_settings_2, "NallyHermes Android", "Native Compose") {
                 feedback = "NallyHermes for Android"
             }
         }
@@ -2073,25 +2067,36 @@ private fun SettingsScreen(
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp, top = 2.dp))
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 6.dp, bottom = 8.dp, top = 2.dp)
+    )
 }
 
 @Composable
 private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(Modifier.fillMaxWidth(), content = content)
     }
 }
 
 @Composable
 private fun SettingsDivider() {
-    HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 56.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+    )
 }
 
 @Composable
 private fun SettingsNavRow(
-    icon: ImageVector,
+    iconRes: Int,
     title: String,
     subtitle: String? = null,
     trailing: String? = null,
@@ -2100,26 +2105,46 @@ private fun SettingsNavRow(
 ) {
     val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().clickable(interactionSource = interaction, indication = null, onClick = onClick)
+        Modifier
+            .fillMaxWidth()
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+            Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+            LucideIcon(
+                iconRes,
+                null,
+                if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                Modifier.size(20.dp)
+            )
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-            if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         if (!trailing.isNullOrBlank()) {
             Text(trailing, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         } else {
-            Icon(Icons.Filled.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f), modifier = Modifier.size(20.dp))
+            LucideIcon(
+                LucideR.drawable.lucide_ic_chevron_right,
+                null,
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                Modifier.size(18.dp)
+            )
         }
     }
 }
