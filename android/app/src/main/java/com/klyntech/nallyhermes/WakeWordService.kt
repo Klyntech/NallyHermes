@@ -1,5 +1,6 @@
 package com.klyntech.nallyhermes
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
@@ -16,34 +18,53 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import java.util.Locale
 
 /**
- * Lightweight always-on-ish wake listener using the platform SpeechRecognizer.
- * Completely separate from [com.klyntech.nallyhermes.ui.NativeVoiceSession] /
- * WebSocket duplex voice — when a live call is active ([WakeWordPrefs.voiceCallActive]),
- * this service does not hold or request the microphone.
+ * Wake-word style listener using the **platform SpeechRecognizer**
+ * (device / Google speech service — NOT Picovoice Porcupine, NOT the duplex
+ * WebSocket voice stack).
+ *
+ * Important limitations of this engine:
+ * - It is continuous dictation-style STT, not a true low-power keyword spotter
+ * - Needs network on many devices
+ * - Must not run while [NativeVoiceSession] owns the microphone
+ *
+ * All startup paths are fail-soft: errors disable the preference instead of
+ * crashing the UI process.
  */
 class WakeWordService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
     private var destroyed = false
+    private var restartAttempts = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        ensureChannel()
-        startForegroundCompat()
-        main.post { armRecognizer() }
+        try {
+            ensureChannel()
+            if (!startForegroundCompat()) {
+                Log.e(TAG, "startForeground failed — disabling wake word")
+                failAndStop("Could not start wake-word notification service.")
+                return
+            }
+            main.post { armRecognizer() }
+        } catch (t: Throwable) {
+            Log.e(TAG, "onCreate failed", t)
+            failAndStop(t.message ?: "Wake word service failed to start.")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                stopSelf()
+                stopSelfSafe()
                 return START_NOT_STICKY
             }
             ACTION_PAUSE_FOR_CALL -> {
@@ -65,19 +86,51 @@ class WakeWordService : Service() {
         super.onDestroy()
     }
 
-    private fun armRecognizer() {
-        if (destroyed || !WakeWordPrefs.isEnabled(this)) {
+    private fun failAndStop(reason: String) {
+        try {
+            WakeWordPrefs.setEnabled(this, false)
+            WakeWordPrefs.lastError = reason
+        } catch (_: Exception) {}
+        stopSelfSafe()
+    }
+
+    private fun stopSelfSafe() {
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {}
+        try {
             stopSelf()
+        } catch (_: Exception) {}
+    }
+
+    private fun armRecognizer() {
+        if (destroyed) return
+        if (!WakeWordPrefs.isEnabled(this)) {
+            stopSelfSafe()
             return
         }
         if (WakeWordPrefs.voiceCallActive) return
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) return
-        if (recognizer == null) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this).also {
-                it.setRecognitionListener(listener)
-            }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            failAndStop("Microphone permission is required for wake word.")
+            return
         }
-        if (!listening) startListeningCycle()
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            failAndStop("Speech recognition is not available on this device.")
+            return
+        }
+        try {
+            if (recognizer == null) {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(this).also {
+                    it.setRecognitionListener(listener)
+                }
+            }
+            if (!listening) startListeningCycle()
+        } catch (t: Throwable) {
+            Log.e(TAG, "armRecognizer", t)
+            failAndStop(t.message ?: "Could not start speech recognizer.")
+        }
     }
 
     private fun startListeningCycle() {
@@ -92,9 +145,16 @@ class WakeWordService : Service() {
         try {
             listening = true
             recognizer?.startListening(intent)
-        } catch (_: Exception) {
+            restartAttempts = 0
+        } catch (t: Throwable) {
             listening = false
-            main.postDelayed({ armRecognizer() }, 2_500)
+            Log.e(TAG, "startListening", t)
+            restartAttempts++
+            if (restartAttempts > 8) {
+                failAndStop("Speech recognizer kept failing. Wake word turned off.")
+            } else {
+                main.postDelayed({ armRecognizer() }, 2_500)
+            }
         }
     }
 
@@ -109,15 +169,26 @@ class WakeWordService : Service() {
         val normalized = text.lowercase(Locale.getDefault())
         val hit = WAKE_PHRASES.any { phrase -> normalized.contains(phrase) }
         if (!hit) return
-        // Debounce: pause briefly then open voice tab
         tearRecognizer()
-        val launch = Intent(this, MainActivity::class.java).apply {
-            action = ACTION_OPEN_VOICE
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(EXTRA_OPEN_VOICE, true)
+        try {
+            val launch = Intent(this, MainActivity::class.java).apply {
+                action = ACTION_OPEN_VOICE
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                )
+                putExtra(EXTRA_OPEN_VOICE, true)
+            }
+            startActivity(launch)
+        } catch (t: Throwable) {
+            Log.e(TAG, "launch activity", t)
         }
-        startActivity(launch)
-        main.postDelayed({ if (!destroyed && !WakeWordPrefs.voiceCallActive) armRecognizer() }, 4_000)
+        main.postDelayed({
+            if (!destroyed && !WakeWordPrefs.voiceCallActive && WakeWordPrefs.isEnabled(this)) {
+                armRecognizer()
+            }
+        }, 4_000)
     }
 
     private val listener = object : RecognitionListener {
@@ -128,17 +199,27 @@ class WakeWordService : Service() {
         override fun onEndOfSpeech() { listening = false }
         override fun onError(error: Int) {
             listening = false
-            // 7=NO_MATCH, 6=SPEECH_TIMEOUT — restart quietly
-            if (!destroyed && !WakeWordPrefs.voiceCallActive) {
-                main.postDelayed({ startListeningCycle() }, 900)
+            // Avoid tight crash loops on permanent errors
+            val delay = when (error) {
+                SpeechRecognizer.ERROR_CLIENT,
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    failAndStop("Speech recognition permission or client error ($error).")
+                    return
+                }
+                SpeechRecognizer.ERROR_NETWORK,
+                SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> 3_000L
+                else -> 1_200L
+            }
+            if (!destroyed && !WakeWordPrefs.voiceCallActive && WakeWordPrefs.isEnabled(this@WakeWordService)) {
+                main.postDelayed({ startListeningCycle() }, delay)
             }
         }
         override fun onResults(results: Bundle?) {
             listening = false
             val texts = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
             texts.firstOrNull()?.let { onHeard(it) }
-            if (!destroyed && !WakeWordPrefs.voiceCallActive) {
-                main.postDelayed({ startListeningCycle() }, 600)
+            if (!destroyed && !WakeWordPrefs.voiceCallActive && WakeWordPrefs.isEnabled(this@WakeWordService)) {
+                main.postDelayed({ startListeningCycle() }, 700)
             }
         }
         override fun onPartialResults(partialResults: Bundle?) {
@@ -150,7 +231,7 @@ class WakeWordService : Service() {
 
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < 26) return
-        val nm = getSystemService(NotificationManager::class.java)
+        val nm = getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Wake word", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Listens for Hey Nally when enabled"
@@ -159,28 +240,37 @@ class WakeWordService : Service() {
         )
     }
 
-    private fun startForegroundCompat() {
-        val open = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Nally wake word")
-            .setContentText("Listening for \"Hey Nally\"")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(open)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else {
-            startForeground(NOTIF_ID, notification)
+    /** @return false if foreground promotion failed */
+    private fun startForegroundCompat(): Boolean {
+        return try {
+            val open = PendingIntent.getActivity(
+                this, 0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Nally wake word")
+                .setContentText("Listening for \"Hey Nally\"")
+                .setSmallIcon(R.drawable.ic_wake_notif)
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setSilent(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "startForegroundCompat", t)
+            false
         }
     }
 
     companion object {
+        private const val TAG = "NallyWakeWord"
         const val CHANNEL_ID = "nally_wake_word"
         const val NOTIF_ID = 42
         const val ACTION_STOP = "com.klyntech.nallyhermes.WAKE_STOP"
@@ -190,30 +280,61 @@ class WakeWordService : Service() {
         const val EXTRA_OPEN_VOICE = "open_voice"
 
         private val WAKE_PHRASES = listOf(
-            "hey nally", "hi nally", "hello nally", "ok nally", "okay nally", "nally"
+            "hey nally", "hi nally", "hello nally", "ok nally", "okay nally"
         )
 
-        fun start(context: Context) {
-            if (!WakeWordPrefs.isEnabled(context)) return
-            val i = Intent(context, WakeWordService::class.java)
-            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(i) else context.startService(i)
+        fun start(context: Context): Boolean {
+            if (!WakeWordPrefs.isEnabled(context)) return false
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                WakeWordPrefs.setEnabled(context, false)
+                WakeWordPrefs.lastError = "Microphone permission required."
+                return false
+            }
+            return try {
+                val i = Intent(context, WakeWordService::class.java)
+                if (Build.VERSION.SDK_INT >= 26) {
+                    context.startForegroundService(i)
+                } else {
+                    context.startService(i)
+                }
+                true
+            } catch (t: Throwable) {
+                Log.e(TAG, "start()", t)
+                WakeWordPrefs.setEnabled(context, false)
+                WakeWordPrefs.lastError = t.message ?: "Could not start wake word service."
+                false
+            }
         }
 
         fun stop(context: Context) {
-            context.startService(Intent(context, WakeWordService::class.java).setAction(ACTION_STOP))
-            context.stopService(Intent(context, WakeWordService::class.java))
+            try {
+                context.startService(Intent(context, WakeWordService::class.java).setAction(ACTION_STOP))
+            } catch (_: Exception) {}
+            try {
+                context.stopService(Intent(context, WakeWordService::class.java))
+            } catch (_: Exception) {}
         }
 
         fun pauseForVoiceCall(context: Context) {
             WakeWordPrefs.voiceCallActive = true
-            context.startService(Intent(context, WakeWordService::class.java).setAction(ACTION_PAUSE_FOR_CALL))
+            try {
+                context.startService(
+                    Intent(context, WakeWordService::class.java).setAction(ACTION_PAUSE_FOR_CALL)
+                )
+            } catch (_: Exception) {}
         }
 
         fun resumeAfterVoiceCall(context: Context) {
             WakeWordPrefs.voiceCallActive = false
             if (WakeWordPrefs.isEnabled(context)) {
                 start(context)
-                context.startService(Intent(context, WakeWordService::class.java).setAction(ACTION_RESUME_AFTER_CALL))
+                try {
+                    context.startService(
+                        Intent(context, WakeWordService::class.java).setAction(ACTION_RESUME_AFTER_CALL)
+                    )
+                } catch (_: Exception) {}
             }
         }
     }
