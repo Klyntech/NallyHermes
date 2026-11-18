@@ -184,7 +184,7 @@ test("authenticated mobile submissions pass the paired identity and client id to
   });
 });
 
-test("voice tickets require mobile auth and return only a short-lived socket ticket", async () => {
+test("voice tickets require mobile auth and return the socket ticket with negotiated PCM format", async () => {
   await withServer(async (baseUrl) => {
     const unauthenticated = await fetch(`${baseUrl}/api/mobile/voice-ticket`, { method: "POST" });
     assert.equal(unauthenticated.status, 401);
@@ -196,7 +196,9 @@ test("voice tickets require mobile auth and return only a short-lived socket tic
     assert.deepEqual(await response.json(), {
       ticket: "t".repeat(43),
       expiresAt: "2026-01-01T00:01:00.000Z",
-      websocketPath: "/api/mobile/voice"
+      websocketPath: "/api/mobile/voice",
+      protocolVersion: 1,
+      input: { encoding: "pcm_s16le", sampleRate: 16000, channels: 1 }
     });
   }, {
     authenticateSession: async () => testSession,

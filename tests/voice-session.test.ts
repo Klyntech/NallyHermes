@@ -81,6 +81,9 @@ test("ticket-authenticated voice socket waits for STT readiness and forwards bou
   client = new WebSocket(`ws://127.0.0.1:${appAddress.port}/api/mobile/voice?ticket=one-use-test-ticket`);
   const incoming = createMessageQueue(client);
   await once(client, "open");
+  const hello = JSON.parse((await incoming.next()).data.toString("utf8"));
+  assert.equal(hello.type, "hello");
+  assert.equal(hello.protocolVersion, 1);
   client.send(JSON.stringify({ type: "start", protocolVersion: 1 }));
   const ready = JSON.parse((await incoming.next()).data.toString("utf8"));
   assert.equal(ready.type, "ready");
