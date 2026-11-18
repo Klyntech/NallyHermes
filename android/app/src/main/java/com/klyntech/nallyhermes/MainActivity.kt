@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.klyntech.nallyhermes.ui.NallyHermesApp
 import com.klyntech.nallyhermes.ui.theme.NallyHermesTheme
@@ -16,28 +18,44 @@ import org.telegram.login.TelegramLogin
 
 class MainActivity : ComponentActivity() {
     private val loginEvent = MutableStateFlow<TelegramLoginEvent?>(null)
+    private val openVoiceRequests = MutableStateFlow(0)
     private var redirectHost: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val voiceTick by openVoiceRequests.collectAsState()
             NallyHermesTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     NallyHermesApp(
                         onStartTelegramLogin = ::startTelegramLogin,
                         loginEvents = loginEvent,
-                        onLoginEventConsumed = { loginEvent.value = null }
+                        onLoginEventConsumed = { loginEvent.value = null },
+                        openVoiceTick = voiceTick
                     )
                 }
             }
         }
         handleLoginIntent(intent)
+        handleVoiceIntent(intent)
+        if (WakeWordPrefs.isEnabled(this) && !WakeWordPrefs.voiceCallActive) {
+            WakeWordService.start(this)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleLoginIntent(intent)
+        handleVoiceIntent(intent)
+    }
+
+    private fun handleVoiceIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(WakeWordService.EXTRA_OPEN_VOICE, false) == true ||
+            intent?.action == WakeWordService.ACTION_OPEN_VOICE
+        ) {
+            openVoiceRequests.value = openVoiceRequests.value + 1
+        }
     }
 
     private fun startTelegramLogin(challenge: TelegramLoginChallenge) {
