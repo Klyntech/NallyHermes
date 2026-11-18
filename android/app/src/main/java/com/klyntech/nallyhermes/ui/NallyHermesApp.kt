@@ -159,9 +159,13 @@ private data class AgentActivity(
 fun NallyHermesApp(
     onStartTelegramLogin: (TelegramLoginChallenge) -> Unit,
     loginEvents: StateFlow<TelegramLoginEvent?>,
-    onLoginEventConsumed: () -> Unit
+    onLoginEventConsumed: () -> Unit,
+    openVoiceTick: Int = 0
 ) {
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CHAT.name) }
+    LaunchedEffect(openVoiceTick) {
+        if (openVoiceTick > 0) selectedTabName = AppTab.VOICE.name
+    }
     val selectedTab = AppTab.valueOf(selectedTabName)
     val tabStateHolder = rememberSaveableStateHolder()
     val chatListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
