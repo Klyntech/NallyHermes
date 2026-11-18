@@ -150,10 +150,11 @@ internal class NativeVoiceSession(
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 val priorError = lastServerError
+                val locallyStopped = stopped.get()
                 cleanup()
-                if (priorError == null && phase !in setOf("ready", "listening", "thinking", "speaking", "server_error")) {
+                if (!locallyStopped && priorError == null) {
                     val detail = buildString {
-                        append("Call dropped during '")
+                        append("Voice server closed the call during '")
                         append(phase)
                         append("' (WS ")
                         append(code)
