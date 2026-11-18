@@ -10,6 +10,10 @@ object WakeWordPrefs {
     @Volatile
     var voiceCallActive: Boolean = false
 
+    /** Last human-readable failure (shown in Settings). */
+    @Volatile
+    var lastError: String? = null
+
     fun isEnabled(context: Context): Boolean =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_ENABLED, false)
@@ -17,5 +21,6 @@ object WakeWordPrefs {
     fun setEnabled(context: Context, enabled: Boolean) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_ENABLED, enabled).apply()
+        if (enabled) lastError = null
     }
 }
