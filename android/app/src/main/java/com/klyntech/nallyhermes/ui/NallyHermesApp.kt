@@ -1922,6 +1922,7 @@ private fun SettingsScreen(
     LaunchedEffect(Unit) {
         try { identities = api.listIdentities() } catch (_: Exception) {}
         wakeWordEnabled = WakeWordPrefs.isEnabled(context)
+        WakeWordPrefs.lastError?.let { feedback = it }
     }
 
     fun refreshIdentities() {
@@ -1980,12 +1981,19 @@ private fun SettingsScreen(
                 trailing = if (wakeWordEnabled) "On" else "Off"
             ) {
                 val next = !wakeWordEnabled
-                wakeWordEnabled = next
-                WakeWordPrefs.setEnabled(context, next)
                 if (next) {
-                    WakeWordService.start(context)
-                    feedback = "Wake word on. Say Hey Nally when idle. Paused during live voice calls."
+                    WakeWordPrefs.setEnabled(context, true)
+                    val ok = WakeWordService.start(context)
+                    wakeWordEnabled = ok && WakeWordPrefs.isEnabled(context)
+                    feedback = if (wakeWordEnabled) {
+                        "Wake word on (platform SpeechRecognizer). Say Hey Nally. Paused during live calls."
+                    } else {
+                        WakeWordPrefs.lastError
+                            ?: "Could not start wake word. Grant mic (+ notifications on Android 13+) and try again."
+                    }
                 } else {
+                    wakeWordEnabled = false
+                    WakeWordPrefs.setEnabled(context, false)
                     WakeWordService.stop(context)
                     feedback = "Wake word off."
                 }
