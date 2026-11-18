@@ -23,6 +23,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import org.json.JSONObject
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,6 +58,8 @@ internal class NativeVoiceSession(
     @Volatile private var lastServerError: String? = null
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var track: AudioTrack? = null
+    @Volatile private var echoCanceler: AcousticEchoCanceler? = null
+    @Volatile private var noiseSuppressor: NoiseSuppressor? = null
     private var captureJob: Job? = null
     private var playbackJob: Job? = null
     private val playbackChunks = LinkedBlockingQueue<ByteArray>(64)
@@ -208,9 +212,13 @@ internal class NativeVoiceSession(
                 startCapture()
             }
             "transcript" -> {
-                phase = "listening"
                 callback(Event.Caption(event.optString("text"), event.optBoolean("final")))
-                callback(Event.State(VoiceUiState.Listening))
+                // Captions can continue while Nally speaks. Do not switch the audio phase
+                // here: binary PCM frames are accepted only in `speaking` phase.
+                if (phase != "speaking" && phase != "thinking") {
+                    phase = "listening"
+                    callback(Event.State(VoiceUiState.Listening))
+                }
             }
             "assistant_start" -> { phase = "thinking"; callback(Event.State(VoiceUiState.Thinking)) }
             "text_delta" -> callback(Event.Caption(event.optString("text"), true))
@@ -289,6 +297,14 @@ internal class NativeVoiceSession(
             }
             recorder = record
             record.startRecording()
+            // Voice remains open during playback for barge-in. Platform AEC prevents the
+            // loudspeaker's own TTS audio from being re-transcribed as the user's speech.
+            echoCanceler = runCatching {
+                if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(record.audioSessionId)?.apply { enabled = true } else null
+            }.getOrNull()
+            noiseSuppressor = runCatching {
+                if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(record.audioSessionId)?.apply { enabled = true } else null
+            }.getOrNull()
             captureJob = sessionScope.launch {
                 val frame = ByteArray(3_200) // 100 ms, safely below the server's 32 KB frame cap
                 var queueBackedUpSince = 0L
@@ -435,6 +451,10 @@ internal class NativeVoiceSession(
         sessionScope.cancel()
         try { recorder?.let { if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) it.stop(); it.release() } } catch (_: Exception) { }
         recorder = null
+        try { echoCanceler?.enabled = false; echoCanceler?.release() } catch (_: Exception) { }
+        echoCanceler = null
+        try { noiseSuppressor?.enabled = false; noiseSuppressor?.release() } catch (_: Exception) { }
+        noiseSuppressor = null
         try { track?.pause(); track?.flush(); track?.stop(); track?.release() } catch (_: Exception) { }
         track = null
         clearPlayback(notify = false)
