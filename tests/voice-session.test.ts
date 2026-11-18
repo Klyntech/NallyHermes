@@ -52,7 +52,7 @@ test("ticket-authenticated voice socket waits for STT readiness and forwards bou
   });
 
   const app = createServer();
-  let client: WebSocket | null = null;
+  const clients: WebSocket[] = [];
   const session = {
     sessionId: "00000000-0000-4000-8000-000000000001",
     userId: "00000000-0000-4000-8000-000000000002",
@@ -71,14 +71,16 @@ test("ticket-authenticated voice socket waits for STT readiness and forwards bou
   await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve));
   const appAddress = app.address() as AddressInfo;
   t.after(async () => {
-    client?.terminate();
+    for (const socket of clients) socket.terminate();
     await new Promise<void>((resolve) => app.close(() => resolve()));
     for (const client of deepgramWss.clients) client.terminate();
     await new Promise<void>((resolve) => deepgramWss.close(() => resolve()));
     await new Promise<void>((resolve) => deepgramServer.close(() => resolve()));
   });
 
-  client = new WebSocket(`ws://127.0.0.1:${appAddress.port}/api/mobile/voice?ticket=one-use-test-ticket`);
+  const url = `ws://127.0.0.1:${appAddress.port}/api/mobile/voice?ticket=one-use-test-ticket`;
+  const client = new WebSocket(url);
+  clients.push(client);
   const incoming = createMessageQueue(client);
   await once(client, "open");
   const hello = JSON.parse((await incoming.next()).data.toString("utf8"));
@@ -92,7 +94,31 @@ test("ticket-authenticated voice socket waits for STT readiness and forwards bou
   const frame = Buffer.from([0, 0, 1, 0, 2, 0, 3, 0]);
   client.send(frame, { binary: true });
   assert.deepEqual(await forwarded, frame);
+
+  const duplicateStatus = await new Promise<number>((resolve, reject) => {
+    const duplicate = new WebSocket(url);
+    clients.push(duplicate);
+    duplicate.on("unexpected-response", (_request, response) => {
+      response.resume();
+      resolve(response.statusCode ?? 0);
+    });
+    duplicate.on("open", () => reject(new Error("A second active voice socket unexpectedly opened.")));
+    duplicate.on("error", () => undefined);
+  });
+  assert.equal(duplicateStatus, 429);
+
   const closed = once(client, "close");
   client.close(1000, "test complete");
   await closed;
+
+  const reconnect = new WebSocket(url);
+  clients.push(reconnect);
+  const reconnectMessages = createMessageQueue(reconnect);
+  await once(reconnect, "open");
+  assert.equal(JSON.parse((await reconnectMessages.next()).data.toString("utf8")).type, "hello");
+  reconnect.send(JSON.stringify({ type: "start", protocolVersion: 1 }));
+  assert.equal(JSON.parse((await reconnectMessages.next()).data.toString("utf8")).type, "ready");
+  const reconnectClosed = once(reconnect, "close");
+  reconnect.close(1000, "test reconnect complete");
+  await reconnectClosed;
 });

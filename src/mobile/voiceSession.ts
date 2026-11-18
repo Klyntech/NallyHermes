@@ -11,6 +11,7 @@ import { respond } from "../agent/orchestrator.js";
 import { toVoiceResponse } from "../agent/orchestra.js";
 import { splitSpokenChannelReply } from "../agent/voice/spokenSplit.js";
 import { isMobileVoiceAudioFrame, parseMobileVoiceControl } from "./voiceProtocol.js";
+import { DeepgramTranscriptBuffer } from "./deepgramTranscript.js";
 
 const TICKET_TTL_MS = 60_000, MAX_SESSION_MS = 10 * 60_000, MAX_SESSION_AUDIO_BYTES = 12_000_000;
 const MAX_SESSION_FRAMES = 12_000, IDLE_TIMEOUT_MS = 30_000, MAX_CONNECTIONS = 100;
@@ -98,10 +99,23 @@ export function attachVoiceWebSocket(server: Server, consumeTicket = consumeVoic
         rejectUpgrade(socket, 429, "A voice call is already active for this account", "session_busy");
         return;
       }
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        activeBySession.add(session.sessionId);
-        handleSocket(ws, session, () => activeBySession.delete(session.sessionId), providers);
-      });
+      // Claim synchronously before handleUpgrade so concurrent requests cannot both pass
+      // the has() check while the HTTP upgrade callback is still pending.
+      activeBySession.add(session.sessionId);
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        activeBySession.delete(session.sessionId);
+      };
+      socket.once("close", release);
+      try {
+        wss.handleUpgrade(req, socket, head, (ws) => handleSocket(ws, session, release, providers));
+      } catch (error) {
+        release();
+        console.error("Voice WebSocket upgrade failed:", error);
+        rejectUpgrade(socket, 500, "Voice connection upgrade failed", "upgrade_failed");
+      }
     }).catch((error) => {
       console.error("Voice ticket validation failed:", error);
       rejectUpgrade(socket, 500, "Voice ticket validation failed", "ticket_error");
@@ -111,7 +125,8 @@ export function attachVoiceWebSocket(server: Server, consumeTicket = consumeVoic
 
 function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void, providers: Providers): void {
   const startedAt = Date.now(); let started = false, inputStopped = false, closed = false, audioBytes = 0, frames = 0, outputBytes = 0, lastActivity = Date.now();
-  let dg: WebSocket | null = null, tts: WebSocket | null = null, turnId = "", turnInterrupted = false, generation = 0, currentTranscript = "", finalTranscript = "";
+  let dg: WebSocket | null = null, tts: WebSocket | null = null, turnId = "", turnInterrupted = false, generation = 0;
+  const transcriptBuffer = new DeepgramTranscriptBuffer();
   let turnAbort: AbortController | null = null, ttsTimer: ReturnType<typeof setTimeout> | null = null;
   const send = (obj: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
   // Confirm the transport is up before the client waits forever for Deepgram "ready".
@@ -199,6 +214,11 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
       });
     } catch (error) { if (myGeneration === generation && !turnInterrupted && !closed && !controller.signal.aborted) { console.error("Voice agent turn failed:", error); fail("agent_error", "I couldn't complete that voice turn.", true); } }
   };
+  const flushTranscript = () => {
+    const update = transcriptBuffer.flush();
+    if (update) send({ type: "transcript", text: update.text.slice(0, MAX_TRANSCRIPT_CHARS), final: true });
+    if (update?.utterance) void beginAnswer(update.utterance);
+  };
   ws.on("message", (data, isBinary) => {
     lastActivity = Date.now(); if (closed) return;
     if (isBinary) {
@@ -238,14 +258,31 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
       socket.on("message", (raw, binary) => {
         if (binary || closed) return;
         try {
-          const msg = JSON.parse(raw.toString()) as { type?: string; channel?: { alternatives?: Array<{ transcript?: string }> }; is_final?: boolean; speech_final?: boolean };
+          const msg = JSON.parse(raw.toString()) as {
+            type?: string;
+            channel?: { alternatives?: Array<{ transcript?: string }> };
+            is_final?: boolean;
+            speech_final?: boolean;
+            start?: number;
+            err_code?: string;
+            err_msg?: string;
+            description?: string;
+            message?: string;
+          };
+          if (msg.type === "Error" || msg.err_code || msg.err_msg) {
+            const detail = (msg.err_msg ?? msg.description ?? msg.message ?? msg.err_code ?? "provider error").slice(0, 180);
+            fail("stt_provider_error", `Speech recognition provider reported an error (${detail}).`, true);
+            return;
+          }
           if (msg.type === "SpeechStarted") { interrupt(); return; }
-          const text = msg.channel?.alternatives?.[0]?.transcript?.trim(); if (!text) return;
-          currentTranscript = text; send({ type: "transcript", text: text.slice(0, MAX_TRANSCRIPT_CHARS), final: Boolean(msg.is_final || msg.speech_final) });
-          if (!msg.is_final && !msg.speech_final) { if (turnId && !turnInterrupted) interrupt(); return; }
-          finalTranscript = `${finalTranscript} ${text}`.trim();
-          if (finalTranscript.length > MAX_TRANSCRIPT_CHARS) { fail("transcript_limit", "Voice transcript is too long."); return; }
-          if (msg.speech_final) { const utterance = finalTranscript; finalTranscript = ""; currentTranscript = ""; void beginAnswer(utterance); }
+          if (msg.type === "UtteranceEnd") { flushTranscript(); return; }
+          const text = msg.channel?.alternatives?.[0]?.transcript?.trim() ?? "";
+          const update = transcriptBuffer.update({ text, isFinal: msg.is_final, speechFinal: msg.speech_final, start: msg.start });
+          if (!update) return;
+          send({ type: "transcript", text: update.text.slice(0, MAX_TRANSCRIPT_CHARS), final: update.final });
+          if (update.text.length > MAX_TRANSCRIPT_CHARS) { fail("transcript_limit", "Voice transcript is too long."); return; }
+          if (!msg.is_final && !msg.speech_final && text && turnId && !turnInterrupted) interrupt();
+          if (update.utterance) void beginAnswer(update.utterance);
         } catch { /* provider keepalive or non-JSON frame */ }
       });
       socket.on("error", (err) => {
