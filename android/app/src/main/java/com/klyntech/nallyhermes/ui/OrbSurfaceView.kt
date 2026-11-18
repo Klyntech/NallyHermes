@@ -1,49 +1,120 @@
 package com.klyntech.nallyhermes.ui
 
 import android.content.Context
+import android.graphics.PixelFormat
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
-import android.graphics.PixelFormat
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.max
 
-/**
- * Native OpenGL ES port of the exact fragment shader and state palette in
- * voice-miniapp-mockup-4.html. No WebView and no rasterized approximation.
- */
+/** Native OpenGL ES port of the supplied voice orb, with an explicit fallback path in Compose. */
 class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
-    private val orbRenderer = OrbRenderer()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var readyCallback: (() -> Unit)? = null
+    @Volatile private var failureCallback: ((Throwable) -> Unit)? = null
+    @Volatile private var resumed = false
+    @Volatile private var activeState = VoiceUiState.Ready
+    private var frameLoopScheduled = false
+    private val orbRenderer = OrbRenderer(
+        onReady = { mainHandler.post { readyCallback?.invoke() } },
+        onFailure = { error -> mainHandler.post { failureCallback?.invoke(error) } }
+    )
+    private val frameLoop = object : Runnable {
+        override fun run() {
+            if (!resumed || !activeState.isAnimated()) {
+                frameLoopScheduled = false
+                return
+            }
+            requestRender()
+            mainHandler.postDelayed(this, FRAME_INTERVAL_MS)
+        }
+    }
 
     init {
         setEGLContextClientVersion(2)
         setEGLConfigChooser(8, 8, 8, 8, 0, 0)
+        setPreserveEGLContextOnPause(false)
         holder.setFormat(PixelFormat.TRANSLUCENT)
+        // The orb is a soft visual, so a fixed buffer keeps fragment-shader cost bounded on high-DPI screens.
+        holder.setFixedSize(ORB_BUFFER_SIZE, ORB_BUFFER_SIZE)
         setZOrderMediaOverlay(true)
         setRenderer(orbRenderer)
-        renderMode = RENDERMODE_CONTINUOUSLY
+        renderMode = RENDERMODE_WHEN_DIRTY
+    }
+
+    fun setRenderCallbacks(onReady: () -> Unit, onFailure: (Throwable) -> Unit) {
+        readyCallback = onReady
+        failureCallback = onFailure
     }
 
     fun setVoiceUiState(state: VoiceUiState) {
+        activeState = state
         orbRenderer.setState(state)
+        requestRender()
+        updateFrameLoop()
     }
 
     fun setAudioLevel(value: Float) {
         orbRenderer.setLevel(value.coerceIn(0f, 1f))
+        requestRender()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        requestRender()
+        updateFrameLoop()
+    }
+
+    override fun onPause() {
+        resumed = false
+        frameLoopScheduled = false
+        mainHandler.removeCallbacks(frameLoop)
+        super.onPause()
+    }
+
+    private fun updateFrameLoop() {
+        if (resumed && activeState.isAnimated()) {
+            if (!frameLoopScheduled) {
+                frameLoopScheduled = true
+                mainHandler.post(frameLoop)
+            }
+        } else {
+            frameLoopScheduled = false
+            mainHandler.removeCallbacks(frameLoop)
+        }
+    }
+
+    private fun VoiceUiState.isAnimated(): Boolean = when (this) {
+        VoiceUiState.Connecting, VoiceUiState.Listening, VoiceUiState.Thinking, VoiceUiState.Tool,
+        VoiceUiState.Speaking, VoiceUiState.Interrupted, VoiceUiState.Reconnecting -> true
+        VoiceUiState.Ready, VoiceUiState.Denied, VoiceUiState.Ended -> false
     }
 
     private data class Params(
-        val tint: FloatArray, val deep: FloatArray,
-        val speed: Float, val energy: Float, val dim: Float
+        val tint: FloatArray,
+        val deep: FloatArray,
+        var speed: Float,
+        var energy: Float,
+        var dim: Float
     )
 
-    private class OrbRenderer : Renderer {
+    private class OrbRenderer(
+        private val onReady: () -> Unit,
+        private val onFailure: (Throwable) -> Unit
+    ) : Renderer {
         private val stateRef = AtomicReference("ready")
+        private val readyReported = AtomicBoolean(false)
+        private val failureReported = AtomicBoolean(false)
         private var current = params("ready")
         private var target = params("ready")
         private var program = 0
@@ -53,21 +124,21 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
         private var pulse = 0f
         @Volatile private var level = 0f
         private lateinit var vertices: FloatBuffer
-        private var aPos = 0
-        private var uRes = 0
-        private var uTime = 0
-        private var uLevel = 0
-        private var uSpeed = 0
-        private var uEnergy = 0
-        private var uDim = 0
-        private var uPulse = 0
-        private var uTint = 0
-        private var uDeep = 0
+        private var aPos = -1
+        private var uRes = -1
+        private var uTime = -1
+        private var uLevel = -1
+        private var uSpeed = -1
+        private var uEnergy = -1
+        private var uDim = -1
+        private var uPulse = -1
+        private var uTint = -1
+        private var uDeep = -1
 
         fun setLevel(value: Float) { level = value }
 
         fun setState(state: VoiceUiState) {
-            val key = when (state) {
+            stateRef.set(when (state) {
                 VoiceUiState.Ready -> "ready"
                 VoiceUiState.Connecting -> "connecting"
                 VoiceUiState.Listening -> "listening"
@@ -78,96 +149,123 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
                 VoiceUiState.Reconnecting -> "reconnecting"
                 VoiceUiState.Denied -> "denied"
                 VoiceUiState.Ended -> "ended"
-            }
-            stateRef.set(key)
+            })
         }
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
             started = SystemClock.elapsedRealtime()
-            GLES20.glClearColor(0f, 0f, 0f, 0f)
-            GLES20.glEnable(GLES20.GL_BLEND)
-            GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
-            val vs = compile(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER)
-            val fs = compile(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER)
-            program = GLES20.glCreateProgram()
-            GLES20.glAttachShader(program, vs)
-            GLES20.glAttachShader(program, fs)
-            GLES20.glLinkProgram(program)
-            val linked = IntArray(1)
-            GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0)
-            if (linked[0] == 0) throw IllegalStateException("Orb shader link failed: " + GLES20.glGetProgramInfoLog(program))
-            GLES20.glUseProgram(program)
-            vertices = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-            vertices.put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)).position(0)
-            aPos = GLES20.glGetAttribLocation(program, "a")
-            uRes = GLES20.glGetUniformLocation(program, "uRes")
-            uTime = GLES20.glGetUniformLocation(program, "uTime")
-            uLevel = GLES20.glGetUniformLocation(program, "uLevel")
-            uSpeed = GLES20.glGetUniformLocation(program, "uSpeed")
-            uEnergy = GLES20.glGetUniformLocation(program, "uEnergy")
-            uDim = GLES20.glGetUniformLocation(program, "uDim")
-            uPulse = GLES20.glGetUniformLocation(program, "uPulse")
-            uTint = GLES20.glGetUniformLocation(program, "uTint")
-            uDeep = GLES20.glGetUniformLocation(program, "uDeep")
+            readyReported.set(false)
+            var vertexShader = 0
+            var fragmentShader = 0
+            try {
+                GLES20.glClearColor(0f, 0f, 0f, 0f)
+                GLES20.glEnable(GLES20.GL_BLEND)
+                GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+                vertexShader = compile(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER)
+                fragmentShader = compile(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER)
+                val newProgram = GLES20.glCreateProgram()
+                check(newProgram != 0) { "Could not create the orb shader program." }
+                GLES20.glAttachShader(newProgram, vertexShader)
+                GLES20.glAttachShader(newProgram, fragmentShader)
+                GLES20.glLinkProgram(newProgram)
+                val linked = IntArray(1)
+                GLES20.glGetProgramiv(newProgram, GLES20.GL_LINK_STATUS, linked, 0)
+                check(linked[0] != 0) { "Orb shader link failed: ${GLES20.glGetProgramInfoLog(newProgram)}" }
+                program = newProgram
+                GLES20.glUseProgram(program)
+                vertices = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                vertices.put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)).position(0)
+                aPos = GLES20.glGetAttribLocation(program, "a")
+                check(aPos >= 0) { "Orb shader is missing its vertex attribute." }
+                uRes = GLES20.glGetUniformLocation(program, "uRes")
+                uTime = GLES20.glGetUniformLocation(program, "uTime")
+                uLevel = GLES20.glGetUniformLocation(program, "uLevel")
+                uSpeed = GLES20.glGetUniformLocation(program, "uSpeed")
+                uEnergy = GLES20.glGetUniformLocation(program, "uEnergy")
+                uDim = GLES20.glGetUniformLocation(program, "uDim")
+                uPulse = GLES20.glGetUniformLocation(program, "uPulse")
+                uTint = GLES20.glGetUniformLocation(program, "uTint")
+                uDeep = GLES20.glGetUniformLocation(program, "uDeep")
+                if (readyReported.compareAndSet(false, true)) onReady()
+            } catch (error: Exception) {
+                if (program != 0) GLES20.glDeleteProgram(program)
+                program = 0
+                if (failureReported.compareAndSet(false, true)) onFailure(error)
+            } finally {
+                if (vertexShader != 0) GLES20.glDeleteShader(vertexShader)
+                if (fragmentShader != 0) GLES20.glDeleteShader(fragmentShader)
+            }
         }
 
         override fun onSurfaceChanged(gl: GL10?, w: Int, h: Int) {
-            width = max(1, w); height = max(1, h)
+            width = max(1, w)
+            height = max(1, h)
             GLES20.glViewport(0, 0, width, height)
         }
 
         override fun onDrawFrame(gl: GL10?) {
-            val newKey = stateRef.get()
-            if (newKey != lastKey) {
-                lastKey = newKey
-                target = params(newKey)
-                pulse = 1f
-            }
-            val k = 0.07f
-            for (i in 0..2) {
-                current.tint[i] += (target.tint[i] - current.tint[i]) * k
-                current.deep[i] += (target.deep[i] - current.deep[i]) * k
-            }
-            current = current.copy(
-                speed = current.speed + (target.speed - current.speed) * k,
-                energy = current.energy + (target.energy - current.energy) * k,
-                dim = current.dim + (target.dim - current.dim) * k
-            )
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-            GLES20.glUseProgram(program)
-            GLES20.glUniform2f(uRes, width.toFloat(), height.toFloat())
-            GLES20.glUniform1f(uTime, (SystemClock.elapsedRealtime() - started) / 1000f)
-            GLES20.glUniform1f(uLevel, level)
-            GLES20.glUniform1f(uSpeed, current.speed)
-            GLES20.glUniform1f(uEnergy, current.energy)
-            GLES20.glUniform1f(uDim, current.dim)
-            GLES20.glUniform1f(uPulse, pulse)
-            GLES20.glUniform3fv(uTint, 1, current.tint, 0)
-            GLES20.glUniform3fv(uDeep, 1, current.deep, 0)
-            vertices.position(0)
-            GLES20.glEnableVertexAttribArray(aPos)
-            GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 0, vertices)
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
-            pulse *= 0.96f
+            if (program == 0 || !::vertices.isInitialized) return
+            try {
+                val newKey = stateRef.get()
+                if (newKey != lastKey) {
+                    lastKey = newKey
+                    target = params(newKey)
+                    pulse = 1f
+                }
+                val k = 0.07f
+                for (i in 0..2) {
+                    current.tint[i] += (target.tint[i] - current.tint[i]) * k
+                    current.deep[i] += (target.deep[i] - current.deep[i]) * k
+                }
+                current.speed += (target.speed - current.speed) * k
+                current.energy += (target.energy - current.energy) * k
+                current.dim += (target.dim - current.dim) * k
+                GLES20.glUseProgram(program)
+                GLES20.glUniform2f(uRes, width.toFloat(), height.toFloat())
+                GLES20.glUniform1f(uTime, (SystemClock.elapsedRealtime() - started) / 1000f)
+                GLES20.glUniform1f(uLevel, level)
+                GLES20.glUniform1f(uSpeed, current.speed)
+                GLES20.glUniform1f(uEnergy, current.energy)
+                GLES20.glUniform1f(uDim, current.dim)
+                GLES20.glUniform1f(uPulse, pulse)
+                GLES20.glUniform3fv(uTint, 1, current.tint, 0)
+                GLES20.glUniform3fv(uDeep, 1, current.deep, 0)
+                vertices.position(0)
+                GLES20.glEnableVertexAttribArray(aPos)
+                GLES20.glVertexAttribPointer(aPos, 2, GLES20.GL_FLOAT, false, 0, vertices)
+                GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+                pulse *= 0.96f
+            } catch (error: Exception) {
+                if (program != 0) GLES20.glDeleteProgram(program)
+                program = 0
+                if (failureReported.compareAndSet(false, true)) onFailure(error)
+            }
         }
 
         private var lastKey = "ready"
 
         private fun compile(type: Int, source: String): Int {
             val shader = GLES20.glCreateShader(type)
+            check(shader != 0) { "Could not create an orb shader." }
             GLES20.glShaderSource(shader, source)
             GLES20.glCompileShader(shader)
             val ok = IntArray(1)
             GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, ok, 0)
-            if (ok[0] == 0) throw IllegalStateException("Orb shader compile failed: " + GLES20.glGetShaderInfoLog(shader))
+            if (ok[0] == 0) {
+                val message = GLES20.glGetShaderInfoLog(shader)
+                GLES20.glDeleteShader(shader)
+                throw IllegalStateException("Orb shader compile failed: $message")
+            }
             return shader
         }
 
         companion object {
             private fun rgb(hex: String): FloatArray {
                 val n = hex.removePrefix("#").toLong(16)
-                return floatArrayOf(((n shr 16) and 255).toFloat()/255f, ((n shr 8) and 255).toFloat()/255f, (n and 255).toFloat()/255f)
+                return floatArrayOf(((n shr 16) and 255).toFloat() / 255f, ((n shr 8) and 255).toFloat() / 255f, (n and 255).toFloat() / 255f)
             }
+
             private fun params(key: String): Params {
                 val values = when (key) {
                     "ready" -> arrayOf("#6B7585", "#14171C", .35f, 0f, 1f)
@@ -187,9 +285,13 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
                 void main() { gl_Position = vec4(a, 0.0, 1.0); }
             """
 
-            // Ported directly from the original HTML's WebGL fragment shader.
+            // Prefer high precision where supported; mediump keeps ES 2.0 devices compatible.
             private const val FRAGMENT_SHADER = """
+                #ifdef GL_FRAGMENT_PRECISION_HIGH
                 precision highp float;
+                #else
+                precision mediump float;
+                #endif
                 uniform vec2 uRes;
                 uniform float uTime, uLevel, uSpeed, uEnergy, uDim, uPulse;
                 uniform vec3 uTint, uDeep;
@@ -256,5 +358,10 @@ class OrbSurfaceView(context: Context) : GLSurfaceView(context) {
                 }
             """
         }
+    }
+
+    private companion object {
+        const val ORB_BUFFER_SIZE = 360
+        const val FRAME_INTERVAL_MS = 33L
     }
 }

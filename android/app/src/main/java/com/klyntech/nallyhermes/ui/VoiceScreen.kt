@@ -10,7 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -68,9 +68,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.klyntech.nallyhermes.MobileApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 /** Native voice session states — same set as multi-sector / mockup. */
 enum class VoiceUiState {
@@ -114,40 +112,18 @@ internal fun VoiceScreen(
             beginVoiceSession(
                 api, context, scope,
                 onSession = { session = it },
-                onState = { state = it },
+                onState = {
+                    state = it
+                    if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f
+                },
                 onCaption = { caption = it },
+                onAudioLevel = { audioLevel = it },
                 onError = { msg -> localNotice = msg; gateVisible = true },
-                onEnded = { session = null; gateVisible = true }
+                onEnded = { session = null; audioLevel = 0f; gateVisible = true }
             )
         } else {
             state = VoiceUiState.Denied
             localNotice = "Microphone permission is needed. Allow it to start a call."
-        }
-    }
-
-    LaunchedEffect(state, muted) {
-        if (state != VoiceUiState.Listening && state != VoiceUiState.Speaking) {
-            audioLevel = 0f
-            return@LaunchedEffect
-        }
-        var v = 0f
-        var target = 0f
-        var phrase = 0
-        while (isActive) {
-            if (phrase <= 0) {
-                phrase = 3 + Random.nextInt(5)
-                val pause = Random.nextFloat() < 0.3f
-                target = when {
-                    muted && state == VoiceUiState.Listening -> 0f
-                    pause -> 0.04f
-                    state == VoiceUiState.Speaking -> 0.4f + Random.nextFloat() * 0.5f
-                    else -> 0.15f + Random.nextFloat() * 0.4f
-                }
-            }
-            phrase--
-            v += (target - v) * (if (target > v) 0.5f else 0.12f)
-            audioLevel = v
-            delay(66)
         }
     }
 
@@ -160,6 +136,7 @@ internal fun VoiceScreen(
                 if (active) {
                     session?.stop("app backgrounded")
                     session = null
+                    audioLevel = 0f
                     state = VoiceUiState.Ended
                     localNotice = "Voice session ended when the app went to the background. Start again when ready."
                     gateVisible = true
@@ -213,12 +190,14 @@ internal fun VoiceScreen(
             ) {
                 if (keyboardOn) Spacer(Modifier.height(24.dp))
 
-                // Exact OpenGL orb from multi-sector-agent
-                GlVoiceOrb(
-                    state = state,
-                    level = audioLevel,
-                    modifier = Modifier.size(if (keyboardOn) 128.dp else 240.dp)
-                )
+                // Keep a single orb surface alive: the start gate replaces the in-call orb.
+                if (!gateVisible) {
+                    GlVoiceOrb(
+                        state = state,
+                        level = audioLevel,
+                        modifier = Modifier.size(if (keyboardOn) 128.dp else 240.dp)
+                    )
+                }
 
                 Spacer(Modifier.height(if (keyboardOn) 20.dp else 40.dp))
 
@@ -325,6 +304,7 @@ internal fun VoiceScreen(
                             endArmed = false
                             session?.stop()
                             session = null
+                            audioLevel = 0f
                             state = VoiceUiState.Ended
                             gateVisible = true
                             localNotice = "Call ended."
@@ -390,10 +370,14 @@ internal fun VoiceScreen(
                             beginVoiceSession(
                                 api, context, scope,
                                 onSession = { session = it },
-                                onState = { state = it },
+                                onState = {
+                                    state = it
+                                    if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f
+                                },
                                 onCaption = { caption = it },
+                                onAudioLevel = { audioLevel = it },
                                 onError = { msg -> localNotice = msg; gateVisible = true },
-                                onEnded = { session = null; gateVisible = true }
+                                onEnded = { session = null; audioLevel = 0f; gateVisible = true }
                             )
                         } else {
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -417,19 +401,109 @@ internal fun VoiceScreen(
 @Composable
 private fun GlVoiceOrb(state: VoiceUiState, level: Float, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val orbView = remember {
-        OrbSurfaceView(context).apply {
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+    val lifecycle = LocalLifecycleOwner.current
+    var rendererReady by remember { mutableStateOf(false) }
+    var useFallback by remember { mutableStateOf(false) }
+    val orbView = remember(context) {
+        try {
+            OrbSurfaceView(context).apply { setBackgroundColor(android.graphics.Color.TRANSPARENT) }
+        } catch (_: Exception) {
+            null
         }
     }
-    AndroidView(
-        factory = { orbView },
-        modifier = modifier,
-        update = {
-            it.setVoiceUiState(state)
-            it.setAudioLevel(level)
+
+    LaunchedEffect(orbView) {
+        if (orbView == null) {
+            useFallback = true
+        } else {
+            delay(2_000)
+            if (!rendererReady) useFallback = true
         }
-    )
+    }
+
+    DisposableEffect(orbView, lifecycle, useFallback) {
+        val view = orbView
+        var isResumed = false
+        fun resumeView() {
+            if (view != null && !isResumed) {
+                view.onResume()
+                isResumed = true
+            }
+        }
+        fun pauseView() {
+            if (view != null && isResumed) {
+                view.onPause()
+                isResumed = false
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> resumeView()
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> pauseView()
+                else -> Unit
+            }
+        }
+        if (view != null && !useFallback) {
+            lifecycle.lifecycle.addObserver(observer)
+            if (lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resumeView()
+        }
+        onDispose {
+            if (view != null) {
+                if (!useFallback) lifecycle.lifecycle.removeObserver(observer)
+                pauseView()
+                view.setRenderCallbacks({}, {})
+            }
+        }
+    }
+
+    if (orbView == null || useFallback) {
+        FallbackVoiceOrb(state, level, modifier)
+    } else {
+        AndroidView(
+            factory = { _ ->
+                requireNotNull(orbView).apply {
+                    setRenderCallbacks(
+                        onReady = { rendererReady = true },
+                        onFailure = { useFallback = true }
+                    )
+                }
+            },
+            modifier = modifier,
+            update = {
+                it.setVoiceUiState(state)
+                it.setAudioLevel(level)
+            }
+        )
+    }
+}
+
+@Composable
+private fun FallbackVoiceOrb(state: VoiceUiState, level: Float, modifier: Modifier = Modifier) {
+    val (tint, deep) = when (state) {
+        VoiceUiState.Listening, VoiceUiState.Interrupted -> Color(0xFF8FB8D8) to Color(0xFF0E2236)
+        VoiceUiState.Thinking, VoiceUiState.Tool -> Color(0xFFA9A4C9) to Color(0xFF1A1630)
+        VoiceUiState.Speaking -> Color(0xFFE8B98A) to Color(0xFF2A1A0C)
+        VoiceUiState.Connecting -> Color(0xFF7A8596) to Color(0xFF14171C)
+        VoiceUiState.Reconnecting -> Color(0xFF5C6470) to Color(0xFF131519)
+        VoiceUiState.Denied, VoiceUiState.Ended -> Color(0xFF3A4048) to Color(0xFF101216)
+        VoiceUiState.Ready -> Color(0xFF6B7585) to Color(0xFF14171C)
+    }
+    val glow = tint.copy(alpha = (0.72f + level.coerceIn(0f, 1f) * 0.25f).coerceAtMost(0.97f))
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(glow, deep.copy(alpha = 0.92f), Color.Transparent)))
+                .border(1.dp, tint.copy(alpha = 0.42f), CircleShape)
+        )
+        Box(
+            Modifier
+                .fillMaxSize(0.72f)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(tint.copy(alpha = 0.88f), deep)))
+        )
+    }
 }
 
 @Composable
@@ -464,6 +538,7 @@ private fun beginVoiceSession(
     onSession: (NativeVoiceSession?) -> Unit,
     onState: (VoiceUiState) -> Unit,
     onCaption: (String?) -> Unit,
+    onAudioLevel: (Float) -> Unit,
     onError: (String) -> Unit,
     onEnded: () -> Unit = {}
 ) {
@@ -478,6 +553,7 @@ private fun beginVoiceSession(
                         NativeVoiceSession.Event.Connected -> onState(VoiceUiState.Connecting)
                         is NativeVoiceSession.Event.State -> onState(event.state)
                         is NativeVoiceSession.Event.Caption -> onCaption(event.text)
+                        is NativeVoiceSession.Event.AudioLevel -> onAudioLevel(event.value)
                         is NativeVoiceSession.Event.Error -> {
                             serverErrorShown = true
                             onError(event.message)

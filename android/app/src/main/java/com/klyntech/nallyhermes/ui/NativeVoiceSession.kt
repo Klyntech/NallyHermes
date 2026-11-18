@@ -12,6 +12,9 @@ import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -23,6 +26,8 @@ import org.json.JSONObject
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.sqrt
 
 /** One call owns its socket and audio resources. Protocol v1 uses mono pcm_s16le at 16 kHz. */
 internal class NativeVoiceSession(
@@ -34,16 +39,14 @@ internal class NativeVoiceSession(
         data object Connected : Event
         data class State(val state: VoiceUiState) : Event
         data class Caption(val text: String, val final: Boolean) : Event
+        data class AudioLevel(val value: Float) : Event
         data class Error(val message: String) : Event
         data object Ended : Event
     }
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .pingInterval(20, TimeUnit.SECONDS)
-        .build()
+    private val client = sharedClient
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val sessionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val stopped = AtomicBoolean(false)
     @Volatile private var muted = false
     @Volatile private var socket: WebSocket? = null
@@ -55,6 +58,8 @@ internal class NativeVoiceSession(
     private var captureJob: Job? = null
     private var playbackJob: Job? = null
     private val playbackChunks = LinkedBlockingQueue<ByteArray>(24)
+    private val playbackLock = Any()
+    private val playbackQueuedBytes = AtomicInteger(0)
     private var audioFocusRequest: AudioFocusRequest? = null
 
     fun connect() {
@@ -85,17 +90,31 @@ internal class NativeVoiceSession(
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                if (stopped.get()) return
+                if (stopped.get() || phase != "speaking") return
                 val chunk = bytes.toByteArray()
-                if (chunk.isEmpty() || chunk.size % 2 != 0) {
+                if (chunk.isEmpty() || chunk.size > MAX_PLAYBACK_FRAME_BYTES || chunk.size % 2 != 0) {
                     callback(Event.Error("The voice server sent an invalid PCM audio frame."))
                     stop("invalid audio frame")
                     return
                 }
-                if (!playbackChunks.offer(chunk)) {
-                    callback(Event.Error("Audio playback fell behind the live response."))
-                    stop("playback backpressure")
+                var failure: String? = null
+                synchronized(playbackLock) {
+                    if (stopped.get() || phase != "speaking") return
+                    val queuedBytes = playbackQueuedBytes.addAndGet(chunk.size)
+                    if (queuedBytes > MAX_PLAYBACK_QUEUE_BYTES) {
+                        playbackQueuedBytes.addAndGet(-chunk.size)
+                        failure = "playback memory limit"
+                    } else if (!playbackChunks.offer(chunk)) {
+                        playbackQueuedBytes.addAndGet(-chunk.size)
+                        failure = "playback backpressure"
+                    }
                 }
+                if (failure != null) {
+                    callback(Event.Error("Audio playback fell behind the live response."))
+                    stop(failure!!)
+                    return
+                }
+                if (phase == "speaking") callback(Event.AudioLevel(pcmLevel(chunk)))
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -127,7 +146,7 @@ internal class NativeVoiceSession(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 val priorError = lastServerError
                 cleanup()
-                if (priorError == null && phase != "ready" && phase != "server_error") {
+                if (priorError == null && phase !in setOf("ready", "listening", "thinking", "speaking", "server_error")) {
                     val detail = buildString {
                         append("Call dropped during '")
                         append(phase)
@@ -147,6 +166,7 @@ internal class NativeVoiceSession(
     }
 
     private fun handleControl(raw: String) {
+        if (stopped.get()) return
         val event = try { JSONObject(raw) } catch (_: Exception) {
             callback(Event.Error("The voice server sent an invalid control message."))
             return
@@ -170,7 +190,7 @@ internal class NativeVoiceSession(
                 }
             }
             "ready" -> {
-                phase = "ready"
+                phase = "listening"
                 val input = event.optJSONObject("input")
                 if (event.optInt("protocolVersion") != 1 || input == null || input.optString("encoding") != "pcm_s16le" ||
                     input.optInt("sampleRate") != 16_000 || input.optInt("channels") != 1) {
@@ -187,16 +207,18 @@ internal class NativeVoiceSession(
                 startCapture()
             }
             "transcript" -> {
+                phase = "listening"
                 callback(Event.Caption(event.optString("text"), event.optBoolean("final")))
                 callback(Event.State(VoiceUiState.Listening))
             }
-            "assistant_start" -> callback(Event.State(VoiceUiState.Thinking))
+            "assistant_start" -> { phase = "thinking"; callback(Event.State(VoiceUiState.Thinking)) }
             "text_delta" -> callback(Event.Caption(event.optString("text"), true))
             "audio_start" -> {
                 if (event.optString("encoding") != "pcm_s16le" || event.optInt("sampleRate") != 16_000 || event.optInt("channels") != 1) {
                     callback(Event.Error("The voice server requested an unsupported playback format."))
                     stop("unsupported playback format")
                 } else {
+                    phase = "speaking"
                     if (!startPlayback()) {
                         callback(Event.Error("Audio playback could not be initialized."))
                         stop("playback initialization")
@@ -213,6 +235,7 @@ internal class NativeVoiceSession(
             }
             "assistant_end" -> Unit
             "interrupted" -> {
+                phase = "listening"
                 clearPlayback()
                 callback(Event.State(VoiceUiState.Interrupted))
             }
@@ -236,10 +259,14 @@ internal class NativeVoiceSession(
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setOnAudioFocusChangeListener { change ->
                     if (change <= AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        phase = "interrupted"
                         socket?.send(JSONObject().put("type", "interrupt").toString())
                         clearPlayback()
                         callback(Event.State(VoiceUiState.Interrupted))
-                    } else if (change == AudioManager.AUDIOFOCUS_GAIN) callback(Event.State(VoiceUiState.Listening))
+                    } else if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                        phase = "listening"
+                        callback(Event.State(VoiceUiState.Listening))
+                    }
                 }.build()
             audioFocusRequest = request
             audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
@@ -261,22 +288,39 @@ internal class NativeVoiceSession(
             }
             recorder = record
             record.startRecording()
-            captureJob = CoroutineScope(Dispatchers.IO).launch {
+            captureJob = sessionScope.launch {
                 val frame = ByteArray(3_200) // 100 ms, safely below the server's 32 KB frame cap
                 try {
-                    while (!stopped.get() && record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    while (!stopped.get()) {
+                        if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                            throw IllegalStateException("Microphone capture stopped unexpectedly.")
+                        }
                         val count = record.read(frame, 0, frame.size, AudioRecord.READ_BLOCKING)
+                        if (count < 0) throw IllegalStateException("Microphone read failed ($count).")
                         if (count > 0) {
+                            val usableBytes = count and -2
+                            if (usableBytes == 0) continue
                             val ws = socket ?: break
-                            if (ws.queueSize() < 256 * 1024) {
-                                val outgoing = frame.copyOf(count)
-                                if (muted) outgoing.fill(0)
-                                ws.send(ByteString.of(*outgoing))
+                            if (ws.queueSize() > MAX_SOCKET_QUEUE_BYTES) {
+                                callback(Event.Error("Network is too slow for live voice. Reconnect when the connection is stable."))
+                                stop("socket backpressure")
+                                break
+                            }
+                            val outgoing = frame.copyOf(usableBytes)
+                            if (phase == "listening") callback(Event.AudioLevel(if (muted) 0f else pcmLevel(outgoing)))
+                            if (muted) outgoing.fill(0)
+                            if (!ws.send(ByteString.of(*outgoing))) {
+                                callback(Event.Error("The live voice connection could not accept microphone audio."))
+                                stop("audio send failed")
+                                break
                             }
                         }
                     }
                 } catch (error: Exception) {
-                    if (!stopped.get()) callback(Event.Error(error.message ?: "Microphone capture failed."))
+                    if (!stopped.get() && isActive) {
+                        callback(Event.Error(error.message ?: "Microphone capture failed."))
+                        stop("capture failed")
+                    }
                 }
             }
         } catch (error: SecurityException) {
@@ -289,9 +333,11 @@ internal class NativeVoiceSession(
     private fun startPlayback(): Boolean {
         if (stopped.get()) return false
         try {
-            track?.let { try { it.stop(); it.release() } catch (_: Exception) { } }
             playbackJob?.cancel()
-            playbackChunks.clear()
+            val previousTrack = track
+            track = null
+            try { previousTrack?.pause(); previousTrack?.flush(); previousTrack?.stop(); previousTrack?.release() } catch (_: Exception) { }
+            clearPlayback(notify = false)
             val minimum = AudioTrack.getMinBufferSize(16_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
             if (minimum <= 0) return false
             val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -303,14 +349,17 @@ internal class NativeVoiceSession(
             if (output.state != AudioTrack.STATE_INITIALIZED) { output.release(); return false }
             output.play()
             track = output
-            playbackJob = CoroutineScope(Dispatchers.IO).launch {
+            playbackJob = sessionScope.launch {
                 try {
                     while (!stopped.get()) {
                         val chunk = playbackChunks.take()
                         if (chunk.isEmpty()) {
+                            phase = "listening"
+                            callback(Event.AudioLevel(0f))
                             callback(Event.State(VoiceUiState.Listening))
                             continue
                         }
+                        playbackQueuedBytes.addAndGet(-chunk.size)
                         var offset = 0
                         while (offset < chunk.size && !stopped.get()) {
                             val written = output.write(chunk, offset, chunk.size - offset, AudioTrack.WRITE_BLOCKING)
@@ -321,16 +370,40 @@ internal class NativeVoiceSession(
                 } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } catch (error: Exception) {
-                    if (!stopped.get()) callback(Event.Error(error.message ?: "Audio playback failed."))
+                    if (!stopped.get() && isActive) {
+                        callback(Event.Error(error.message ?: "Audio playback failed."))
+                        stop("playback failed")
+                    }
                 }
             }
             return true
         } catch (_: Exception) { return false }
     }
 
-    private fun clearPlayback() {
-        playbackChunks.clear()
+    private fun clearPlayback(notify: Boolean = true) {
+        val discarded = ArrayList<ByteArray>()
+        synchronized(playbackLock) {
+            playbackChunks.drainTo(discarded)
+            val discardedBytes = discarded.sumOf { it.size }
+            if (discardedBytes > 0) playbackQueuedBytes.addAndGet(-discardedBytes)
+        }
         try { track?.pause(); track?.flush() } catch (_: Exception) { }
+        if (notify) callback(Event.AudioLevel(0f))
+    }
+
+    private fun pcmLevel(pcm: ByteArray): Float {
+        var sumSquares = 0.0
+        var samples = 0
+        var index = 0
+        while (index + 1 < pcm.size) {
+            val sample = ((pcm[index + 1].toInt() shl 8) or (pcm[index].toInt() and 0xff)).toShort().toInt()
+            val normalized = sample / 32768.0
+            sumSquares += normalized * normalized
+            samples++
+            index += 4 // sample every other PCM value; the meter does not need full-rate analysis
+        }
+        if (samples == 0) return 0f
+        return (sqrt(sumSquares / samples) * 3.2).toFloat().coerceIn(0f, 1f)
     }
 
     fun setMuted(value: Boolean) { muted = value }
@@ -349,16 +422,28 @@ internal class NativeVoiceSession(
         if (!stopped.get()) stopped.set(true)
         captureJob?.cancel(); captureJob = null
         playbackJob?.cancel(); playbackJob = null
+        sessionScope.cancel()
         try { recorder?.let { if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) it.stop(); it.release() } } catch (_: Exception) { }
         recorder = null
-        try { track?.pause(); track?.flush(); track?.release() } catch (_: Exception) { }
+        try { track?.pause(); track?.flush(); track?.stop(); track?.release() } catch (_: Exception) { }
         track = null
-        playbackChunks.clear()
+        clearPlayback(notify = false)
         if (Build.VERSION.SDK_INT >= 26) audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         else {
             @Suppress("DEPRECATION")
             audioManager.abandonAudioFocus(null)
         }
         audioFocusRequest = null
+    }
+
+    private companion object {
+        const val MAX_SOCKET_QUEUE_BYTES = 64L * 1024L
+        const val MAX_PLAYBACK_FRAME_BYTES = 32_000
+        const val MAX_PLAYBACK_QUEUE_BYTES = 256 * 1024
+        val sharedClient = OkHttpClient.Builder()
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .build()
     }
 }
