@@ -112,6 +112,7 @@ export function attachVoiceWebSocket(server: Server, consumeTicket = consumeVoic
 function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void, providers: Providers): void {
   const startedAt = Date.now(); let started = false, inputStopped = false, closed = false, audioBytes = 0, frames = 0, outputBytes = 0, lastActivity = Date.now();
   let dg: WebSocket | null = null, tts: WebSocket | null = null, turnId = "", turnInterrupted = false, generation = 0, currentTranscript = "", finalTranscript = "";
+  let turnAbort: AbortController | null = null, ttsTimer: ReturnType<typeof setTimeout> | null = null;
   const send = (obj: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
   // Confirm the transport is up before the client waits forever for Deepgram "ready".
   send({
@@ -122,29 +123,57 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
     ttsConfigured: Boolean(config.ELEVENLABS_API_KEY?.trim() && config.ELEVENLABS_VOICE_ID?.trim())
   });
   const closeUpstream = (s: WebSocket | null) => { if (s && s.readyState < WebSocket.CLOSING) s.close(); };
-  const interrupt = () => { if (!turnId || turnInterrupted) return; turnInterrupted = true; generation++; closeUpstream(tts); tts = null; send({ type: "interrupted", turnId }); };
-  const terminate = () => { if (closed) return; closed = true; clearInterval(idle); closeUpstream(dg); closeUpstream(tts); cleanup(); if (ws.readyState === WebSocket.OPEN) ws.close(1000, "session ended"); };
+  const interrupt = () => {
+    if (!turnId || turnInterrupted) return;
+    turnInterrupted = true;
+    generation++;
+    turnAbort?.abort(new DOMException("Voice turn interrupted", "AbortError"));
+    turnAbort = null;
+    if (ttsTimer) clearTimeout(ttsTimer);
+    ttsTimer = null;
+    closeUpstream(tts);
+    tts = null;
+    send({ type: "interrupted", turnId });
+  };
+  const terminate = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(idle);
+    if (ttsTimer) clearTimeout(ttsTimer);
+    ttsTimer = null;
+    turnAbort?.abort(new DOMException("Voice session closed", "AbortError"));
+    turnAbort = null;
+    closeUpstream(dg); closeUpstream(tts); cleanup();
+    if (ws.readyState === WebSocket.OPEN) ws.close(1000, "session ended");
+  };
   const fail = (code: string, message: string, recoverable = false) => {
     try { send({ type: "error", code, message, recoverable }); } catch { /* ignore */ }
     setTimeout(() => terminate(), 400);
   };
   const idle = setInterval(() => { if (Date.now() - lastActivity > IDLE_TIMEOUT_MS || Date.now() - startedAt > MAX_SESSION_MS) fail("session_timeout", "Voice session timed out.", true); }, 5_000);
   const beginAnswer = async (text: string) => {
+    if (turnId && !turnInterrupted) interrupt();
     const myGeneration = ++generation; turnId = randomBytes(12).toString("hex"); turnInterrupted = false; outputBytes = 0;
+    const controller = new AbortController();
+    turnAbort = controller;
     const id = turnId; send({ type: "assistant_start", turnId: id });
     try {
       const conversationId = await getOrCreateConversation(session.telegramId, session.telegramChatId);
       const history = await loadConversationHistory(conversationId);
-      const answer = await respond(history, text, session.telegramId, undefined, undefined, undefined, { channel: "voice", responseStyle: "spoken", conversationId });
+      const answer = await respond(history, text, session.telegramId, undefined, undefined, undefined, { channel: "voice", responseStyle: "spoken", conversationId, signal: controller.signal });
+      if (closed || myGeneration !== generation || turnInterrupted || controller.signal.aborted) return;
       if (!answer) { send({ type: "error", code: "approval_required", message: "This request needs approval in Telegram.", recoverable: true }); return; }
-      if (closed || myGeneration !== generation || turnInterrupted) return;
+      if (closed || myGeneration !== generation || turnInterrupted || controller.signal.aborted) return;
       await appendConversationExchange(conversationId, text, answer, "android");
+      if (closed || myGeneration !== generation || turnInterrupted || controller.signal.aborted) return;
       const spoken = toVoiceResponse(splitSpokenChannelReply(answer).spoken, { maxChars: config.VOICE_TTS_MAX_CHARS }).text;
       if (!spoken) { send({ type: "assistant_end", turnId: id }); return; }
       // runAgent returns a complete answer; text is sent once, while audio arrives as provider chunks.
       send({ type: "text_delta", turnId: id, text: spoken });
       const socket = providers.eleven(); tts = socket;
+      if (ttsTimer) clearTimeout(ttsTimer);
       const timer = setTimeout(() => { if (tts === socket) fail("tts_timeout", "Speech synthesis timed out.", true); }, config.VOICE_TTS_TIMEOUT_MS);
+      ttsTimer = timer;
       socket.on("open", () => {
         if (myGeneration !== generation || turnInterrupted) { closeUpstream(socket); return; }
         send({ type: "audio_start", turnId: id, encoding: "pcm_s16le", sampleRate: 16000, channels: 1 });
@@ -155,13 +184,20 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
         if (binary || myGeneration !== generation || turnInterrupted || closed) return;
         try {
           const msg = JSON.parse(raw.toString()) as { audio?: string; isFinal?: boolean; error?: string };
-          if (msg.error) { clearTimeout(timer); fail("tts_provider_error", "Speech synthesis failed.", true); return; }
+          if (msg.error) { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; fail("tts_provider_error", "Speech synthesis failed.", true); return; }
           if (msg.audio) { const chunk = Buffer.from(msg.audio, "base64"); outputBytes += chunk.length; if (outputBytes > MAX_OUTPUT_BYTES || outputBytes > config.VOICE_MAX_AUDIO_BYTES) { clearTimeout(timer); fail("output_limit", "Voice response exceeded its audio limit.", true); return; } if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 512_000) ws.send(chunk, { binary: true }); else if (ws.readyState === WebSocket.OPEN) { clearTimeout(timer); fail("backpressure", "Voice client cannot receive audio quickly enough.", true); } }
-          if (msg.isFinal) { clearTimeout(timer); send({ type: "audio_end", turnId: id }); send({ type: "assistant_end", turnId: id }); closeUpstream(socket); if (tts === socket) tts = null; }
+          if (msg.isFinal) { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; send({ type: "audio_end", turnId: id }); send({ type: "assistant_end", turnId: id }); closeUpstream(socket); if (tts === socket) tts = null; if (turnAbort === controller) turnAbort = null; }
         } catch { /* ignore malformed upstream notification */ }
       });
-      socket.on("error", () => { clearTimeout(timer); if (myGeneration === generation && !turnInterrupted) fail("tts_provider_error", "Speech synthesis provider is unavailable.", true); });
-    } catch (error) { if (myGeneration === generation && !turnInterrupted) { console.error("Voice agent turn failed:", error); fail("agent_error", "I couldn't complete that voice turn.", true); } }
+      socket.on("error", () => { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; if (myGeneration === generation && !turnInterrupted && !closed) fail("tts_provider_error", "Speech synthesis provider is unavailable.", true); });
+      socket.on("close", () => {
+        clearTimeout(timer);
+        if (ttsTimer === timer) ttsTimer = null;
+        const wasActive = tts === socket;
+        if (wasActive) tts = null;
+        if (wasActive && myGeneration === generation && !turnInterrupted && !closed) fail("tts_disconnected", "Speech synthesis disconnected before completing the reply.", true);
+      });
+    } catch (error) { if (myGeneration === generation && !turnInterrupted && !closed && !controller.signal.aborted) { console.error("Voice agent turn failed:", error); fail("agent_error", "I couldn't complete that voice turn.", true); } }
   };
   ws.on("message", (data, isBinary) => {
     lastActivity = Date.now(); if (closed) return;

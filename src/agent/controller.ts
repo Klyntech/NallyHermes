@@ -459,6 +459,7 @@ export type RunAgentOptions = {
   channel?: InteractionChannel;
   responseStyle?: ResponseStyle;
   conversationId?: string;
+  signal?: AbortSignal;
 };
 
 export async function runAgent(
@@ -472,6 +473,11 @@ export async function runAgent(
 ): Promise<string | null> {
   const channel = requestOptions?.channel ?? "telegram";
   const responseStyle = requestOptions?.responseStyle;
+  const signal = requestOptions?.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+  };
+  throwIfAborted();
   const academicSourceCheck = requiresAcademicSourceCheck(userMessage);
   const forceAcademicTool = academicSourceCheck && (!workflowAllowedTools || workflowAllowedTools.has("academic"));
   const route = routeRequest(userMessage, { channel, responseStyle });
@@ -571,18 +577,21 @@ export async function runAgent(
     connectors: pack.connectors.filter((c) => c.available).map((c) => c.id)
   }));
 
+  throwIfAborted();
   await reportProgress({ type: "planning" });
   let plan: ExecutionPlan | null = null;
   if (route.usePlanner && !academicSourceCheck) {
     beginPhase(state, "planning");
     try {
-      plan = await createExecutionPlan(llm, history, userMessage);
+      plan = await createExecutionPlan(llm, history, userMessage, signal);
     } catch (error) {
+      if (signal?.aborted) throw error;
       console.warn("Smart planning unavailable; using direct execution:", error);
     }
     endPhase(state, "planning");
   }
 
+  throwIfAborted();
   if (plan) {
     await reportProgress({ type: "plan_created", stepCount: plan.steps.length });
     beginPhase(state, "execution");
@@ -599,6 +608,7 @@ export async function runAgent(
   let stopReason = "The direct tool-round budget was reached.";
   for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
     await reportProgress({ type: "thinking", phase: "model" });
+    throwIfAborted();
     const response = await llm.chat.completions.create({
       model: config.NVIDIA_NIM_MODEL,
       messages,
@@ -609,7 +619,7 @@ export async function runAgent(
         ? { type: "function", function: { name: "academic" } }
         : "auto",
       temperature: 0.4
-    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS });
+    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
     const message = response.choices[0]?.message;
     if (!message) {
       stopReason = "The model returned an empty response.";
