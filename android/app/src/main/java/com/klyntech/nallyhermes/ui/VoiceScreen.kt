@@ -122,8 +122,7 @@ internal fun VoiceScreen(
                 onAudioLevel = { audioLevel = it },
                 onError = { msg ->
                     session?.stop("voice error")
-                    session = null
-                    sessionStarting = false
+                    sessionStarting = session != null
                     localNotice = msg
                     gateVisible = true
                 },
@@ -369,7 +368,7 @@ internal fun VoiceScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(28.dp))
-                Button(
+                    Button(
                     onClick = {
                         if (sessionStarting || session != null) return@Button
                         sessionStarting = true
@@ -389,8 +388,7 @@ internal fun VoiceScreen(
                                 onAudioLevel = { audioLevel = it },
                                 onError = { msg ->
                                     session?.stop("voice error")
-                                    session = null
-                                    sessionStarting = false
+                                    sessionStarting = session != null
                                     localNotice = msg
                                     gateVisible = true
                                 },
@@ -400,12 +398,17 @@ internal fun VoiceScreen(
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     },
+                    enabled = !sessionStarting && session == null,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MainText, contentColor = Background)
                 ) {
                     Text(
-                        if (state == VoiceUiState.Denied) "Try again" else "Start",
+                        when {
+                            sessionStarting || session != null -> "Closing voice…"
+                            state == VoiceUiState.Denied -> "Try again"
+                            else -> "Start"
+                        },
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium
                     )

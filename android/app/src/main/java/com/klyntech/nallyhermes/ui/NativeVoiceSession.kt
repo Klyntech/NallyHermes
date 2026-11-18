@@ -27,6 +27,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import android.os.SystemClock
 import kotlin.math.sqrt
 
 /** One call owns its socket and audio resources. Protocol v1 uses mono pcm_s16le at 16 kHz. */
@@ -281,7 +282,7 @@ internal class NativeVoiceSession(
         val minimum = AudioRecord.getMinBufferSize(16_000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minimum <= 0) { callback(Event.Error("This device cannot capture 16 kHz mono audio.")); stop("capture unsupported"); return }
         try {
-            val record = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16_000,
+            val record = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16_000,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 6_400))
             if (record.state != AudioRecord.STATE_INITIALIZED) {
                 record.release(); callback(Event.Error("Microphone could not be initialized.")); stop("mic initialization"); return
@@ -290,6 +291,7 @@ internal class NativeVoiceSession(
             record.startRecording()
             captureJob = sessionScope.launch {
                 val frame = ByteArray(3_200) // 100 ms, safely below the server's 32 KB frame cap
+                var queueBackedUpSince = 0L
                 try {
                     while (!stopped.get()) {
                         if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
@@ -301,11 +303,19 @@ internal class NativeVoiceSession(
                             val usableBytes = count and -2
                             if (usableBytes == 0) continue
                             val ws = socket ?: break
-                            if (ws.queueSize() > MAX_SOCKET_QUEUE_BYTES) {
-                                callback(Event.Error("Network is too slow for live voice. Reconnect when the connection is stable."))
-                                stop("socket backpressure")
-                                break
+                            val queued = ws.queueSize()
+                            if (queued > SOCKET_QUEUE_HIGH_WATER_BYTES) {
+                                if (queueBackedUpSince == 0L) queueBackedUpSince = SystemClock.elapsedRealtime()
+                                if (SystemClock.elapsedRealtime() - queueBackedUpSince >= SOCKET_QUEUE_STALL_MS) {
+                                    callback(Event.Error("The voice audio upload stayed backed up. Try again; if it repeats, check the app/server connection."))
+                                    stop("socket upload stalled")
+                                    break
+                                }
+                                // A short queue spike is not enough evidence to blame the network.
+                                Thread.sleep(SOCKET_QUEUE_POLL_MS)
+                                continue
                             }
+                            if (queued < SOCKET_QUEUE_LOW_WATER_BYTES) queueBackedUpSince = 0L
                             val outgoing = frame.copyOf(usableBytes)
                             if (phase == "listening") callback(Event.AudioLevel(if (muted) 0f else pcmLevel(outgoing)))
                             if (muted) outgoing.fill(0)
@@ -437,7 +447,10 @@ internal class NativeVoiceSession(
     }
 
     private companion object {
-        const val MAX_SOCKET_QUEUE_BYTES = 64L * 1024L
+        const val SOCKET_QUEUE_HIGH_WATER_BYTES = 64L * 1024L
+        const val SOCKET_QUEUE_LOW_WATER_BYTES = 16L * 1024L
+        const val SOCKET_QUEUE_STALL_MS = 5_000L
+        const val SOCKET_QUEUE_POLL_MS = 100L
         const val MAX_PLAYBACK_FRAME_BYTES = 32_000
         // About 32 seconds of 16 kHz mono PCM: bounded enough for mobile memory,
         // with room for a fast TTS burst while AudioTrack drains at playback speed.
