@@ -1,46 +1,59 @@
-# Hey Nally wake-word model — training and integration plan
+# Hey Nally wake-word model — training preparation
 
-## Current status
+## Status
 
-No Hey Nally model has been trained or validated. The Android app currently uses the bundled openWakeWord **Hey Jarvis** classifier. The listener can only detect the phrase shown in Settings and its persistent notification. A user saying “Hey Nally” will not reliably trigger that model.
+The training workspace is prepared, but model training has not started because the required audio/feature datasets are not present. No Hey Nally model has been trained, tested or packaged. The Android app continues to use the bundled **Hey Jarvis** model until a validated `hey_nally.onnx` asset exists.
 
-The Android service is prepared to load `android/app/src/main/assets/hey_nally.onnx` when that exact asset is added. It uses the bundled Hey Jarvis model only while the custom asset is absent. The model choice is visible in the service log and the app’s wake-word label. Do not add a model file to that path until the artifact has passed the checks below.
+I added an upstream-aligned starter config at [`training_config.yaml`](training_config.yaml), a private dataset manifest template at [`manifest.template.csv`](manifest.template.csv), and a standard-library WAV/split audit tool at [`audit_dataset.py`](audit_dataset.py). Audio, NumPy feature files and model binaries are git-ignored by default. Run the audit in report-only mode against the empty starter folders with:
 
-## Supported training route
+```bash
+python3 android/wakeword/hey-nally/audit_dataset.py \
+  --manifest android/wakeword/hey-nally/manifest.template.csv --allow-incomplete
+```
 
-Use the upstream [openWakeWord automated model training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb) for a first model. Use the [detailed training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/training_models.ipynb) if the basic model’s detection quality is insufficient and the training setup can be reproduced. The upstream project’s documented recipe uses generated positive examples for the desired phrase and a broad negative corpus. It recommends at least several thousand positive examples; its published included models used roughly 30,000 hours of negative speech, noise, and music. Those numbers describe the upstream project’s training practice, not a guarantee that a small model will meet production false-accept targets.
+The script checks mono 16 kHz, 16-bit uncompressed WAV format, unique manifest paths, traversal, split validity, positive-speaker leakage between train and validation, clip counts and hours of negative false-accept evaluation audio. It does not train a model or claim readiness.
 
-For “Hey Nally,” generate varied English pronunciations and speaking styles, then hold out speakers and recordings that are not used for training. Include clean, far-field, quiet, fast, slow, whispered, accented, reverberant and noisy examples in evaluation. Obtain separate negative audio containing ordinary speech with near-phrases (for example, “Hey Natalie”), television, music, room noise and silence. Do not place personal recordings, credentials, or user audio in the public Git repository. Record data provenance and consent outside the model artifact.
+## Source-backed training route
 
-## Validation gate before Android packaging
+Use the upstream [openWakeWord training code](https://github.com/dscripka/openWakeWord) and its `openwakeword/train.py` configuration flow. The starter config is based on the upstream `examples/custom_model.yml` structure reviewed during this preparation. The latest official sample config recommends at least 20,000 generated positive training clips and 2,000 positive validation clips; it also uses augmented negatives, shared precomputed speech features and a separate false-positive validation set. The starter sets `target_phrase` to “hey nally,” selects “hey natalie” and “hey rally” as initial hard negatives, and sets the upstream sample sizes and training defaults. These values are a starting config, not proof that the final model meets a false-activation target.
 
-1. Confirm the training output is a classifier-only ONNX model supported by the Android port. Its README specifies model input shape `[1, 16, 96]` and output shape `[1, 1]`; the Android code supplies the shared mel and speech-embedding stages.
-2. Validate the ONNX model loads on-device and measure real-time CPU and memory impact on low-, mid- and high-tier Android devices.
-3. Sweep thresholds on a held-out set. Report false rejects on positive clips and false accepts per hour on negative audio. Include confusion counts and test duration. Do not select a threshold solely from training accuracy or assume the current `0.5` threshold is optimal for a newly trained classifier.
-4. Run prolonged device listening with representative background speech/noise and test permission revocation, service restart, call pause/resume, notification handoff, battery restrictions and OEM behavior.
-5. Only after those checks, copy the selected version to `android/app/src/main/assets/hey_nally.onnx`, record its SHA-256, data/training provenance, threshold and evaluation results here, and update the app release notes.
+The official automatic Colab notebook currently has a documented issue report for missing Piper imports, a changed `generate_samples` argument, sample-rate mismatches, and a downstream missing-feature file. Therefore, do not run that notebook blindly. Pin and test its dependency environment; verify every generated clip is 16 kHz before augmentation; check that all expected feature files exist before training. The upstream issue is tracked at [openWakeWord issue 296](https://github.com/dscripka/openWakeWord/issues/296). The trainer config and notebook are separate artifacts and must be made compatible in the chosen runtime before production training.
 
-## Integration details
+The evaluated upstream openWakeWord main revision during this preparation was `368c03716d1e92591906a84949bc477f3a834455`. The automatic notebook was `83309f22b477995fb32656d8f74988c0fdd1cebe`; the upstream configuration template blob was `a41d3276f4e4f39c1873dfdbc44319eba447c6ca`. Record the exact checked-out code and environment lock when training begins. Use a disposable Colab or GPU training environment rather than the Android project or production backend.
 
-The declared dependency is [`msnilsen/openwakeword-android`](https://github.com/msnilsen/openwakeword-android). Its documented custom path is `OpenWakeWord.Builder(context).setModelAsset("hey_nally.onnx")`. The repository’s `WakeWordService` already checks for that root-level app asset and selects it when present. If it is absent, the service explicitly reports and uses Hey Jarvis. No separate custom preprocessing or embedding assets are required by this library’s documented API.
+## Data required before real training
+
+For training, the upstream recipe can generate synthetic target-phrase samples, but it needs a correctly installed TTS generator, background audio, room impulse responses and large precomputed background speech features. The upstream project recommends several thousand positives at minimum, while its current example config recommends 20,000 or more. More varied pronunciations and voices improve coverage; synthetic positives should not substitute for a real held-out evaluation set.
+
+Before the first training run, obtain or provision: (1) synthetic “Hey Nally” positives generated by the compatible upstream toolchain; (2) varied, consented human “Hey Nally” recordings reserved by speaker for evaluation; (3) negative speech/noise/music for training and a separate, representative negative set for false-accept evaluation; (4) compatible 16 kHz room impulse responses and the upstream precomputed feature datasets; and (5) an isolated reproducible training runtime with licensed dataset/model provenance documented. Do not commit any user or participant recordings to the public repository.
+
+For a first training/evaluation package, use the upstream recommendatory scale (20k generated train positives and 2k positive validation clips) and collect an independent held-out positive set from speakers excluded from training. For negative validation, include at least 11 hours of representative audio as the upstream generic feature set does; more is preferable. Include near phrases such as “Hey Natalie,” ordinary conversation, TV, music, room noise, quiet speech, far-field reverberation, varied accents and device recordings. Select thresholds from held-out score curves and report false rejects plus false accepts per hour. The upstream project emphasizes realistic environments and hours of continuous negative audio because a short clean test does not establish low false-accept risk.
+
+## Before adding the ONNX file to Android
+
+The declared dependency [`msnilsen/openwakeword-android`](https://github.com/msnilsen/openwakeword-android) documents custom classifier loading with `setModelAsset("hey_nally.onnx")`, with classifier input `[1,16,96]` and output `[1,1]`. The Android service is prepared to select the file from the app assets if present. Check exported ONNX shape and numerical compatibility against this library, then test on physical phones for missed detections, false activations per hour, inference time, memory use, CPU/battery load, threshold/debounce behavior, service restart, permissions, notification handoff and microphone contention. Only install it after these checks.
 
 ## Reproducibility record
 
-Fill this section only after training and validation:
+Complete only after a real run:
 
-- Upstream trainer commit / notebook revision:
-- Positive-data source, count, speaker split and consent:
-- Negative-data source, hours and composition:
-- Training seed and settings:
-- ONNX SHA-256:
+- openWakeWord commit and trainer notebook/config revision:
+- runtime image / dependency lock / TTS model hashes:
+- Positive dataset provenance, generation count and speaker split:
+- Negative dataset provenance, composition and hours:
+- Seeds and training settings:
+- ONNX SHA-256 and model input/output shapes:
 - Held-out positive clips / false rejects:
 - Held-out negative hours / false accepts per hour:
-- Threshold and device/runtime measurements:
+- Threshold, device/runtime, CPU and memory measurements:
 - Reviewer and date:
 
-## Sources
+## References
 
-- [openWakeWord project and training guidance](https://github.com/dscripka/openWakeWord)
-- [Automated model training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb)
-- [Detailed training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/training_models.ipynb)
+- [openWakeWord project, training approach and evaluation principles](https://github.com/dscripka/openWakeWord)
+- [Official automatic training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb)
+- [Official detailed training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/training_models.ipynb)
+- [Official performance metrics notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/performance_metrics.ipynb)
+- [Official upstream starter training config](https://github.com/dscripka/openWakeWord/blob/main/examples/custom_model.yml)
+- [Reported automatic notebook compatibility problems](https://github.com/dscripka/openWakeWord/issues/296)
 - [Android port and custom-model API](https://github.com/msnilsen/openwakeword-android)

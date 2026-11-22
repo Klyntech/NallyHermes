@@ -1,0 +1,39 @@
+# Starter config for dscripka/openWakeWord train.py.
+# Reviewed against upstream examples/custom_model.yml at blob a41d3276f4e4f39c1873dfdbc44319eba447c6ca.
+# This is NOT yet runnable: fill the data paths and verify the trainer environment first.
+model_name: "hey_nally"
+target_phrase:
+  - "hey nally"
+# Add only hard negatives observed in real evaluation; do not add arbitrary variants.
+custom_negative_phrases:
+  - "hey natalie"
+  - "hey rally"
+
+# Upstream custom_model.yml recommends at least 20k positive samples; larger is often better.
+n_samples: 20000
+n_samples_val: 2000
+tts_batch_size: 50
+augmentation_batch_size: 16
+augmentation_rounds: 1
+
+# Update these paths after provisioning the pinned upstream trainer and licensed datasets.
+piper_sample_generator_path: "./piper-sample-generator"
+output_dir: "./artifacts/hey_nally"
+rir_paths:
+  - "./data/room_impulse_responses"
+background_paths:
+  - "./data/background_audio"
+background_paths_duplication_rate:
+  - 1
+false_positive_validation_data_path: "./data/validation_set_features.npy"
+feature_data_files:
+  "ACAV100M_sample": "./data/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+batch_n_per_class:
+  "ACAV100M_sample": 1024
+  "adversarial_negative": 50
+  "positive": 50
+model_type: "dnn"
+layer_size: 32
+steps: 50000
+max_negative_weight: 1500
+target_false_positives_per_hour: 0.2
