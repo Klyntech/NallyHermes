@@ -2,6 +2,14 @@
 
 Notable changes to NallyHermes are recorded here. The current development line is `3.1.0-alpha.1` on `v3.1-Emotions`; older V2 entries are historical release notes.
 
+## [Unreleased] - 2026-11-22
+
+### Native voice review
+
+- Documented the verified Deepgram segment-versus-utterance semantics, 300 ms endpointing choice, ElevenLabs final-text flush contract, Android audio timing bounds, and remaining device/provider validation gates.
+- Documented why a regular Android app needs a microphone foreground service for ongoing wake-word capture, and why a `VoiceInteractionService`/user-selected assistant role is the distinct system-hotword route.
+- Recorded the existing non-empty ElevenLabs final-text flush behavior; an empty text message closes the stream and is not a flush operation.
+
 ## [3.1.0-alpha.1] - 2026-11-15
 
 This alpha consolidates the post-alpha.2 work recorded in the branch history from 2026-11-13 and 2026-11-15. It is not a stable release.
