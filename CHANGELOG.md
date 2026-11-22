@@ -6,6 +6,8 @@ Notable changes to NallyHermes are recorded here. The current development line i
 
 ### Native voice review
 
+- Delay `audio_start` until the first valid non-empty ElevenLabs PCM16 frame so the Android client cannot announce Speaking before audio exists; fail recoverably when synthesis finalizes with no audio, and validate base64/frame alignment.
+- Log TTS completion byte/chunk counts and duration without recording transcript text or audio; add tests for empty and malformed provider audio.
 - Documented the verified Deepgram segment-versus-utterance semantics, 300 ms endpointing choice, ElevenLabs final-text flush contract, Android audio timing bounds, and remaining device/provider validation gates.
 - Documented why a regular Android app needs a microphone foreground service for ongoing wake-word capture, and why a `VoiceInteractionService`/user-selected assistant role is the distinct system-hotword route.
 - Recorded the existing non-empty ElevenLabs final-text flush behavior; an empty text message closes the stream and is not a flush operation.

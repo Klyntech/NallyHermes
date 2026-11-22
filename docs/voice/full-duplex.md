@@ -18,6 +18,18 @@ The wake-word service previously tried to call `startActivity()` directly when a
 
 The ElevenLabs stream-input path must use `flush: true` on the final non-empty text message to force the buffered final text into audio. An empty string closes the WebSocket; it is not a flush message. This endpoint does not support the `eleven_v3` or `eleven_v4` models [6]. The backend's final-text helper follows that contract.
 
+## Follow-up: silent “Speaking” state and empty TTS output
+
+The latest investigation found a concrete UI/protocol defect: the backend emitted `audio_start` as soon as the ElevenLabs WebSocket opened, before it had received any audio. Android immediately changed to Speaking and created an `AudioTrack`, even if ElevenLabs later errored or finalized with no audio. This made a provider-side no-audio result indistinguishable from real playback. The backend now delays `audio_start` until the first non-empty, valid-base64, even-length PCM16 chunk. If ElevenLabs finalizes with zero audio, it sends a clear recoverable error rather than a successful `audio_end`. Successful completions log byte/chunk counts and duration without logging speech text or audio. These checks enforce the 16 kHz PCM16 contract declared by the provider URL and client protocol [20].
+
+The Android client now returns from Thinking to Listening when a turn ends without a spoken audio stream; it still waits for the AudioTrack playback-head drain after an audio turn. Privacy-safe `NallyVoiceAudio` logs record first-chunk size/RMS, PCM counts, write failures, drain frame counts, routed device names, music volume and abnormal WebSocket closure phase. These logs distinguish “provider produced nothing,” “bytes reached Android but writes failed,” and “PCM was drained to the selected system route.” They cannot prove a listener heard sound, so physical-device testing remains necessary.
+
+## Follow-up: current wake phrase and custom training
+
+The declared Android dependency’s own README confirms its bundled classifier is **Hey Jarvis**, and its custom-model API loads a classifier ONNX from app assets with `setModelAsset`; its expected classifier shapes are `[1,16,96]` to `[1,1]` [22]. Thus “Hey Nally” was not implemented in the current build. Settings and service notifications now name the phrase that the installed model actually detects. The settings control now requests microphone access and, on Android 13+, notification access before starting the listener. The service will select `android/app/src/main/assets/hey_nally.onnx` if a validated model is later added; otherwise it truthfully falls back to Hey Jarvis.
+
+The Hey Nally training guide starts from the upstream automated openWakeWord notebook and records the detailed notebook as a refinement path [21]. Upstream guidance recommends several thousand positive examples and describes very large negative corpora for reducing false accepts; those are data scale indicators, not a guarantee of device performance. No model has been trained because we do not yet have the positive/negative audio dataset or held-out validation needed to claim one. The Android branch now documents data consent, speaker holdout, near-phrase negatives, false-reject/false-accept measurement, ONNX shape validation and the model integration path.
+
 ## Wake word: what Android permits
 
 The current implementation uses the openWakeWord Android library locally and a microphone foreground service. It does not stream wake-word audio to the backend. The service is user-enabled, displays a persistent microphone notification, and is paused while the full-duplex call owns the microphone. This is the supported general-app route for ongoing microphone capture: declare the microphone foreground-service type and permissions, obtain `RECORD_AUDIO`, and start while the app is eligible. Android 12+ restricts starting foreground services from the background; Android 14+ also enforces while-in-use microphone permission at service creation [7] [8].
@@ -63,3 +75,6 @@ The code still needs an explicit runtime test for 16 kHz capture portability, in
 [17]: https://developer.android.com/reference/android/media/AudioRecord "AudioRecord API reference"
 [18]: https://developer.android.com/reference/android/media/audiofx/AcousticEchoCanceler "AcousticEchoCanceler API reference"
 [19]: https://developer.android.com/reference/android/media/audiofx/NoiseSuppressor "NoiseSuppressor API reference"
+[20]: https://elevenlabs.io/docs/api-reference/text-to-speech/v-1-text-to-speech-voice-id-stream-input "ElevenLabs stream-input WebSocket API reference"
+[21]: https://github.com/dscripka/openWakeWord "openWakeWord source and custom model training guidance"
+[22]: https://github.com/msnilsen/openwakeword-android "openWakeWord Android library and custom model API"

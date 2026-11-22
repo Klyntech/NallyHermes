@@ -12,7 +12,7 @@ import { toVoiceResponse } from "../agent/orchestra.js";
 import { splitSpokenChannelReply } from "../agent/voice/spokenSplit.js";
 import { isMobileVoiceAudioFrame, parseMobileVoiceControl } from "./voiceProtocol.js";
 import { DeepgramTranscriptBuffer } from "./deepgramTranscript.js";
-import { buildElevenLabsTextInput } from "./elevenLabsStream.js";
+import { buildElevenLabsTextInput, decodeElevenLabsPcmChunk, hasUsableTtsAudio } from "./elevenLabsStream.js";
 
 const TICKET_TTL_MS = 60_000, MAX_SESSION_MS = 10 * 60_000, MAX_SESSION_AUDIO_BYTES = 12_000_000;
 const MAX_SESSION_FRAMES = 12_000, IDLE_TIMEOUT_MS = 30_000, MAX_CONNECTIONS = 100;
@@ -170,6 +170,7 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
   const beginAnswer = async (text: string) => {
     if (turnId && !turnInterrupted) interrupt();
     const myGeneration = ++generation; turnId = randomBytes(12).toString("hex"); turnInterrupted = false; outputBytes = 0;
+    let outputChunks = 0, audioStarted = false;
     const controller = new AbortController();
     turnAbort = controller;
     const id = turnId; send({ type: "assistant_start", turnId: id });
@@ -187,12 +188,12 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
       // runAgent returns a complete answer; text is sent once, while audio arrives as provider chunks.
       send({ type: "text_delta", turnId: id, text: spoken });
       const socket = providers.eleven(); tts = socket;
+      const ttsStartedAt = Date.now();
       if (ttsTimer) clearTimeout(ttsTimer);
       const timer = setTimeout(() => { if (tts === socket) fail("tts_timeout", "Speech synthesis timed out.", true); }, config.VOICE_TTS_TIMEOUT_MS);
       ttsTimer = timer;
       socket.on("open", () => {
         if (myGeneration !== generation || turnInterrupted) { closeUpstream(socket); return; }
-        send({ type: "audio_start", turnId: id, encoding: "pcm_s16le", sampleRate: 16000, channels: 1 });
         socket.send(JSON.stringify({ text: " ", voice_settings: { stability: config.VOICE_STABILITY, similarity_boost: config.VOICE_SIMILARITY_BOOST, style: config.VOICE_STYLE, speed: config.VOICE_SPEECH_SPEED }, generation_config: { chunk_length_schedule: [120, 160, 250, 290] } }));
         // ElevenLabs treats an empty text string as a request to close this WebSocket.
         // Flush on the final non-empty text instead so audio can stream to isFinal.
@@ -203,9 +204,29 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
         try {
           const msg = JSON.parse(raw.toString()) as { audio?: string; isFinal?: boolean; error?: string };
           if (msg.error) { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; fail("tts_provider_error", "Speech synthesis failed.", true); return; }
-          if (msg.audio) { const chunk = Buffer.from(msg.audio, "base64"); outputBytes += chunk.length; if (outputBytes > MAX_OUTPUT_BYTES || outputBytes > config.VOICE_MAX_AUDIO_BYTES) { clearTimeout(timer); fail("output_limit", "Voice response exceeded its audio limit.", true); return; } if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 512_000) ws.send(chunk, { binary: true }); else if (ws.readyState === WebSocket.OPEN) { clearTimeout(timer); fail("backpressure", "Voice client cannot receive audio quickly enough.", true); } }
-          if (msg.isFinal) { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; send({ type: "audio_end", turnId: id }); send({ type: "assistant_end", turnId: id }); closeUpstream(socket); if (tts === socket) tts = null; if (turnAbort === controller) turnAbort = null; }
-        } catch { /* ignore malformed upstream notification */ }
+          const chunk = decodeElevenLabsPcmChunk(msg.audio);
+          if (chunk) {
+            outputBytes += chunk.length;
+            if (outputBytes > MAX_OUTPUT_BYTES || outputBytes > config.VOICE_MAX_AUDIO_BYTES) { clearTimeout(timer); fail("output_limit", "Voice response exceeded its audio limit.", true); return; }
+            if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount >= 512_000) { clearTimeout(timer); fail("backpressure", "Voice client cannot receive audio quickly enough.", true); return; }
+            if (!audioStarted) {
+              audioStarted = true;
+              send({ type: "audio_start", turnId: id, encoding: "pcm_s16le", sampleRate: 16000, channels: 1 });
+            }
+            ws.send(chunk, { binary: true });
+            outputChunks++;
+          }
+          if (msg.isFinal) {
+            clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null;
+            if (!hasUsableTtsAudio(audioStarted, outputBytes)) { fail("tts_empty_audio", "Speech synthesis completed without producing audio. Please try again.", true); return; }
+            console.info("[voice] TTS completed", { bytes: outputBytes, chunks: outputChunks, durationMs: Date.now() - ttsStartedAt });
+            send({ type: "audio_end", turnId: id }); send({ type: "assistant_end", turnId: id }); closeUpstream(socket); if (tts === socket) tts = null; if (turnAbort === controller) turnAbort = null;
+          }
+        } catch (error) {
+          clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null;
+          console.warn("[voice] Invalid TTS audio payload", error instanceof Error ? error.message : "unknown error");
+          fail("tts_invalid_audio", "Speech synthesis returned invalid audio. Please try again.", true);
+        }
       });
       socket.on("error", () => { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; if (myGeneration === generation && !turnInterrupted && !closed) fail("tts_provider_error", "Speech synthesis provider is unavailable.", true); });
       socket.on("close", () => {
