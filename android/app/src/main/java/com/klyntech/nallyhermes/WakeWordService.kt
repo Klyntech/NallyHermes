@@ -34,6 +34,7 @@ class WakeWordService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var detector: OpenWakeWord? = null
     private var destroyed = false
+    @Volatile
     private var running = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -126,9 +127,20 @@ class WakeWordService : Service() {
     }
 
     private fun onWakeDetected() {
-        if (WakeWordPrefs.voiceCallActive) return
-        // Briefly stop so voice session can take the mic cleanly
+        if (!running || WakeWordPrefs.voiceCallActive) return
+        // Android restricts direct Activity launches from a background service.
+        // Hand off through a notification the user can tap instead.
         stopDetector()
+        showWakeDetectedNotification()
+        // Resume spotting if the user does not open the app from the notification.
+        main.postDelayed({
+            if (!destroyed && !WakeWordPrefs.voiceCallActive && WakeWordPrefs.isEnabled(this)) {
+                startDetectorIfNeeded()
+            }
+        }, 15_000)
+    }
+
+    private fun showWakeDetectedNotification() {
         try {
             val launch = Intent(this, MainActivity::class.java).apply {
                 action = ACTION_OPEN_VOICE
@@ -139,16 +151,23 @@ class WakeWordService : Service() {
                 )
                 putExtra(EXTRA_OPEN_VOICE, true)
             }
-            startActivity(launch)
+            val open = PendingIntent.getActivity(
+                this, WAKE_DETECTED_NOTIF_ID, launch,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Hey Jarvis detected")
+                .setContentText("Tap to open Nally Voice, then tap Start.")
+                .setSmallIcon(R.drawable.ic_wake_notif)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setSilent(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+            getSystemService(NotificationManager::class.java)?.notify(WAKE_DETECTED_NOTIF_ID, notification)
         } catch (t: Throwable) {
-            Log.e(TAG, "launch", t)
+            Log.e(TAG, "wake notification", t)
         }
-        // Resume spotting after the user has time to start a call (or dismiss)
-        main.postDelayed({
-            if (!destroyed && !WakeWordPrefs.voiceCallActive && WakeWordPrefs.isEnabled(this)) {
-                startDetectorIfNeeded()
-            }
-        }, 5_000)
     }
 
     private fun failAndStop(reason: String) {
@@ -212,6 +231,7 @@ class WakeWordService : Service() {
         private const val TAG = "NallyWakeWord"
         const val CHANNEL_ID = "nally_wake_word"
         const val NOTIF_ID = 42
+        private const val WAKE_DETECTED_NOTIF_ID = 43
         const val ACTION_STOP = "com.klyntech.nallyhermes.WAKE_STOP"
         const val ACTION_PAUSE_FOR_CALL = "com.klyntech.nallyhermes.WAKE_PAUSE"
         const val ACTION_RESUME_AFTER_CALL = "com.klyntech.nallyhermes.WAKE_RESUME"

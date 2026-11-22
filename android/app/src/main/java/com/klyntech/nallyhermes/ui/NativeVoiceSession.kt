@@ -378,9 +378,18 @@ internal class NativeVoiceSession(
             track = output
             playbackJob = sessionScope.launch {
                 try {
+                    var queuedFrames = 0L
                     while (!stopped.get()) {
                         val chunk = playbackChunks.take()
                         if (chunk.isEmpty()) {
+                            // AudioTrack.write() only queues PCM. Do not announce the turn is
+                            // finished until the hardware playback head has consumed these frames.
+                            while (!stopped.get() && phase == "speaking" && queuedFrames > 0L) {
+                                val playedFrames = output.playbackHeadPosition.toLong() and 0xffffffffL
+                                if (playedFrames >= queuedFrames) break
+                                Thread.sleep(10L)
+                            }
+                            if (stopped.get() || phase != "speaking") continue
                             phase = "listening"
                             callback(Event.AudioLevel(0f))
                             callback(Event.State(VoiceUiState.Listening))
@@ -391,7 +400,9 @@ internal class NativeVoiceSession(
                         while (offset < chunk.size && !stopped.get()) {
                             val written = output.write(chunk, offset, chunk.size - offset, AudioTrack.WRITE_BLOCKING)
                             if (written <= 0) throw IllegalStateException("AudioTrack could not play the response.")
+                            if (written % 2 != 0) throw IllegalStateException("AudioTrack returned a non-frame-aligned PCM write.")
                             offset += written
+                            queuedFrames += written / 2
                         }
                     }
                 } catch (_: InterruptedException) {
@@ -473,9 +484,10 @@ internal class NativeVoiceSession(
         const val SOCKET_QUEUE_STALL_MS = 5_000L
         const val SOCKET_QUEUE_POLL_MS = 100L
         const val MAX_PLAYBACK_FRAME_BYTES = 32_000
-        // About 32 seconds of 16 kHz mono PCM: bounded enough for mobile memory,
-        // with room for a fast TTS burst while AudioTrack drains at playback speed.
-        const val MAX_PLAYBACK_QUEUE_BYTES = 1 * 1024 * 1024
+        // 256 KiB is about 8.2 seconds of 16 kHz mono PCM (32,000 bytes/second).
+        // This keeps several seconds of burst headroom without allowing stale speech
+        // to accumulate into a large memory-heavy playback backlog.
+        const val MAX_PLAYBACK_QUEUE_BYTES = 256 * 1024
         val sharedClient = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)

@@ -1986,7 +1986,7 @@ private fun SettingsScreen(
                     val ok = WakeWordService.start(context)
                     wakeWordEnabled = ok && WakeWordPrefs.isEnabled(context)
                     feedback = if (wakeWordEnabled) {
-                        "Wake word on (openWakeWord, on-device). Say Hey Jarvis. Steady mic · paused during live calls."
+                        "On-device Hey Jarvis is listening with a persistent microphone notification. Tap its alert to open Voice; Android does not let an ordinary background service silently open the app. Listening pauses during live calls."
                     } else {
                         WakeWordPrefs.lastError
                             ?: "Could not start wake word. Grant mic (+ notifications on Android 13+) and try again."
