@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import android.os.SystemClock
+import android.util.Log
 import kotlin.math.sqrt
 
 /** One call owns its socket and audio resources. Protocol v1 uses mono pcm_s16le at 16 kHz. */
@@ -65,6 +66,8 @@ internal class NativeVoiceSession(
     private val playbackChunks = LinkedBlockingQueue<ByteArray>(64)
     private val playbackLock = Any()
     private val playbackQueuedBytes = AtomicInteger(0)
+    @Volatile private var playbackReceivedBytes = 0L
+    @Volatile private var playbackReceivedChunks = 0
     private var audioFocusRequest: AudioFocusRequest? = null
 
     fun connect() {
@@ -101,6 +104,11 @@ internal class NativeVoiceSession(
                     callback(Event.Error("The voice server sent an invalid PCM audio frame."))
                     stop("invalid audio frame")
                     return
+                }
+                playbackReceivedBytes += chunk.size
+                playbackReceivedChunks += 1
+                if (playbackReceivedChunks == 1) {
+                    Log.i(TAG, "First TTS PCM received: bytes=${chunk.size}, rms=${pcmLevel(chunk)}")
                 }
                 var failure: String? = null
                 synchronized(playbackLock) {
@@ -151,6 +159,7 @@ internal class NativeVoiceSession(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 val priorError = lastServerError
                 val locallyStopped = stopped.get()
+                Log.i(TAG, "Voice WebSocket closed: code=$code, phase=$phase, local=$locallyStopped, serverError=${priorError != null}")
                 cleanup()
                 if (!locallyStopped && priorError == null) {
                     val detail = buildString {
@@ -229,6 +238,8 @@ internal class NativeVoiceSession(
                     stop("unsupported playback format")
                 } else {
                     phase = "speaking"
+                    playbackReceivedBytes = 0L
+                    playbackReceivedChunks = 0
                     if (!startPlayback()) {
                         callback(Event.Error("Audio playback could not be initialized."))
                         stop("playback initialization")
@@ -243,7 +254,14 @@ internal class NativeVoiceSession(
                     stop("playback backpressure")
                 }
             }
-            "assistant_end" -> Unit
+            "assistant_end" -> {
+                // A turn may validly have no spoken output. Do not leave the UI in Thinking;
+                // audio turns return to Listening only after the audio_end drain marker.
+                if (phase == "thinking") {
+                    phase = "listening"
+                    callback(Event.State(VoiceUiState.Listening))
+                }
+            }
             "interrupted" -> {
                 phase = "listening"
                 clearPlayback()
@@ -390,6 +408,10 @@ internal class NativeVoiceSession(
                                 Thread.sleep(10L)
                             }
                             if (stopped.get() || phase != "speaking") continue
+                            val route = try {
+                                output.routedDevices.joinToString { device -> device.productName?.toString() ?: "type=${device.type}" }
+                            } catch (_: Exception) { "unavailable" }
+                            Log.i(TAG, "TTS playback drained: bytes=$playbackReceivedBytes, chunks=$playbackReceivedChunks, frames=$queuedFrames, head=${output.playbackHeadPosition}, route=$route, musicVolume=${audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)}")
                             phase = "listening"
                             callback(Event.AudioLevel(0f))
                             callback(Event.State(VoiceUiState.Listening))
@@ -399,7 +421,10 @@ internal class NativeVoiceSession(
                         var offset = 0
                         while (offset < chunk.size && !stopped.get()) {
                             val written = output.write(chunk, offset, chunk.size - offset, AudioTrack.WRITE_BLOCKING)
-                            if (written <= 0) throw IllegalStateException("AudioTrack could not play the response.")
+                            if (written <= 0) {
+                                Log.e(TAG, "AudioTrack write failed: status=$written, state=${output.state}, playState=${output.playState}")
+                                throw IllegalStateException("AudioTrack could not play the response (status $written).")
+                            }
                             if (written % 2 != 0) throw IllegalStateException("AudioTrack returned a non-frame-aligned PCM write.")
                             offset += written
                             queuedFrames += written / 2
@@ -479,6 +504,7 @@ internal class NativeVoiceSession(
     }
 
     private companion object {
+        const val TAG = "NallyVoiceAudio"
         const val SOCKET_QUEUE_HIGH_WATER_BYTES = 64L * 1024L
         const val SOCKET_QUEUE_LOW_WATER_BYTES = 16L * 1024L
         const val SOCKET_QUEUE_STALL_MS = 5_000L

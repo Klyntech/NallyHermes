@@ -27,8 +27,8 @@ import com.openwakeword.OpenWakeWord
  * Independent from duplex [com.klyntech.nallyhermes.ui.NativeVoiceSession].
  * Paused while a live voice call owns the mic.
  *
- * Default phrase is the bundled model **Hey Jarvis** (openWakeWord pretrained).
- * A custom "Hey Nally" ONNX can replace it later via assets.
+ * Uses the custom "Hey Nally" ONNX asset when installed; until then it uses the
+ * bundled "Hey Jarvis" model and reports that phrase honestly in the UI/notification.
  */
 class WakeWordService : Service() {
     private val main = Handler(Looper.getMainLooper())
@@ -96,11 +96,11 @@ class WakeWordService : Service() {
         if (running && detector != null) return
         try {
             stopDetector()
-            val built = OpenWakeWord.Builder(applicationContext)
-                .setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
-                .setThreshold(0.5f)
-                .setDebounceMs(2_500L)
-                .build()
+            val customModelPresent = applicationContext.assets.list("")?.contains(CUSTOM_MODEL_ASSET) == true
+            val builder = OpenWakeWord.Builder(applicationContext)
+            if (customModelPresent) builder.setModelAsset(CUSTOM_MODEL_ASSET)
+            else builder.setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
+            val built = builder.setThreshold(0.5f).setDebounceMs(2_500L).build()
             detector = built
             built.start { score ->
                 Log.i(TAG, "Wake detected score=$score")
@@ -108,7 +108,7 @@ class WakeWordService : Service() {
             }
             running = true
             WakeWordPrefs.lastError = null
-            Log.i(TAG, "openWakeWord started (Hey Jarvis)")
+            Log.i(TAG, "openWakeWord started (${if (customModelPresent) "Hey Nally custom" else "Hey Jarvis bundled"})")
         } catch (t: Throwable) {
             Log.e(TAG, "startDetector", t)
             failAndStop(t.message ?: "openWakeWord failed to start.")
@@ -156,7 +156,7 @@ class WakeWordService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Hey Jarvis detected")
+                .setContentTitle("${wakePhrase(this)} detected")
                 .setContentText("Tap to open Nally Voice, then tap Start.")
                 .setSmallIcon(R.drawable.ic_wake_notif)
                 .setContentIntent(open)
@@ -208,7 +208,7 @@ class WakeWordService : Service() {
             )
             val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Nally wake word")
-                .setContentText("Listening for \"Hey Jarvis\" (on-device)")
+                .setContentText("Listening for \"${wakePhrase(this)}\" (on-device)")
                 .setSmallIcon(R.drawable.ic_wake_notif)
                 .setContentIntent(open)
                 .setOngoing(true)
@@ -237,6 +237,10 @@ class WakeWordService : Service() {
         const val ACTION_RESUME_AFTER_CALL = "com.klyntech.nallyhermes.WAKE_RESUME"
         const val ACTION_OPEN_VOICE = "com.klyntech.nallyhermes.OPEN_VOICE"
         const val EXTRA_OPEN_VOICE = "open_voice"
+        private const val CUSTOM_MODEL_ASSET = "hey_nally.onnx"
+
+        fun wakePhrase(context: Context): String =
+            if (context.applicationContext.assets.list("")?.contains(CUSTOM_MODEL_ASSET) == true) "Hey Nally" else "Hey Jarvis"
 
         fun start(context: Context): Boolean {
             if (!WakeWordPrefs.isEnabled(context)) return false
@@ -245,6 +249,14 @@ class WakeWordService : Service() {
             ) {
                 WakeWordPrefs.setEnabled(context, false)
                 WakeWordPrefs.lastError = "Microphone permission required."
+                return false
+            }
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                WakeWordPrefs.setEnabled(context, false)
+                WakeWordPrefs.lastError = "Notification permission required for the wake-word foreground service."
                 return false
             }
             return try {

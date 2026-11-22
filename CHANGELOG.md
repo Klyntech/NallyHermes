@@ -5,9 +5,12 @@
 ### Voice playback and wake word
 
 - Wait for Android `AudioTrack` playback-head progress to drain queued PCM before switching the voice UI back to Listening; reject non-frame-aligned PCM write counts.
+- Return from Thinking to Listening when a server turn ends without spoken audio; add privacy-safe PCM, AudioTrack write/drain, route, volume and WebSocket-close diagnostics.
 - Reduce the maximum TTS playback backlog from 1 MiB (32.768 seconds at 16 kHz mono PCM16) to 256 KiB (8.192 seconds) to limit stale audio and memory use.
 - Replace direct activity launch from the background wake-word service with a user-tapped notification handoff, consistent with Android background activity launch restrictions. Resume local detection after 15 seconds if no voice call starts.
 - Clarify in Settings that wake-word detection uses an on-device microphone foreground service and a persistent notification; it is not the OS-integrated Gemini/Siri-style hotword path.
+- Request microphone and Android 13+ notification permissions when the user enables wake word; display the active model phrase truthfully. Load `hey_nally.onnx` from app assets when present, with explicit Hey Jarvis fallback until then.
+- Add the Hey Nally training/integration guide. No custom model is claimed or packaged until a suitable dataset and held-out false-accept/false-reject evaluation exist.
 
 ### Validation limitations
 

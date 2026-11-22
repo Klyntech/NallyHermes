@@ -1,5 +1,11 @@
 package com.klyntech.nallyhermes.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -1919,6 +1925,42 @@ private fun SettingsScreen(
     val scroll = rememberScrollState()
     val context = LocalContext.current
 
+    fun startWakeWord() {
+        val phrase = WakeWordService.wakePhrase(context)
+        WakeWordPrefs.setEnabled(context, true)
+        val ok = WakeWordService.start(context)
+        wakeWordEnabled = ok && WakeWordPrefs.isEnabled(context)
+        feedback = if (wakeWordEnabled) {
+            "On-device $phrase is listening with a persistent microphone notification. Tap its alert to open Voice; Android does not let an ordinary background service silently open the app. Listening pauses during live calls."
+        } else {
+            WakeWordPrefs.lastError ?: "Could not start wake word. Check microphone and notification permissions, then try again."
+        }
+    }
+
+    val wakePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val micGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (micGranted && notificationsGranted) startWakeWord()
+        else {
+            WakeWordPrefs.setEnabled(context, false)
+            wakeWordEnabled = false
+            feedback = "Allow microphone and notification access to use wake word."
+        }
+    }
+
+    LaunchedEffect(wakeWordEnabled) {
+        if (wakeWordEnabled) {
+            delay(1_000)
+            if (!WakeWordPrefs.isEnabled(context)) {
+                wakeWordEnabled = false
+                feedback = WakeWordPrefs.lastError ?: "Wake word service stopped before listening could start."
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         try { identities = api.listIdentities() } catch (_: Exception) {}
         wakeWordEnabled = WakeWordPrefs.isEnabled(context)
@@ -1977,20 +2019,21 @@ private fun SettingsScreen(
             SettingsNavRow(
                 LucideR.drawable.lucide_ic_audio_lines,
                 "Wake word",
-                if (wakeWordEnabled) "On · say Hey Jarvis" else "Off",
+                if (wakeWordEnabled) "On · say ${WakeWordService.wakePhrase(context)}" else "Off",
                 trailing = if (wakeWordEnabled) "On" else "Off"
             ) {
                 val next = !wakeWordEnabled
                 if (next) {
-                    WakeWordPrefs.setEnabled(context, true)
-                    val ok = WakeWordService.start(context)
-                    wakeWordEnabled = ok && WakeWordPrefs.isEnabled(context)
-                    feedback = if (wakeWordEnabled) {
-                        "On-device Hey Jarvis is listening with a persistent microphone notification. Tap its alert to open Voice; Android does not let an ordinary background service silently open the app. Listening pauses during live calls."
-                    } else {
-                        WakeWordPrefs.lastError
-                            ?: "Could not start wake word. Grant mic (+ notifications on Android 13+) and try again."
+                    val missing = buildList {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            add(Manifest.permission.RECORD_AUDIO)
+                        }
+                        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            add(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                     }
+                    if (missing.isEmpty()) startWakeWord()
+                    else wakePermissionLauncher.launch(missing.toTypedArray())
                 } else {
                     wakeWordEnabled = false
                     WakeWordPrefs.setEnabled(context, false)
