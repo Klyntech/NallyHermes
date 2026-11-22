@@ -408,10 +408,9 @@ internal class NativeVoiceSession(
                                 Thread.sleep(10L)
                             }
                             if (stopped.get() || phase != "speaking") continue
-                            val route = try {
-                                output.routedDevices.joinToString { device -> device.productName?.toString() ?: "type=${device.type}" }
-                            } catch (_: Exception) { "unavailable" }
-                            Log.i(TAG, "TTS playback drained: bytes=$playbackReceivedBytes, chunks=$playbackReceivedChunks, frames=$queuedFrames, head=${output.playbackHeadPosition}, route=$route, musicVolume=${audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)}")
+                            // AudioTrack route inspection is not exposed by every compile SDK.
+                            // Keep playback diagnostics portable across supported Android versions.
+                            Log.i(TAG, "TTS playback drained: bytes=$playbackReceivedBytes, chunks=$playbackReceivedChunks, frames=$queuedFrames, head=${output.playbackHeadPosition}, musicVolume=${audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)}")
                             phase = "listening"
                             callback(Event.AudioLevel(0f))
                             callback(Event.State(VoiceUiState.Listening))
