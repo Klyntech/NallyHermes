@@ -12,6 +12,7 @@ import { toVoiceResponse } from "../agent/orchestra.js";
 import { splitSpokenChannelReply } from "../agent/voice/spokenSplit.js";
 import { isMobileVoiceAudioFrame, parseMobileVoiceControl } from "./voiceProtocol.js";
 import { DeepgramTranscriptBuffer } from "./deepgramTranscript.js";
+import { buildElevenLabsTextInput } from "./elevenLabsStream.js";
 
 const TICKET_TTL_MS = 60_000, MAX_SESSION_MS = 10 * 60_000, MAX_SESSION_AUDIO_BYTES = 12_000_000;
 const MAX_SESSION_FRAMES = 12_000, IDLE_TIMEOUT_MS = 30_000, MAX_CONNECTIONS = 100;
@@ -193,7 +194,9 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
         if (myGeneration !== generation || turnInterrupted) { closeUpstream(socket); return; }
         send({ type: "audio_start", turnId: id, encoding: "pcm_s16le", sampleRate: 16000, channels: 1 });
         socket.send(JSON.stringify({ text: " ", voice_settings: { stability: config.VOICE_STABILITY, similarity_boost: config.VOICE_SIMILARITY_BOOST, style: config.VOICE_STYLE, speed: config.VOICE_SPEECH_SPEED }, generation_config: { chunk_length_schedule: [120, 160, 250, 290] } }));
-        socket.send(JSON.stringify({ text: spoken, try_trigger_generation: true })); socket.send(JSON.stringify({ text: "", flush: true }));
+        // ElevenLabs treats an empty text string as a request to close this WebSocket.
+        // Flush on the final non-empty text instead so audio can stream to isFinal.
+        socket.send(JSON.stringify(buildElevenLabsTextInput(spoken)));
       });
       socket.on("message", (raw, binary) => {
         if (binary || myGeneration !== generation || turnInterrupted || closed) return;
