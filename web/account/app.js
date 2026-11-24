@@ -99,7 +99,7 @@ async function startTelegram(action) {
       client_id: challenge.clientId,
       redirect_uri: challenge.redirectUri,
       response_type: "id_token",
-      scope: Array.isArray(challenge.scopes) ? challenge.scopes.join(" ") : "openid profile",
+      scope: ["openid", ...(Array.isArray(challenge.scopes) ? challenge.scopes : ["profile"])].join(" "),
       nonce: challenge.nonce,
       state
     }).toString();
