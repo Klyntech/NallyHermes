@@ -32,6 +32,16 @@ This branch builds the first-party Nally Account identity system so Nally can of
 | [`src/db/migrate-telegram-users.ts`](src/db/migrate-telegram-users.ts) | Idempotent Phase-1 backfill (Telegram → Nally Account) |
 | [`src/db/accountSessionStore.ts`](src/db/accountSessionStore.ts) | Create / authenticate / revoke account sessions |
 
+### User UI
+
+| Path | Purpose |
+| --- | --- |
+| [`web/account/`](web/account/) | Working prototype: Login with Nally, Continue with Telegram, profile, linked identities, sessions |
+
+```bash
+npx serve web/account
+```
+
 ## Public handle
 
 Optional vanity handle, stored lowercase, presented as `@handle`.
@@ -43,12 +53,12 @@ Optional vanity handle, stored lowercase, presented as `@handle`.
 
 ## Status
 
-**Data model + helpers + design.**  
-No live HTTP auth endpoints yet. Tables are additive and safe to merge. Migration helper is ready to wire against the real `users` table on feature branches.
+**Data model + helpers + design + UI prototype.**  
+No live HTTP auth endpoints yet. Tables are additive and safe to merge. UI uses a local mock that mirrors the same shapes as the backend.
 
 ## Next
 
 1. Wire migration against production Neon on a feature branch
-2. Register first-party Android client in `oauth_clients`
-3. Implement `/oauth/authorize` + `/oauth/token`
-4. Discovery document + consent UI
+2. Replace MockApi with real `/api/account/*` endpoints
+3. Register first-party Android client in `oauth_clients`
+4. Implement `/oauth/authorize` + `/oauth/token`
