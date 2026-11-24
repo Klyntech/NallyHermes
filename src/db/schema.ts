@@ -11,14 +11,49 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+export const nallyAccounts = pgTable("nally_accounts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").unique(),
+  username: text("username").unique(),
+  displayName: text("display_name"),
+  passwordHash: text("password_hash"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   telegramId: text("telegram_id").notNull().unique(),
+  accountId: uuid("account_id").references(() => nallyAccounts.id, { onDelete: "set null" }),
   username: text("username"),
   firstName: text("first_name"),
   timezone: text("timezone").notNull().default("Africa/Lagos"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
+
+export const accountIdentities = pgTable("account_identities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => nallyAccounts.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  subject: text("subject").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  uniqueIndex("account_identities_provider_subject_idx").on(table.provider, table.subject),
+  index("account_identities_account_id_idx").on(table.accountId)
+]);
+
+export const accountSessions = pgTable("account_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => nallyAccounts.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("account_sessions_account_id_idx").on(table.accountId),
+  index("account_sessions_expiry_idx").on(table.expiresAt)
+]);
 
 export const academicProfiles = pgTable("academic_profiles", {
   id: uuid("id").defaultRandom().primaryKey(),
