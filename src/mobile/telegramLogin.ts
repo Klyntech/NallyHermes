@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { config } from "../config.js";
 
@@ -90,7 +90,7 @@ export function verifyTelegramLoginWidget(data: unknown): { telegramId: string }
     })
     .sort(([a], [b]) => a.localeCompare(b));
   const dataCheckString = fields.map(([key, field]) => `${key}=${field}`).join("\\n");
-  const secretKey = createHmac("sha256", "WebAppData").update(config.TELEGRAM_BOT_TOKEN).digest();
+  const secretKey = createHash("sha256").update(config.TELEGRAM_BOT_TOKEN).digest();
   const expected = createHmac("sha256", secretKey).update(dataCheckString).digest();
   const supplied = Buffer.from(hash, "hex");
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
