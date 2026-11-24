@@ -10,6 +10,7 @@ import { classifyFailure } from "./failure.js";
 import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from "../connectors/github.js";
 import { callV22Operation, getV22Operation, listV22Operations, type V22Connector } from "../connectors/v22.js";
 import { gateWriteOrPending } from "./approvals.js";
+import { skillManageTool } from "./learning/skillManage.js";
 
 export interface ToolCallInput {
   id: string;
@@ -98,7 +99,17 @@ const schemas = {
   }).strict(),
   notion: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
   gmail: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
-  nallputer: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict()
+  nallputer: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
+  skill_manage: z.object({
+    operation: z.enum(["list", "get", "propose", "patch", "accept", "deprecate"]),
+    name: z.string().trim().max(100).optional(),
+    description: z.string().max(500).optional(),
+    body: z.string().max(60_000).optional(),
+    domain: z.enum(["law", "code", "trading", "cross", "general"]).optional(),
+    rationale: z.string().max(2000).optional(),
+    id: z.string().max(100).optional(),
+    approved: z.boolean().optional()
+  }).strict()
 };
 
 type ToolName = keyof typeof schemas;
@@ -201,6 +212,9 @@ async function executeToolCallOnce(
         else result = await callV22Operation(provider, connectorArgs.name, connectorArgs.arguments ?? {}, connectorArgs.approved === true);
         break;
       }
+      case "skill_manage":
+        result = await skillManageTool(telegramId, args as Parameters<typeof skillManageTool>[1]);
+        break;
       default:
         throw new Error("Unknown tool.");
     }
@@ -279,6 +293,8 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
       case "gmail":
       case "nallputer":
         return args.operation === "list_operations" || args.operation === "get_operation";
+      case "skill_manage":
+        return args.operation === "list" || args.operation === "get";
       default:
         return false;
     }
@@ -354,6 +370,9 @@ function shouldForceApprovedFlag(toolName: string, args: Record<string, unknown>
   // Always-allow path already returned null from gate; mark approved for connectors that check the flag.
   if (toolName === "notion" || toolName === "gmail" || toolName === "nallputer" || toolName === "github") {
     return args.operation === "call_operation" || Boolean(args.name);
+  }
+  if (toolName === "skill_manage") {
+    return ["propose", "patch", "accept", "deprecate"].includes(String(args.operation));
   }
   return false;
 }
