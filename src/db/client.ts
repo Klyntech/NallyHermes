@@ -227,20 +227,20 @@ export async function ensureDatabase(): Promise<void> {
     "CREATE INDEX IF NOT EXISTS assessments_due_idx ON assessments(user_id, due_at)",
     "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS recurrence text",
     "ALTER TABLE scheduled_jobs ADD COLUMN IF NOT EXISTS timezone text",
-    "CREATE INDEX IF NOT EXISTS scheduled_jobs_run_at_idx ON scheduled_jobs(run_at)"
-    ,"CREATE INDEX IF NOT EXISTS workflows_user_id_idx ON workflows(user_id)"
-    ,"CREATE INDEX IF NOT EXISTS workflows_due_idx ON workflows(status, run_at)"
-    ,"CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_idx ON workflow_runs(workflow_id)"
-    ,"ALTER TABLE workflows ADD COLUMN IF NOT EXISTS max_runs integer"
-    ,"ALTER TABLE workflows ADD COLUMN IF NOT EXISTS until_at timestamptz"
-    ,`CREATE TABLE IF NOT EXISTS approval_grants (
+    "CREATE INDEX IF NOT EXISTS scheduled_jobs_run_at_idx ON scheduled_jobs(run_at)",
+    "CREATE INDEX IF NOT EXISTS workflows_user_id_idx ON workflows(user_id)",
+    "CREATE INDEX IF NOT EXISTS workflows_due_idx ON workflows(status, run_at)",
+    "CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_idx ON workflow_runs(workflow_id)",
+    "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS max_runs integer",
+    "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS until_at timestamptz",
+    `CREATE TABLE IF NOT EXISTS approval_grants (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       telegram_id text NOT NULL,
       provider text NOT NULL,
       scope text NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now()
-    )`
-    ,`CREATE TABLE IF NOT EXISTS pending_approvals (
+    )`,
+    `CREATE TABLE IF NOT EXISTS pending_approvals (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       telegram_id text NOT NULL,
       provider text NOT NULL,
@@ -252,10 +252,47 @@ export async function ensureDatabase(): Promise<void> {
       error text,
       created_at timestamptz NOT NULL DEFAULT now(),
       resolved_at timestamptz
-    )`
-    ,"CREATE INDEX IF NOT EXISTS approval_grants_user_provider_idx ON approval_grants(telegram_id, provider)"
-    ,"CREATE INDEX IF NOT EXISTS approval_grants_scope_idx ON approval_grants(telegram_id, provider, scope)"
-    ,"CREATE INDEX IF NOT EXISTS pending_approvals_user_status_idx ON pending_approvals(telegram_id, status)"
+    )`,
+    "CREATE INDEX IF NOT EXISTS approval_grants_user_provider_idx ON approval_grants(telegram_id, provider)",
+    "CREATE INDEX IF NOT EXISTS approval_grants_scope_idx ON approval_grants(telegram_id, provider, scope)",
+    "CREATE INDEX IF NOT EXISTS pending_approvals_user_status_idx ON pending_approvals(telegram_id, status)",
+
+    // Self-improvement foundations (Grok-Self-Improvement-3.6)
+    `CREATE TABLE IF NOT EXISTS trajectories (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      conversation_id uuid REFERENCES conversations(id) ON DELETE SET NULL,
+      request_summary text NOT NULL,
+      domains jsonb NOT NULL DEFAULT '[]'::jsonb,
+      steps jsonb NOT NULL DEFAULT '[]'::jsonb,
+      outcome text NOT NULL DEFAULT 'success',
+      reusable boolean NOT NULL DEFAULT false,
+      skill_id uuid,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS trajectories_user_id_idx ON trajectories(user_id)",
+    "CREATE INDEX IF NOT EXISTS trajectories_outcome_idx ON trajectories(user_id, outcome)",
+    "CREATE INDEX IF NOT EXISTS trajectories_created_idx ON trajectories(user_id, created_at)",
+    `CREATE TABLE IF NOT EXISTS learned_skills (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      description text NOT NULL,
+      body text NOT NULL,
+      domain text NOT NULL DEFAULT 'general',
+      status text NOT NULL DEFAULT 'proposed',
+      success_count integer NOT NULL DEFAULT 0,
+      source_trajectory_id uuid REFERENCES trajectories(id) ON DELETE SET NULL,
+      project_id uuid,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      accepted_at timestamptz
+    )`,
+    "CREATE INDEX IF NOT EXISTS learned_skills_user_id_idx ON learned_skills(user_id)",
+    "CREATE INDEX IF NOT EXISTS learned_skills_status_idx ON learned_skills(user_id, status)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS learned_skills_user_name_idx ON learned_skills(user_id, name)"
   ];
 
   for (const statement of statements) {
