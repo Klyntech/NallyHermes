@@ -1,1 +1,763 @@
-PLACEHOLDER
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/index.js";
+import { config } from "../config.js";
+import type { ProgressEvent } from "./progress.js";
+import { agentTools } from "./definitions.js";
+import { prepareRequest } from "./planner.js";
+import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
+import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
+import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
+import { beginPhase, completeExecution, createExecutionState, endPhase, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
+import { buildAdaptiveContextPack, formatContextPackForModel } from "./contextPack.js";
+import { composePartialAnswer } from "./partial.js";
+import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
+import { requiresAcademicSourceCheck } from "./academicSourceGate.js";
+import { appendSourcesFooter, extractAnswerSources, type AnswerSource } from "./sourceAttribution.js";
+import { logTrajectorySafe } from "./learning/trajectoryLogger.js";
+
+const llm = new OpenAI({
+  apiKey: config.NVIDIA_NIM_API_KEY,
+  baseURL: config.NVIDIA_NIM_BASE_URL
+});
+
+type StepOutcome = {
+  id: string;
+  task: string;
+  status: "completed" | "partial" | "failed";
+  toolRounds: number;
+  answer: string;
+  sources?: AnswerSource[];
+  failureReason?: string;
+};
+
+function isFunctionCall(call: ModelToolCall): call is Extract<ModelToolCall, { type: "function" }> {
+  return call.type === "function";
+}
+
+function historyUsedResearchTools(messages: ChatCompletionMessageParam[]): boolean {
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    const toolCalls = (message as { tool_calls?: Array<{ type?: string; function?: { name?: string } }> }).tool_calls;
+    if (!toolCalls) continue;
+    for (const call of toolCalls) {
+      const name = call.function?.name;
+      if (name === "web_search" || name === "fetch" || name === "github" || name === "academic") return true;
+    }
+  }
+  return false;
+}
+
+
+function remainingTime(deadline: number): number {
+  return Math.max(1_000, deadline - Date.now());
+}
+
+async function runPlannedStep(
+  messages: ChatCompletionMessageParam[],
+  step: ExecutionPlanStep,
+  telegramId: string,
+  maxToolRounds: number,
+  readOnlyOnly: boolean,
+  deadline: number,
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  allowedTools?: ReadonlySet<string>
+): Promise<StepOutcome> {
+  messages.push({
+    role: "system",
+    content: [
+      `Execute this plan step now: ${step.task}`,
+      "Use the available tools when needed. Do not attempt later steps.",
+      "When this step is complete, give a concise factual result for this step only.",
+      "Assess whether the evidence already collected is sufficient for this step. Stop as soon as it is; do not keep researching for completeness.",
+      "Reuse earlier tool results. Seek more information only to resolve a specific necessary gap.",
+      "If a tool fails, inspect the error and adapt the method instead of repeating the same call blindly. Never repeat a mutation as a retry.",
+      "Verify important findings using the available evidence, but do not perform redundant checks.",
+      "If blocked, explain what is missing instead of claiming success."
+    ].join("\n")
+  });
+
+  let toolRounds = 0;
+  let failureReason = "The step stopped before the model produced a final result.";
+  try {
+    for (let round = 0; round <= maxToolRounds; round++) {
+      if (Date.now() >= deadline) {
+        failureReason = "The overall planned-execution time budget was reached.";
+        break;
+      }
+      await onProgress?.({ type: "thinking", phase: "model" });
+      const response = await llm.chat.completions.create({
+        model: config.NVIDIA_NIM_MODEL,
+        messages,
+        tools: allowedTools
+          ? agentTools.filter((tool) => tool.type === "function" && allowedTools.has(tool.function.name))
+          : agentTools,
+        tool_choice: "auto",
+        temperature: 0.4
+      }, { timeout: remainingTime(deadline) });
+      const message = response.choices[0]?.message;
+      if (!message) {
+        failureReason = "The model returned an empty response.";
+        break;
+      }
+      messages.push(message);
+
+      const evaluation = evaluateTurn(message, round, maxToolRounds + 1);
+      if (evaluation.kind === "complete") {
+        const sources = extractAnswerSources(messages);
+        const audit = auditFactualAnswer(evaluation.answer, {
+          hadResearchTools: historyUsedResearchTools(messages),
+          hasSources: sources.length > 0
+        });
+        if (!audit.ok && round < maxToolRounds) {
+          messages.push({
+            role: "system",
+            content: audit.rewriteHint
+          });
+          continue;
+        }
+        return {
+          id: step.id,
+          task: step.task,
+          status: audit.ok ? "completed" : "partial",
+          toolRounds,
+          answer: finalResponse(evaluation.answer),
+          sources,
+          failureReason: audit.ok ? undefined : audit.issues.map((i) => i.code).join(", ")
+        };
+      }
+      if (evaluation.kind === "limit_reached") {
+        failureReason = "Reached the tool-round limit for this step.";
+        break;
+      }
+      if (evaluation.kind === "empty_turn") {
+        failureReason = "The model returned an empty turn.";
+        break;
+      }
+
+      const functionCalls = evaluation.calls.filter(isFunctionCall);
+      if (readOnlyOnly && !functionCalls.every((call) => isReadOnlyCall(call as ToolCallInput))) {
+        failureReason = "The step requested a non-read-only tool operation, so it was not executed.";
+        break;
+      }
+
+      toolRounds++;
+      const results = await executeToolCalls(
+        functionCalls as ToolCallInput[],
+        telegramId,
+        onProgress,
+        allowedTools
+      );
+      const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
+      let hadToolErrors = false;
+      for (const call of evaluation.calls) {
+        if (call.type === "function") {
+          const result = resultById.get(call.id);
+          if (result) {
+            messages.push(result);
+            try { hadToolErrors ||= Boolean((JSON.parse(String(result.content)) as { error?: unknown }).error); } catch { /* non-JSON tool response */ }
+          }
+        } else {
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({ error: "Unsupported tool call type." })
+          });
+        }
+      }
+      if (hadToolErrors) {
+        await onProgress?.({ type: "recovery_adjusting" });
+        messages.push({
+          role: "system",
+          content: "One or more tool calls failed. Diagnose the returned error. Continue only if the missing information is necessary; if so, try a materially different safe approach. Do not repeat the same call unless the error is transient. Do not repeat mutations. If the existing evidence is already sufficient, finish with it and disclose any irrelevant failed call only if it affects confidence."
+        });
+      }
+    }
+  } catch (error) {
+    failureReason = error instanceof Error ? error.message : "Unexpected step execution error.";
+  }
+
+  const hasEvidence = messages.some((message) => message.role === "tool");
+  const lastAssistantNote = [...messages].reverse().find(
+    (message) => message.role === "assistant" && typeof message.content === "string" && message.content.trim()
+  );
+  return {
+    id: step.id,
+    task: step.task,
+    status: hasEvidence ? "partial" : "failed",
+    toolRounds,
+    sources: extractAnswerSources(messages),
+    answer: hasEvidence
+      ? typeof lastAssistantNote?.content === "string"
+        ? lastAssistantNote.content.trim()
+        : "I found relevant material, but couldn't verify a final answer."
+      : "",
+    failureReason
+  };
+}
+
+function fallbackReport(outcomes: StepOutcome[], reason: string): string {
+  const findings = outcomes.filter((item) => item.status !== "failed" && item.answer.trim());
+  const unresolved = outcomes.filter((item) => item.status === "failed");
+  const lines = findings.map((item) => outcomes.length > 1 ? `**${item.task}**\n${item.answer}` : item.answer);
+  if (unresolved.length) {
+    const tasks = unresolved.map((item) => item.task).join(", ");
+    const detail = unresolved.find((item) => item.failureReason)?.failureReason;
+    lines.push(`I couldn't verify ${tasks}${detail ? `: ${detail}` : ""}.`);
+  }
+  if (!lines.length) {
+    return `I couldn't verify the requested information${reason ? `: ${reason}` : "."}`;
+  }
+  return lines.join("\n\n");
+}
+
+async function synthesizeReport(
+  messages: ChatCompletionMessageParam[],
+  outcomes: StepOutcome[],
+  totalSteps: number,
+  reason: string,
+  deadline?: number
+): Promise<string> {
+  const reportData = {
+    execution_status: outcomes.length === totalSteps && outcomes.every((item) => item.status === "completed")
+      ? "complete"
+      : "partial_or_incomplete",
+    completed_steps: outcomes.filter((item) => item.status === "completed").length,
+    partial_steps: outcomes.filter((item) => item.status === "partial").length,
+    failed_steps: totalSteps - outcomes.filter((item) => item.status !== "failed").length,
+    total_steps: totalSteps,
+    stop_reason: reason,
+    step_results: outcomes
+  };
+  const reportMessages: ChatCompletionMessageParam[] = [
+    ...messages,
+    {
+      role: "system",
+      content: [
+        "Produce the best useful report you can for the user's original request using only the execution evidence provided.",
+        "First assess whether the evidence already collected is sufficient for the user's actual request. If it is sufficient, use it directly and do not imply that more research was needed.",
+        "Do not discard useful results or request more information merely to make the report exhaustive. Prefer the minimum sufficient evidence.",
+        "Synthesize all verified findings in a natural, concise answer. Clearly distinguish confirmed findings from uncertainty.",
+        "If an important part could not be verified, explain what remains unverified in an ordinary sentence. Do not use status labels such as Partial, Complete, or an execution-step count.",
+        "Do not mention internal execution phases, tool limits, or retrieval timestamps.",
+        "Never invent facts, sources, tool results, or claim unfinished work succeeded.",
+        "Do not ask the user to clarify or retry merely because an execution limit was reached. Give the useful report first.",
+        JSON.stringify(reportData)
+      ].join("\n\n")
+    }
+  ];
+  try {
+    const options = { timeout: deadline ? remainingTime(deadline) : config.AGENT_MODEL_TIMEOUT_MS };
+    const final = await llm.chat.completions.create({
+      model: config.NVIDIA_NIM_MODEL,
+      messages: reportMessages,
+      temperature: 0.4
+    }, options);
+    const answer = final.choices[0]?.message?.content;
+    if (answer?.trim()) return finalResponse(answer);
+  } catch (error) {
+    console.warn("Final execution report synthesis failed:", error);
+  }
+  return fallbackReport(outcomes, reason);
+}
+
+async function runPlannedRequest(
+  messages: ChatCompletionMessageParam[],
+  steps: ExecutionPlanStep[],
+  telegramId: string,
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  allowedTools?: ReadonlySet<string>
+): Promise<string> {
+  const completed = new Set<string>();
+  const outcomes: StepOutcome[] = [];
+  const pending = new Set(steps.map((step) => step.id));
+  let totalToolRounds = 0;
+  const deadline = Date.now() + config.AGENT_PLAN_TIMEOUT_MS;
+  let stopReason = "All executable plan steps were processed.";
+
+  while (pending.size) {
+    if (Date.now() >= deadline) {
+      stopReason = "The overall planned-execution time limit was reached.";
+      break;
+    }
+    const ready = steps.filter((step) =>
+      pending.has(step.id) && step.depends_on.every((dependency) => completed.has(dependency))
+    );
+    if (!ready.length) {
+      stopReason = "Some steps could not run because one or more prerequisite steps did not complete.";
+      break;
+    }
+
+    const remainingBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    if (remainingBudget <= 0) {
+      stopReason = "The total planned tool-round budget was reached.";
+      break;
+    }
+
+    const candidateBatch = ready[0]!.parallel_safe
+      ? ready.filter((step) => step.parallel_safe)
+      : [ready[0]!];
+    const batch = candidateBatch.slice(0, Math.min(
+      config.AGENT_MAX_PARALLEL_PLAN_STEPS,
+      remainingBudget
+    ));
+    const perStepBudget = Math.max(1, Math.min(
+      config.AGENT_MAX_STEP_TOOL_ROUNDS,
+      Math.floor(remainingBudget / batch.length)
+    ));
+
+    for (const step of batch) {
+      await onProgress?.({
+        type: "plan_step_start",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length,
+        task: step.task
+      });
+    }
+
+    const batchOutcomes = await Promise.all(batch.map((step) =>
+      runPlannedStep(
+        [...messages],
+        step,
+        telegramId,
+        perStepBudget,
+        step.parallel_safe,
+        deadline,
+        onProgress,
+        allowedTools
+      )
+    ));
+
+    for (let i = 0; i < batch.length; i++) {
+      const step = batch[i]!;
+      const outcome = batchOutcomes[i]!;
+      totalToolRounds += outcome.toolRounds;
+      pending.delete(step.id);
+      outcomes.push(outcome);
+      const index = steps.findIndex((item) => item.id === step.id) + 1;
+
+      if (outcome.status === "completed") {
+        completed.add(step.id);
+        messages.push({
+          role: "assistant",
+          content: `Completed plan step ${step.id}: ${outcome.answer}`
+        });
+        await onProgress?.({ type: "plan_step_complete", index, total: steps.length });
+      } else {
+        messages.push({
+          role: "assistant",
+          content: `Plan step ${step.id} was ${outcome.status}: ${outcome.answer}. Limitation: ${outcome.failureReason ?? "Not completed"}`
+        });
+        await onProgress?.({ type: "plan_step_failed", index, total: steps.length });
+      }
+    }
+  }
+
+  if (pending.size) {
+    for (const step of steps.filter((item) => pending.has(item.id))) {
+      const blocked = step.depends_on.some((dependency) => !completed.has(dependency));
+      outcomes.push({
+        id: step.id,
+        task: step.task,
+        status: "failed",
+        toolRounds: 0,
+        answer: "This step was not executed.",
+        failureReason: blocked
+          ? "A prerequisite step did not complete."
+          : stopReason
+      });
+      await onProgress?.({
+        type: "plan_step_failed",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length
+      });
+    }
+  }
+
+  // One bounded replanning pass for failed read-only steps. Mutating steps are
+  // deliberately excluded so recovery can never replay a write or deletion.
+  let recoveryAttempts = 0;
+  for (const step of steps) {
+    if (recoveryAttempts >= 2 || Date.now() >= deadline) break;
+    if (!step.parallel_safe) continue;
+    const outcomeIndex = outcomes.findIndex((item) => item.id === step.id);
+    const previous = outcomes[outcomeIndex];
+    if (!previous || previous.status === "completed") continue;
+    const remainingBudget = config.AGENT_MAX_PLAN_TOOL_ROUNDS - totalToolRounds;
+    if (remainingBudget <= 0) break;
+
+    recoveryAttempts++;
+    await onProgress?.({ type: "recovery_adjusting" });
+    await onProgress?.({
+      type: "plan_step_start",
+      index: steps.findIndex((item) => item.id === step.id) + 1,
+      total: steps.length,
+      task: "Revising approach: " + step.task
+    });
+    const recoveryStep: ExecutionPlanStep = {
+      id: `recovery_${step.id}`,
+      task: [
+        `Recover the unresolved read-only task: ${step.task}`,
+        `Previous attempt status: ${previous.status}.`,
+        `Previous limitation: ${previous.failureReason ?? "The task did not reach a verified result"}.`,
+        "Use the existing evidence in the conversation. Choose a materially different read-only approach only if a necessary information gap remains.",
+        "Do not repeat searches or fetches already completed unless there is a clear reason. If the evidence is already sufficient, summarize it without more tool calls."
+      ].join(" "),
+      depends_on: [],
+      parallel_safe: true
+    };
+    const recoveryBudget = Math.max(1, Math.min(3, config.AGENT_MAX_STEP_TOOL_ROUNDS, remainingBudget));
+    const recovered = await runPlannedStep(
+      [...messages],
+      recoveryStep,
+      telegramId,
+      recoveryBudget,
+      true,
+      deadline,
+      onProgress,
+      allowedTools
+    );
+    totalToolRounds += recovered.toolRounds;
+    if (recovered.status === "completed") {
+      outcomes[outcomeIndex] = {
+        ...previous,
+        status: "completed",
+        toolRounds: previous.toolRounds + recovered.toolRounds,
+        answer: recovered.answer,
+        failureReason: undefined
+      };
+      await onProgress?.({
+        type: "plan_step_complete",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length
+      });
+    } else {
+      outcomes[outcomeIndex] = {
+        ...previous,
+        toolRounds: previous.toolRounds + recovered.toolRounds,
+        answer: previous.answer + "\nRecovery attempt: " + recovered.answer,
+        sources: [...(previous.sources ?? []), ...(recovered.sources ?? [])],
+        failureReason: recovered.failureReason ?? previous.failureReason
+      };
+      await onProgress?.({
+        type: "plan_step_failed",
+        index: steps.findIndex((item) => item.id === step.id) + 1,
+        total: steps.length
+      });
+    }
+  }
+
+  await onProgress?.({ type: "verifying" });
+  const answer = await synthesizeReport(messages, outcomes, steps.length, stopReason, deadline);
+  const sources = outcomes.flatMap((outcome) => outcome.sources ?? []);
+  return appendSourcesFooter(answer, sources);
+}
+
+/**
+ * Orchestra controller: model-led planning with bounded execution, preserved
+ * partial evidence, and a final synthesis pass even when execution is incomplete.
+ */
+export type RunAgentOptions = {
+  channel?: InteractionChannel;
+  responseStyle?: ResponseStyle;
+  conversationId?: string;
+  signal?: AbortSignal;
+};
+
+export async function runAgent(
+  history: ChatCompletionMessageParam[],
+  userMessage: string,
+  telegramId: string,
+  onProgress?: (event: ProgressEvent) => Promise<void> | void,
+  workflowAllowedTools?: ReadonlySet<string>,
+  workflowApprovalPolicy?: "read_only" | "confirm_mutations",
+  requestOptions?: RunAgentOptions
+): Promise<string | null> {
+  const channel = requestOptions?.channel ?? "telegram";
+  const responseStyle = requestOptions?.responseStyle;
+  const signal = requestOptions?.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+  };
+  throwIfAborted();
+  const academicSourceCheck = requiresAcademicSourceCheck(userMessage);
+  const forceAcademicTool = academicSourceCheck && (!workflowAllowedTools || workflowAllowedTools.has("academic"));
+  const route = routeRequest(userMessage, { channel, responseStyle });
+  const state = createExecutionState(
+    {
+      text: userMessage,
+      telegramId,
+      channel,
+      responseStyle,
+      conversationId: requestOptions?.conversationId
+    },
+    route,
+    {
+      maxModelRounds: config.AGENT_MAX_MODEL_ROUNDS,
+      maxToolRounds: config.AGENT_MAX_PLAN_TOOL_ROUNDS,
+      maxParallelCalls: config.AGENT_MAX_PARALLEL_TOOL_CALLS,
+      deadlineAt: Date.now() + config.AGENT_PLAN_TIMEOUT_MS
+    }
+  );
+  state.status = "running";
+  const reportProgress = async (event: ProgressEvent): Promise<void> => {
+    if (event.type === "tool_start") state.toolCalls++;
+    if (event.type === "tool_error") {
+      state.failures++;
+      if (config.AFFECT_ENABLED) noteToolOutcome(telegramId, false);
+    }
+    if (event.type === "tool_complete") {
+      if (config.AFFECT_ENABLED) noteToolOutcome(telegramId, true);
+    }
+    await onProgress?.(event);
+  };
+
+  beginPhase(state, "context");
+  const affect =
+    config.AFFECT_ENABLED
+      ? beginTurnAffect({
+          telegramId,
+          userMessage,
+          channel: state.channel,
+          injectPrompt: true
+        })
+      : null;
+  if (affect) {
+    console.info(
+      "orchestra.affect",
+      JSON.stringify({
+        request_id: state.requestId,
+        policy: affect.policy,
+        user_frustration: affect.user.frustration,
+        user_confusion: affect.user.confusion,
+        agent_confidence: affect.agent.confidence,
+        agent_frustration: affect.agent.frustration,
+        prompt_injected: Boolean(affect.promptHint),
+        prefer_clarify: affect.params.preferClarify
+      })
+    );
+  }
+  const pack = await buildAdaptiveContextPack({
+    telegramId,
+    userMessage,
+    channel: state.channel,
+    responseStyle: state.responseStyle,
+    latencyBudgetMs: Math.max(0, state.budget.deadlineAt - Date.now()),
+    complexityHint: route.complexity,
+    connectors: {
+      tavily: Boolean(config.TAVILY_API_KEY),
+      github: Boolean(config.GITHUB_TOKEN),
+      notion: Boolean(config.NOTION_TOKEN),
+      gmail: Boolean(config.GMAIL_REFRESH_TOKEN),
+      calendar: Boolean(config.GOOGLE_CALENDAR_ENABLED),
+      voice: Boolean(config.VOICE_ENABLED && config.DEEPGRAM_API_KEY && config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID)
+    }
+  });
+  const prepared = await prepareRequest(history, userMessage, telegramId);
+  const messages = [...prepared.messages];
+  messages.push({ role: "system", content: formatContextPackForModel(pack) });
+  if (academicSourceCheck) {
+    messages.push({
+      role: "system",
+      content: forceAcademicTool
+        ? "The user explicitly asks about their academic library or study materials, or asks whether information came from them. You MUST call the academic tool with operation=search before answering. Decide the search query from the current question and relevant recent conversation. A source claim is valid only if the academic tool returns matching source excerpts. If it returns no source, say the library did not provide evidence; do not infer provenance from web/general knowledge or personal memories."
+        : "The user explicitly asks about academic-library provenance, but this execution is not allowed to use the academic tool. Do not claim the answer came from the library; say you cannot verify that source in this workflow."
+    });
+  }
+  if (state.responseStyle === "spoken") {
+    messages.push({ role: "system", content: SPOKEN_STYLE_GUIDANCE });
+  }
+  if (affect?.promptHint) {
+    messages.push({ role: "system", content: affect.promptHint });
+  }
+  endPhase(state, "context");
+  console.info("orchestra.context_pack", JSON.stringify({
+    request_id: state.requestId,
+    topic: pack.activeTopic,
+    risk: pack.risk,
+    entities: pack.entities.length,
+    connectors: pack.connectors.filter((c) => c.available).map((c) => c.id)
+  }));
+
+  throwIfAborted();
+  await reportProgress({ type: "planning" });
+  let plan: ExecutionPlan | null = null;
+  if (route.usePlanner && !academicSourceCheck) {
+    beginPhase(state, "planning");
+    try {
+      plan = await createExecutionPlan(llm, history, userMessage, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn("Smart planning unavailable; using direct execution:", error);
+    }
+    endPhase(state, "planning");
+  }
+
+  throwIfAborted();
+  if (plan) {
+    await reportProgress({ type: "plan_created", stepCount: plan.steps.length });
+    beginPhase(state, "execution");
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, reportProgress, workflowAllowedTools);
+    endPhase(state, "execution");
+    completeExecution(state, "completed");
+    if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
+    logTrajectorySafe({
+      telegramId,
+      conversationId: requestOptions?.conversationId,
+      requestSummary: userMessage,
+      messages,
+      executionStatus: "completed",
+      metadata: { route: route.reason, mode: "planned", request_id: state.requestId }
+    });
+    console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
+    await reportProgress({ type: "response_ready" });
+    return answer;
+  }
+
+  beginPhase(state, "execution");
+  let stopReason = "The direct tool-round budget was reached.";
+  for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
+    await reportProgress({ type: "thinking", phase: "model" });
+    throwIfAborted();
+    const response = await llm.chat.completions.create({
+      model: config.NVIDIA_NIM_MODEL,
+      messages,
+      tools: workflowAllowedTools
+        ? agentTools.filter((tool) => tool.type === "function" && workflowAllowedTools.has(tool.function.name))
+        : agentTools,
+      tool_choice: forceAcademicTool && round === 0
+        ? { type: "function", function: { name: "academic" } }
+        : "auto",
+      temperature: 0.4
+    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
+    const message = response.choices[0]?.message;
+    if (!message) {
+      stopReason = "The model returned an empty response.";
+      break;
+    }
+    messages.push(message);
+
+    const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
+    if (evaluation.kind === "complete") {
+      const sources = extractAnswerSources(messages);
+      const audit = auditFactualAnswer(evaluation.answer, {
+        hadResearchTools: historyUsedResearchTools(messages),
+        hasSources: sources.length > 0
+      });
+      if (!audit.ok && round < config.AGENT_MAX_MODEL_ROUNDS - 1) {
+        messages.push({
+          role: "system",
+          content: audit.rewriteHint
+        });
+        continue;
+      }
+      endPhase(state, "execution");
+      completeExecution(state, audit.ok ? "completed" : "completed");
+      logTrajectorySafe({
+        telegramId,
+        conversationId: requestOptions?.conversationId,
+        requestSummary: userMessage,
+        messages,
+        executionStatus: audit.ok ? "completed" : "partial",
+        metadata: { route: route.reason, mode: "adaptive", request_id: state.requestId }
+      });
+      console.info("orchestra.execution", JSON.stringify({
+        ...summarizeExecution(state),
+        route: route.reason,
+        accuracy_audit: audit.ok ? "pass" : audit.issues.map((i) => i.code)
+      }));
+      await reportProgress({ type: "response_ready" });
+      return appendSourcesFooter(finalResponse(evaluation.answer), sources);
+    }
+    if (evaluation.kind === "limit_reached") {
+      stopReason = "The direct tool-round budget was reached before the model completed its answer.";
+      break;
+    }
+    if (evaluation.kind === "empty_turn") {
+      stopReason = "The model returned an empty turn.";
+      break;
+    }
+
+    const functionCalls = evaluation.calls.filter(isFunctionCall);
+    const results = await executeToolCalls(
+      functionCalls as ToolCallInput[],
+      telegramId,
+      reportProgress,
+      workflowAllowedTools,
+      Boolean(workflowApprovalPolicy),
+      userMessage
+    );
+    const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
+    let hadToolErrors = false;
+    for (const call of evaluation.calls) {
+      if (call.type === "function") {
+        const result = resultById.get(call.id);
+        if (result) {
+          messages.push(result);
+          try { hadToolErrors ||= Boolean((JSON.parse(String(result.content)) as { error?: unknown }).error); } catch { /* non-JSON tool response */ }
+        }
+      } else {
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify({ error: "Unsupported tool call type." })
+        });
+      }
+    }
+    const approval = results
+      .map((result) => {
+        try { return JSON.parse(String(result.content)) as { status?: string; pending_id?: string }; } catch { return null; }
+      })
+      .find((result) => result?.status === "needs_approval" && result.pending_id);
+    if (approval?.pending_id) {
+      endPhase(state, "execution");
+      completeExecution(state, "waiting_for_approval");
+      console.info("orchestra.execution", JSON.stringify({
+        ...summarizeExecution(state),
+        route: route.reason,
+        pending_approval: approval.pending_id
+      }));
+      return null;
+    }
+    if (hadToolErrors) {
+      await reportProgress({ type: "recovery_adjusting" });
+      messages.push({
+        role: "system",
+        content: "One or more tool calls failed. Diagnose the returned error. Continue only if the missing information is necessary; if so, try a materially different safe approach. Do not repeat the same call unless the error is transient. Do not repeat mutations. If the existing evidence is already sufficient, finish with it and disclose any relevant limitation."
+      });
+    }
+  }
+
+  endPhase(state, "execution");
+  beginPhase(state, "response");
+  await reportProgress({ type: "verifying" });
+  const lastAssistant = [...messages].reverse().find(
+    (m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim()
+  );
+  let answer: string;
+  try {
+    answer = await synthesizeReport(messages, [], 0, stopReason);
+  } catch (error) {
+    console.warn("synthesizeReport failed, using partial composer:", error);
+    answer = composePartialAnswer({
+      reason: stopReason,
+      lastAssistantNote: typeof lastAssistant?.content === "string" ? lastAssistant.content : undefined
+    });
+  }
+  if (!answer?.trim()) {
+    answer = composePartialAnswer({ reason: stopReason });
+  }
+  endPhase(state, "response");
+  completeExecution(state, "partial");
+  if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "partial");
+  logTrajectorySafe({
+    telegramId,
+    conversationId: requestOptions?.conversationId,
+    requestSummary: userMessage,
+    messages,
+    executionStatus: "partial",
+    metadata: { route: route.reason, mode: "adaptive", stop: stopReason, request_id: state.requestId }
+  });
+  console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason, stop: stopReason }));
+  await reportProgress({ type: "response_ready" });
+  return appendSourcesFooter(answer, extractAnswerSources(messages));
+}
