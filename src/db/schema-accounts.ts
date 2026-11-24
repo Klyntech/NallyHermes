@@ -3,7 +3,7 @@
  *
  * First-party identity independent of Telegram or any single surface.
  * End goal: a real "Login with Nally" experience.
- * See docs/identity/nally-account.md for design rationale.
+ * See docs/identity/nally-account.md and docs/identity/login-with-nally.md.
  *
  * These tables are additive. They do not yet replace the Telegram-rooted
  * `users` table that exists on feature branches. A future migration will
@@ -99,7 +99,7 @@ export const accountIdentities = pgTable(
 
 /**
  * Opaque sessions for first-party surfaces and future "Login with Nally".
- * Only a keyed HMAC of the token is stored.
+ * Only a keyed HMAC of the bearer token is stored.
  */
 export const accountSessions = pgTable(
   "account_sessions",
@@ -163,6 +163,78 @@ export const oauthClients = pgTable(
   ]
 );
 
+/**
+ * Short-lived authorization codes issued by /oauth/authorize.
+ * Single-use; bound to client + PKCE challenge.
+ */
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    codeHash: text("code_hash").notNull(),
+
+    clientId: text("client_id").notNull(),
+
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => nallyAccounts.id, { onDelete: "cascade" }),
+
+    redirectUri: text("redirect_uri").notNull(),
+
+    /** S256 PKCE challenge (base64url). */
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+
+    scopes: jsonb("scopes").$type<string[]>().default(["openid", "profile"]).notNull(),
+
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("oauth_authorization_codes_hash_idx").on(table.codeHash),
+    index("oauth_authorization_codes_account_idx").on(table.accountId),
+    index("oauth_authorization_codes_expires_idx").on(table.expiresAt)
+  ]
+);
+
+/**
+ * Refresh tokens for Login with Nally clients.
+ * Stored as hash only; rotate on use.
+ */
+export const oauthRefreshTokens = pgTable(
+  "oauth_refresh_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    tokenHash: text("token_hash").notNull(),
+
+    clientId: text("client_id").notNull(),
+
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => nallyAccounts.id, { onDelete: "cascade" }),
+
+    scopes: jsonb("scopes").$type<string[]>().default(["openid", "profile"]).notNull(),
+
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+
+    /** Previous token in a rotation chain (optional). */
+    parentTokenId: uuid("parent_token_id"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("oauth_refresh_tokens_hash_idx").on(table.tokenHash),
+    index("oauth_refresh_tokens_account_idx").on(table.accountId),
+    index("oauth_refresh_tokens_client_idx").on(table.clientId),
+    index("oauth_refresh_tokens_expires_idx").on(table.expiresAt)
+  ]
+);
+
 export type NallyAccount = typeof nallyAccounts.$inferSelect;
 export type NewNallyAccount = typeof nallyAccounts.$inferInsert;
 export type AccountIdentity = typeof accountIdentities.$inferSelect;
@@ -171,3 +243,7 @@ export type AccountSession = typeof accountSessions.$inferSelect;
 export type NewAccountSession = typeof accountSessions.$inferInsert;
 export type OauthClient = typeof oauthClients.$inferSelect;
 export type NewOauthClient = typeof oauthClients.$inferInsert;
+export type OauthAuthorizationCode = typeof oauthAuthorizationCodes.$inferSelect;
+export type NewOauthAuthorizationCode = typeof oauthAuthorizationCodes.$inferInsert;
+export type OauthRefreshToken = typeof oauthRefreshTokens.$inferSelect;
+export type NewOauthRefreshToken = typeof oauthRefreshTokens.$inferInsert;
