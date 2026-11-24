@@ -114,8 +114,23 @@ async function startTelegram(action) {
 async function finishTelegramCallback() {
   const hash = new URLSearchParams(window.location.hash.slice(1));
   const idToken = hash.get("id_token");
+  const rawAuthResult = hash.get("tgAuthResult");
   const flow = JSON.parse(sessionStorage.getItem("nally_telegram_flow") || "null");
-  if (!idToken || !flow || hash.get("state") !== flow.state) {
+  let authData = null;
+  if (rawAuthResult) {
+    try {
+      const base64 = rawAuthResult.replace(/-/g, "+").replace(/_/g, "/");
+      const binary = atob(base64);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      authData = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      errorMessage = "Telegram returned an unreadable sign-in response. Please try again.";
+      history.replaceState(null, "", "/account");
+      renderLogin();
+      return;
+    }
+  }
+  if ((!idToken && !authData) || !flow || (idToken && hash.get("state") !== flow.state)) {
     errorMessage = hash.get("error_description") || "Telegram sign-in could not be completed. Please try again.";
     history.replaceState(null, "", "/account");
     renderLogin();
@@ -126,7 +141,9 @@ async function finishTelegramCallback() {
       ? "/api/accounts/telegram/link" : "/api/accounts/telegram/login";
     const result = await api(endpoint, {
       method: "POST",
-      body: JSON.stringify({ idToken, nonce: flow.nonce })
+      body: JSON.stringify(idToken
+        ? { idToken, nonce: flow.nonce }
+        : { authData, nonce: flow.nonce })
     }, flow.action === "link");
     if (flow.action === "login") setToken(result.accessToken);
     sessionStorage.removeItem("nally_telegram_flow");
@@ -193,7 +210,7 @@ async function signOut() {
 }
 
 async function boot() {
-  if (window.location.hash.includes("id_token=")) {
+  if (window.location.hash.includes("id_token=") || window.location.hash.includes("tgAuthResult=")) {
     await finishTelegramCallback();
     return;
   }
