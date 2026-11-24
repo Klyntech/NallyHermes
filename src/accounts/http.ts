@@ -112,11 +112,12 @@ export async function handleNallyAccountRequest(
     if (pathname === "/api/accounts/telegram/link" && req.method === "POST") {
       const body = await readJson(req);
       const idToken = typeof body?.idToken === "string" ? body.idToken : "";
+      const authData = body?.authData;
       const nonce = typeof body?.nonce === "string" ? body.nonce : "";
-      if (!idToken || idToken.length > 16_384 || nonce.length < 32 || nonce.length > 128) {
+      if ((!idToken && !authData) || idToken.length > 16_384 || nonce.length < 32 || nonce.length > 128) {
         sendJson(res, 400, { error: "Telegram sign-in response is incomplete." }); return;
       }
-      const identity = await verifyTelegramLoginIdToken(idToken, nonce);
+      const identity = idToken ? await verifyTelegramLoginIdToken(idToken, nonce) : verifyTelegramLoginWidget(authData);
       if (!await consumeTelegramLoginChallenge(nonce)) {
         sendJson(res, 401, { error: "This Telegram sign-in has expired. Please try again." }); return;
       }
