@@ -1025,7 +1025,7 @@ const server = createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && (pathname === "/" || pathname === "/account" || pathname === "/account/" || pathname.startsWith("/account/"))) {
-    const asset = pathname === "/account" || pathname === "/account/"
+    const asset = pathname === "/" || pathname === "/account" || pathname === "/account/"
       ? "index.html"
       : pathname === "/account/app.js" ? "app.js"
       : pathname === "/account/styles.css" ? "styles.css" : null;
