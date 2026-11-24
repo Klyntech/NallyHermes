@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { listLearnedSkills } from "../learning/store.js";
 
 export type SkillMetadata = {
   name: string;
@@ -13,9 +14,24 @@ const MAX_SKILL_BODY_CHARS = 60_000;
 const MAX_ACTIVE_SKILLS = 4;
 let catalogPromise: Promise<LoadedSkill[]> | undefined;
 
-export async function buildSkillContext(userMessage: string): Promise<string> {
-  const skills = await loadSkills();
-  if (!skills.length) return "No repository skills are installed. Use the core operating principles and available tools.";
+export async function buildSkillContext(
+  userMessage: string,
+  telegramId?: string
+): Promise<string> {
+  const [repoSkills, learned] = await Promise.all([
+    loadSkills(),
+    loadActiveLearnedSkills(telegramId)
+  ]);
+
+  // Learned skills override repo skills with the same name for this user.
+  const byName = new Map<string, LoadedSkill>();
+  for (const skill of repoSkills) byName.set(skill.name, skill);
+  for (const skill of learned) byName.set(skill.name, skill);
+  const skills = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  if (!skills.length) {
+    return "No repository skills are installed. Use the core operating principles and available tools.";
+  }
 
   const selected = selectSkills(skills, userMessage);
   const catalog = skills
@@ -38,6 +54,32 @@ export async function buildSkillContext(userMessage: string): Promise<string> {
     "Active skill instructions:",
     active
   ].join("\n");
+}
+
+async function loadActiveLearnedSkills(telegramId?: string): Promise<LoadedSkill[]> {
+  if (!telegramId) return [];
+  try {
+    const rows = await listLearnedSkills(telegramId, "active");
+    return rows
+      .filter((row) => row.body && row.name)
+      .map((row) => ({
+        name: row.name,
+        description: row.description,
+        path: `learned://${row.id}`,
+        body: stripFrontmatter(row.body).slice(0, MAX_SKILL_BODY_CHARS)
+      }));
+  } catch (error) {
+    console.warn(
+      "Learned skills unavailable:",
+      error instanceof Error ? error.message : error
+    );
+    return [];
+  }
+}
+
+function stripFrontmatter(source: string): string {
+  const match = source.match(/^---\s*\n[\s\S]*?\n---\s*\n?([\s\S]*)$/);
+  return (match?.[1] ?? source).trim();
 }
 
 export async function loadSkillMetadata(): Promise<SkillMetadata[]> {
@@ -149,6 +191,8 @@ function scoreSkill(skill: SkillMetadata, requestTokens: Set<string>): number {
     if (generic.has(token)) continue;
     if (requestTokens.has(token)) score += token.length >= 7 ? 2 : 1;
   }
+  // Slight boost for learned skills so accepted user procedures compete fairly.
+  if (skill.path.startsWith("learned://")) score += 2;
   return score;
 }
 
