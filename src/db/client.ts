@@ -292,7 +292,47 @@ export async function ensureDatabase(): Promise<void> {
     )`,
     "CREATE INDEX IF NOT EXISTS learned_skills_user_id_idx ON learned_skills(user_id)",
     "CREATE INDEX IF NOT EXISTS learned_skills_status_idx ON learned_skills(user_id, status)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS learned_skills_user_name_idx ON learned_skills(user_id, name)"
+    "CREATE UNIQUE INDEX IF NOT EXISTS learned_skills_user_name_idx ON learned_skills(user_id, name)",
+    `CREATE TABLE IF NOT EXISTS agency_projects (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      domain text NOT NULL DEFAULT 'general',
+      description text NOT NULL DEFAULT '',
+      status text NOT NULL DEFAULT 'active',
+      horizon_years integer,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS agency_projects_user_id_idx ON agency_projects(user_id)",
+    "CREATE INDEX IF NOT EXISTS agency_projects_domain_idx ON agency_projects(user_id, domain)",
+    `CREATE TABLE IF NOT EXISTS agency_claims (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id uuid NOT NULL REFERENCES agency_projects(id) ON DELETE CASCADE,
+      statement text NOT NULL,
+      status text NOT NULL DEFAULT 'open',
+      evidence_summary text,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS agency_claims_user_id_idx ON agency_claims(user_id)",
+    "CREATE INDEX IF NOT EXISTS agency_claims_project_idx ON agency_claims(project_id)",
+    `CREATE TABLE IF NOT EXISTS agency_constraints (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_id uuid REFERENCES agency_projects(id) ON DELETE CASCADE,
+      statement text NOT NULL,
+      strength text NOT NULL DEFAULT 'soft',
+      domain text NOT NULL DEFAULT 'general',
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS agency_constraints_user_id_idx ON agency_constraints(user_id)",
+    "CREATE INDEX IF NOT EXISTS agency_constraints_project_idx ON agency_constraints(project_id)"
   ];
 
   for (const statement of statements) {
