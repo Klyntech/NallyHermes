@@ -98,6 +98,7 @@ async function startTelegram(action) {
     redirect.search = new URLSearchParams({
       client_id: challenge.clientId,
       redirect_uri: challenge.redirectUri,
+      origin: window.location.origin,
       response_type: "id_token",
       scope: ["openid", ...(Array.isArray(challenge.scopes) ? challenge.scopes : ["profile"])].join(" "),
       nonce: challenge.nonce,
