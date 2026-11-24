@@ -298,3 +298,54 @@ export const learnedSkills = pgTable("learned_skills", {
   index("learned_skills_status_idx").on(table.userId, table.status),
   uniqueIndex("learned_skills_user_name_idx").on(table.userId, table.name)
 ]);
+
+
+/* -------------------------------------------------------------------------- */
+/*  Agency Graph — Projects, Claims, Constraints (Grok-Self-Improvement-3.6)  */
+/* -------------------------------------------------------------------------- */
+
+export const agencyProjects = pgTable("agency_projects", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  domain: text("domain").notNull().default("general"),
+  description: text("description").notNull().default(""),
+  status: text("status").notNull().default("active"),
+  horizonYears: integer("horizon_years"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("agency_projects_user_id_idx").on(table.userId),
+  index("agency_projects_domain_idx").on(table.userId, table.domain)
+]);
+
+export const agencyClaims = pgTable("agency_claims", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").notNull().references(() => agencyProjects.id, { onDelete: "cascade" }),
+  statement: text("statement").notNull(),
+  status: text("status").notNull().default("open"),
+  evidenceSummary: text("evidence_summary"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("agency_claims_user_id_idx").on(table.userId),
+  index("agency_claims_project_idx").on(table.projectId)
+]);
+
+export const agencyConstraints = pgTable("agency_constraints", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => agencyProjects.id, { onDelete: "cascade" }),
+  statement: text("statement").notNull(),
+  strength: text("strength").notNull().default("soft"),
+  domain: text("domain").notNull().default("general"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("agency_constraints_user_id_idx").on(table.userId),
+  index("agency_constraints_project_idx").on(table.projectId)
+]);
