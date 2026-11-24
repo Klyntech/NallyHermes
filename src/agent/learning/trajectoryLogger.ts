@@ -1,5 +1,6 @@
 import type { ChatCompletionMessageParam } from "openai/resources/index.js";
 import { recordTrajectory } from "./store.js";
+import { maybeProposeSkillFromTrajectory } from "./review.js";
 import type { TrajectoryOutcome, TrajectoryStep } from "./types.js";
 
 /**
@@ -54,7 +55,7 @@ function mapOutcome(status: string): TrajectoryOutcome {
 }
 
 /**
- * Fire-and-forget trajectory recording.
+ * Fire-and-forget trajectory recording + optional skill proposal.
  * Never throws into the request path; failures are logged only.
  */
 export function logTrajectorySafe(input: {
@@ -69,17 +70,30 @@ export function logTrajectorySafe(input: {
   // Skip pure chat turns with no tools — not useful for skill distillation.
   if (steps.length === 0) return;
 
+  const outcome = mapOutcome(input.executionStatus);
+
   void recordTrajectory({
     telegramId: input.telegramId,
     conversationId: input.conversationId,
     requestSummary: input.requestSummary,
     steps,
-    outcome: mapOutcome(input.executionStatus),
+    outcome,
     metadata: input.metadata
-  }).catch((error) => {
-    console.warn(
-      "trajectory logging failed:",
-      error instanceof Error ? error.message : error
-    );
-  });
+  })
+    .then((trajectory) => {
+      if (!trajectory || !trajectory.reusable) return;
+      maybeProposeSkillFromTrajectory({
+        telegramId: input.telegramId,
+        trajectoryId: trajectory.id,
+        requestSummary: trajectory.requestSummary,
+        steps: trajectory.steps,
+        outcome: trajectory.outcome
+      });
+    })
+    .catch((error) => {
+      console.warn(
+        "trajectory logging failed:",
+        error instanceof Error ? error.message : error
+      );
+    });
 }
