@@ -332,7 +332,52 @@ export async function ensureDatabase(): Promise<void> {
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     "CREATE INDEX IF NOT EXISTS agency_constraints_user_id_idx ON agency_constraints(user_id)",
-    "CREATE INDEX IF NOT EXISTS agency_constraints_project_idx ON agency_constraints(project_id)"
+    "CREATE INDEX IF NOT EXISTS agency_constraints_project_idx ON agency_constraints(project_id)",
+    `CREATE TABLE IF NOT EXISTS devices (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      label text NOT NULL,
+      kind text NOT NULL DEFAULT 'other',
+      status text NOT NULL DEFAULT 'pending',
+      capabilities jsonb NOT NULL DEFAULT '[]'::jsonb,
+      token_hash text,
+      last_seen_at timestamptz,
+      paired_at timestamptz,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS devices_user_id_idx ON devices(user_id)",
+    "CREATE INDEX IF NOT EXISTS devices_status_idx ON devices(user_id, status)",
+    `CREATE TABLE IF NOT EXISTS device_jobs (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+      capability text NOT NULL,
+      summary text NOT NULL,
+      payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      status text NOT NULL DEFAULT 'queued',
+      result jsonb,
+      error text,
+      project_id uuid,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      completed_at timestamptz
+    )`,
+    "CREATE INDEX IF NOT EXISTS device_jobs_user_id_idx ON device_jobs(user_id)",
+    "CREATE INDEX IF NOT EXISTS device_jobs_device_status_idx ON device_jobs(device_id, status)",
+    `CREATE TABLE IF NOT EXISTS device_pairing_codes (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      telegram_id text NOT NULL,
+      code_hash text NOT NULL UNIQUE,
+      device_name text NOT NULL,
+      kind text NOT NULL DEFAULT 'other',
+      expires_at timestamptz NOT NULL,
+      consumed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS device_pairing_codes_expiry_idx ON device_pairing_codes(expires_at)"
   ];
 
   for (const statement of statements) {
