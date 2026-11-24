@@ -11,6 +11,7 @@ import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from ".
 import { callV22Operation, getV22Operation, listV22Operations, type V22Connector } from "../connectors/v22.js";
 import { gateWriteOrPending } from "./approvals.js";
 import { skillManageTool } from "./learning/skillManage.js";
+import { handleDeviceManage } from "./device/deviceManage.js";
 
 export interface ToolCallInput {
   id: string;
@@ -212,7 +213,9 @@ async function executeToolCallOnce(
         else result = await callV22Operation(provider, connectorArgs.name, connectorArgs.arguments ?? {}, connectorArgs.approved === true);
         break;
       }
-      case "skill_manage":
+      case "device_manage":
+      return handleDeviceManage(telegramId, args);
+    case "skill_manage":
         result = await skillManageTool(telegramId, args as Parameters<typeof skillManageTool>[1]);
         break;
       default:
