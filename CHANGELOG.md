@@ -2,6 +2,15 @@
 
 Notable changes to NallyHermes are recorded here. The current development line is `3.1.0-alpha.1` on `v3.1-Emotions`; older V2 entries are historical release notes.
 
+## [Unreleased] - 2026-11-24 (Grok-Self-Improvement-3.6)
+
+### Self-improvement foundations
+
+- Added `trajectories` and `learned_skills` tables to the Neon schema as the storage foundation for a Hermes-style closed learning loop.
+- Introduced `src/agent/learning/` with core types, domain inference, and a reusable-trajectory heuristic.
+- Added the `skill_manage` tool (list / get / propose / patch / accept / deprecate) to the agent tool surface. All mutating operations remain behind the existing approval gate.
+- Branch created from `Manus-Work-Full-Deplex-v3.5` for the self-improvement + Personal Agency Kernel work.
+
 ## [Unreleased] - 2026-11-22
 
 ### Native voice review
