@@ -349,3 +349,60 @@ export const agencyConstraints = pgTable("agency_constraints", {
   index("agency_constraints_user_id_idx").on(table.userId),
   index("agency_constraints_project_idx").on(table.projectId)
 ]);
+
+
+/* -------------------------------------------------------------------------- */
+/*  Device Kernel — Grok-Device-System-3.7                                     */
+/* -------------------------------------------------------------------------- */
+
+export const devices = pgTable("devices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  label: text("label").notNull(),
+  kind: text("kind").notNull().default("other"),
+  status: text("status").notNull().default("pending"),
+  capabilities: jsonb("capabilities").$type<string[]>().default([]).notNull(),
+  /** Hashed device token for heartbeat / job pull */
+  tokenHash: text("token_hash"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  pairedAt: timestamp("paired_at", { withTimezone: true }),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("devices_user_id_idx").on(table.userId),
+  index("devices_status_idx").on(table.userId, table.status)
+]);
+
+export const deviceJobs = pgTable("device_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
+  capability: text("capability").notNull(),
+  summary: text("summary").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+  status: text("status").notNull().default("queued"),
+  result: jsonb("result").$type<Record<string, unknown>>(),
+  error: text("error"),
+  projectId: uuid("project_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true })
+}, (table) => [
+  index("device_jobs_user_id_idx").on(table.userId),
+  index("device_jobs_device_status_idx").on(table.deviceId, table.status)
+]);
+
+export const devicePairingCodes = pgTable("device_pairing_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  telegramId: text("telegram_id").notNull(),
+  codeHash: text("code_hash").notNull().unique(),
+  deviceName: text("device_name").notNull(),
+  kind: text("kind").notNull().default("other"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("device_pairing_codes_expiry_idx").on(table.expiresAt)
+]);
