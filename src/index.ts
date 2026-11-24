@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
+import { ensureNallyAccountSchema } from "./db/nallyAccounts.js";
 import { users } from "./db/schema.js";
 import {
   appendConversationExchange,
@@ -1002,6 +1003,7 @@ bot.catch((error) => console.error("Telegram bot error:", error));
 
 console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
+await ensureNallyAccountSchema();
 await bot.init();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
@@ -1014,7 +1016,7 @@ await bot.api.setMyCommands([
 
 const server = createServer((req, res) => {
   const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-  if (pathname.startsWith("/api/mobile/")) {
+  if (pathname.startsWith("/api/mobile/") || pathname.startsWith("/api/accounts/")) {
     void handleMobileApiRequest(req, res, {
       submitMessage: submitMobileMessage,
       getActivity: getMobileActivity
