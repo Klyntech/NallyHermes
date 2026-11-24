@@ -1,12 +1,19 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "./client.js";
 import { accountIdentities, accountSessions, nallyAccounts, users } from "./schema.js";
 
-const scrypt = promisify(scryptCallback);
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
 const SCRYPT_KEY_LENGTH = 64;
+
+function deriveScrypt(password: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(password, salt, SCRYPT_KEY_LENGTH, { N: 16384, r: 8, p: 1 }, (error, key) => {
+      if (error) reject(error);
+      else resolve(key as Buffer);
+    });
+  });
+}
 
 export type NallyAccountSession = {
   sessionId: string;
@@ -45,7 +52,7 @@ async function hashPassword(password: string): Promise<string> {
     throw new NallyAccountError("Password must be between 12 and 256 characters.", "invalid_input");
   }
   const salt = randomBytes(16);
-  const derived = await scrypt(password, salt, SCRYPT_KEY_LENGTH, { N: 16384, r: 8, p: 1 }) as Buffer;
+  const derived = await deriveScrypt(password, salt);
   return `scrypt$16384$8$1$${salt.toString("base64url")}$${derived.toString("base64url")}`;
 }
 
@@ -59,7 +66,7 @@ async function verifyPassword(password: string, encoded: string): Promise<boolea
     const salt = Buffer.from(saltText!, "base64url");
     const expected = Buffer.from(hashText!, "base64url");
     if (salt.length !== 16 || expected.length !== SCRYPT_KEY_LENGTH) return false;
-    const actual = await scrypt(password, salt, expected.length, { N, r: R, p: P }) as Buffer;
+    const actual = await deriveScrypt(password, salt);
     return timingSafeEqual(actual, expected);
   } catch {
     return false;
@@ -170,7 +177,7 @@ export async function loginNallyAccount(emailInput: string, password: string): P
   // Use a fixed-cost dummy hash for unknown accounts to reduce account-enumeration timing differences.
   const valid = account?.passwordHash
     ? await verifyPassword(password, account.passwordHash)
-    : (await scrypt(password, Buffer.alloc(16), SCRYPT_KEY_LENGTH, { N: 16384, r: 8, p: 1 }), false);
+    : (await deriveScrypt(password, Buffer.alloc(16)), false);
   if (!account || !valid || account.status !== "active" || !account.passwordHash) {
     throw new NallyAccountError("Email or password is incorrect.", "invalid_credentials");
   }
