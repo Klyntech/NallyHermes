@@ -2,6 +2,22 @@ import { isReusableTrajectory, inferDomains } from "./index.js";
 import { proposeLearnedSkill } from "./store.js";
 import type { TrajectoryDomain, TrajectoryStep } from "./types.js";
 
+export type SkillProposalNotifier = (input: {
+  telegramId: string;
+  skillId: string;
+  name: string;
+  description: string;
+  domain: string;
+  rationale?: string;
+}) => void | Promise<void>;
+
+let skillProposalNotifier: SkillProposalNotifier | null = null;
+
+/** Register Telegram (or other) delivery for new skill proposals. */
+export function setSkillProposalNotifier(fn: SkillProposalNotifier | null): void {
+  skillProposalNotifier = fn;
+}
+
 /**
  * After a successful multi-step trajectory, build a lightweight skill proposal
  * and persist it as status=proposed. Activation still requires explicit accept
@@ -34,19 +50,48 @@ export function maybeProposeSkillFromTrajectory(input: {
     steps: input.steps
   });
 
+  const rationale = `Auto-proposed after reusable trajectory (${input.steps.length} steps, tools: ${toolNames.join(", ") || "none"}).`;
   void proposeLearnedSkill(input.telegramId, {
     name,
     description,
     body,
     domain: primaryDomain,
     sourceTrajectoryId: input.trajectoryId,
-    rationale: `Auto-proposed after reusable trajectory (${input.steps.length} steps, tools: ${toolNames.join(", ") || "none"}).`
-  }).catch((error) => {
-    console.warn(
-      "skill proposal from trajectory failed:",
-      error instanceof Error ? error.message : error
-    );
-  });
+    rationale
+  })
+    .then((result) => {
+      if ("error" in result) {
+        console.warn("skill proposal skipped:", result.error);
+        return;
+      }
+      console.info(
+        "skill.proposed",
+        JSON.stringify({ id: result.id, name: result.name, domain: result.domain })
+      );
+      if (skillProposalNotifier) {
+        void Promise.resolve(
+          skillProposalNotifier({
+            telegramId: input.telegramId,
+            skillId: result.id,
+            name: result.name,
+            description: result.description,
+            domain: result.domain,
+            rationale
+          })
+        ).catch((error) => {
+          console.warn(
+            "skill proposal notify failed:",
+            error instanceof Error ? error.message : error
+          );
+        });
+      }
+    })
+    .catch((error) => {
+      console.warn(
+        "skill proposal from trajectory failed:",
+        error instanceof Error ? error.message : error
+      );
+    });
 }
 
 function deriveSkillName(domain: string, tools: string[], summary: string): string {
