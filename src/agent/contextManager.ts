@@ -68,7 +68,7 @@ export async function assembleContext(input: ContextAssemblyInput): Promise<Asse
   const clockContext = await buildClockContext(input.telegramId);
   const followUpContext = buildFollowUpContext(input.history, input.userMessage);
   const activeMemoryContext = await buildActiveMemoryContext(input.telegramId, input.userMessage);
-  const skillContext = await buildSkillContext(input.userMessage);
+  const skillContext = await buildSkillContext(input.userMessage, input.telegramId);
   return {
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
