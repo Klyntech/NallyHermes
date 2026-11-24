@@ -225,5 +225,31 @@ export const agentTools: ChatCompletionTool[] = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "skill_manage",
+      description: "Propose, inspect, or update a learned skill for the current user. Skills are reusable procedures distilled from successful multi-step work (Hermes-style learning loop). Creating or patching a skill is a mutation and requires explicit user approval via Telegram/Android. Use list to see proposed/active skills; use propose only after a clear reusable pattern has been observed.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: {
+            type: "string",
+            enum: ["list", "get", "propose", "patch", "accept", "deprecate"],
+            description: "list/get are read-only; propose/patch/accept/deprecate change skill state and require approval."
+          },
+          name: { type: "string", description: "kebab-case skill name (e.g. law-case-brief-protocol)." },
+          description: { type: "string", description: "Short description of what the skill does." },
+          body: { type: "string", description: "Full skill body in SKILL.md style (frontmatter + procedure)." },
+          domain: { type: "string", enum: ["law", "code", "trading", "cross", "general"], description: "Primary domain this skill belongs to." },
+          rationale: { type: "string", description: "Why this skill should be created or patched (shown to the user)." },
+          id: { type: "string", description: "Skill ID for get/patch/accept/deprecate." },
+          approved: { type: "boolean", description: "Explicit approval for a mutating skill_manage operation." }
+        },
+        required: ["operation"],
+        additionalProperties: false
+      }
+    }
+  },
   academicAgentTool
 ];
