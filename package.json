@@ -1,0 +1,16 @@
+{
+  "name": "nally-account-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nally Account static web prototype",
+  "scripts": {
+    "dev": "serve web/account -l $PORT",
+    "start": "serve web/account -l $PORT"
+  },
+  "dependencies": {
+    "serve": "14.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
