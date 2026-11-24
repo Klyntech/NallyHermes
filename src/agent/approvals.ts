@@ -39,14 +39,22 @@ const WRITE_OPS: Record<string, ReadonlySet<string> | "*"> = {
   github: "*", // non-readOnly ops checked via approved flag path; treat call_operation as gated when not read-only list
   notion: new Set(["create_page", "append_blocks", "update_page"]),
   gmail: new Set(["create_draft", "update_draft", "send_draft", "modify_message"]),
-  nallputer: new Set(["write_file", "run_command", "run_tests", "run_build", "restart_service"])
+  nallputer: new Set(["write_file", "run_command", "run_tests", "run_build", "restart_service"]),
+  skill_manage: new Set(["propose", "patch", "accept", "deprecate"])
 };
 
 export function isWriteOperation(toolName: string, args: Record<string, unknown>): boolean {
   const spec = WRITE_OPS[toolName];
   if (!spec) return false;
 
-  if (toolName === "file_io" || toolName === "memory" || toolName === "schedule" || toolName === "workflow" || toolName === "calendar") {
+  if (
+    toolName === "file_io" ||
+    toolName === "memory" ||
+    toolName === "schedule" ||
+    toolName === "workflow" ||
+    toolName === "calendar" ||
+    toolName === "skill_manage"
+  ) {
     const op = typeof args.operation === "string" ? args.operation : "";
     return spec instanceof Set ? spec.has(op) : false;
   }
@@ -207,11 +215,12 @@ export function summarizeWriteRequest(
   args: Record<string, unknown>
 ): string {
   const bits = [`${provider}.${operation}`];
-  for (const key of ["path", "page_id", "block_id", "command", "title", "id"]) {
+  for (const key of ["path", "page_id", "block_id", "command", "title", "id", "name"]) {
     const v = args[key];
     if (typeof v === "string" && v.trim()) bits.push(`${key}=${v.slice(0, 40)}`);
   }
   if (typeof args.content === "string") bits.push(`content=${args.content.length} chars`);
+  if (typeof args.body === "string") bits.push(`body=${args.body.length} chars`);
   if (Array.isArray(args.children)) bits.push(`blocks=${args.children.length}`);
   // nested connector arguments
   const nested = args.arguments;
