@@ -40,7 +40,8 @@ const WRITE_OPS: Record<string, ReadonlySet<string> | "*"> = {
   notion: new Set(["create_page", "append_blocks", "update_page"]),
   gmail: new Set(["create_draft", "update_draft", "send_draft", "modify_message"]),
   nallputer: new Set(["write_file", "run_command", "run_tests", "run_build", "restart_service"]),
-  skill_manage: new Set(["propose", "patch", "accept", "deprecate"])
+  skill_manage: new Set(["propose", "patch", "accept", "deprecate"]),
+  device_manage: new Set(["pair", "revoke", "enqueue", "approve_job", "deny_job"])
 };
 
 export function isWriteOperation(toolName: string, args: Record<string, unknown>): boolean {
