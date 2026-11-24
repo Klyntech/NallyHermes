@@ -268,18 +268,61 @@ export async function linkTelegramIdentity(accountId: string, telegramId: string
       eq(accountIdentities.provider, "telegram"),
       eq(accountIdentities.subject, telegramId)
     )).limit(1);
-  if (existing && existing.accountId !== accountId) {
-    throw new NallyAccountError("This Telegram identity is already linked to another Nally Account.", "conflict");
-  }
   const [legacyUser] = await db.select({ id: users.id, accountId: users.accountId })
     .from(users).where(eq(users.telegramId, telegramId)).limit(1);
-  if (legacyUser?.accountId && legacyUser.accountId !== accountId) {
-    throw new NallyAccountError("This Telegram identity belongs to another Nally Account.", "conflict");
+
+  const sourceAccountIds = new Set<string>();
+  if (existing && existing.accountId !== accountId) sourceAccountIds.add(existing.accountId);
+  if (legacyUser?.accountId && legacyUser.accountId !== accountId) sourceAccountIds.add(legacyUser.accountId);
+  if (sourceAccountIds.size > 1) {
+    throw new NallyAccountError("This Telegram identity is associated with multiple Nally Accounts. Contact support before linking it.", "conflict");
   }
+
+  const sourceAccountId = [...sourceAccountIds][0];
+  if (sourceAccountId) {
+    // Only merge an automatically-created Telegram-only account. Never take
+    // over an account that has its own credentials or another linked identity.
+    const [source] = await db.select({
+      id: nallyAccounts.id,
+      email: nallyAccounts.email,
+      username: nallyAccounts.username,
+      passwordHash: nallyAccounts.passwordHash,
+      status: nallyAccounts.status
+    }).from(nallyAccounts).where(eq(nallyAccounts.id, sourceAccountId)).limit(1);
+    const sourceIdentities = await db.select({
+      provider: accountIdentities.provider,
+      subject: accountIdentities.subject
+    }).from(accountIdentities).where(eq(accountIdentities.accountId, sourceAccountId));
+
+    if (!source || source.email || source.username || source.passwordHash ||
+        source.status !== "active" || sourceIdentities.length !== 1 ||
+        sourceIdentities[0]?.provider !== "telegram" ||
+        sourceIdentities[0]?.subject !== telegramId) {
+      throw new NallyAccountError("This Telegram identity is linked to a separate Nally Account that has its own account details. Sign in to that account before moving the Telegram identity.", "conflict");
+    }
+
+    // Keep the original Nally user UUID (and its existing app data), while
+    // moving its account ownership and verified Telegram identity.
+    if (legacyUser) {
+      await db.update(users).set({ accountId }).where(eq(users.id, legacyUser.id));
+    }
+    if (existing) {
+      await db.update(accountIdentities).set({ accountId }).where(and(
+        eq(accountIdentities.provider, "telegram"),
+        eq(accountIdentities.subject, telegramId),
+        eq(accountIdentities.accountId, sourceAccountId)
+      ));
+    } else {
+      await db.insert(accountIdentities).values({ accountId, provider: "telegram", subject: telegramId });
+    }
+    await db.delete(nallyAccounts).where(eq(nallyAccounts.id, sourceAccountId));
+    return;
+  }
+
   if (!existing) {
     await db.insert(accountIdentities).values({ accountId, provider: "telegram", subject: telegramId });
   }
-  if (legacyUser) {
+  if (legacyUser && legacyUser.accountId !== accountId) {
     await db.update(users).set({ accountId }).where(eq(users.id, legacyUser.id));
   }
 }
