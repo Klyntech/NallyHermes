@@ -1,15 +1,24 @@
 # NallyHermes
 
-**Branch:** `NallyAccountancy` — Nally Account data model (identity foundation)
+**Branch:** `NallyAccountancy` — Nally Account data model (foundation for **Login with Nally**)
 
-This branch introduces the first-party **Nally Account** schema. It is deliberately additive and does not yet wire authentication or migrate existing Telegram users.
+This branch introduces the first-party **Nally Account** identity system. The end goal is a polished **"Login with Nally"** experience — the same class of button as Login with Google, Apple, or Samsung.
 
 ## What landed here
 
 | Path | Purpose |
 | --- | --- |
-| [`docs/identity/nally-account.md`](docs/identity/nally-account.md) | Design rationale, handle recommendation, table overview |
-| [`src/db/schema-accounts.ts`](src/db/schema-accounts.ts) | Drizzle definitions for `nally_accounts` + `account_identities` |
+| [`docs/identity/nally-account.md`](docs/identity/nally-account.md) | Full design: vision, handle rules, tables, migration plan |
+| [`src/db/schema-accounts.ts`](src/db/schema-accounts.ts) | Drizzle schema for all account tables |
+
+### Tables
+
+| Table | Role |
+| --- | --- |
+| `nally_accounts` | Root identity (what you log into) |
+| `account_identities` | Linked providers (Telegram, Google, Samsung, …) |
+| `account_sessions` | Opaque sessions for first-party surfaces |
+| `oauth_clients` | Registered apps that will offer "Login with Nally" |
 
 ## Public handle
 
@@ -18,15 +27,17 @@ Optional vanity handle, stored lowercase, presented as `@handle`.
 - 3–32 characters, `[a-z0-9_]`
 - Unique, case-insensitive
 - Not required at account creation
-- Fallback display order: `display_name` → email local-part → short id
+- Fallback: `display_name` → email local-part → short id
 
-This style is familiar (Telegram / X / Discord / GitHub) and works well in both text and spoken context.
+## Status
 
-## Next steps (not on this branch)
+**Data model only.** No live auth flows, no migration of existing Telegram users, no OIDC endpoints yet. Tables are additive and safe.
 
-1. Migration that creates a Nally Account + `telegram` identity for every existing user.
-2. Session table scoped to `nally_accounts.id`.
-3. Auth surfaces (email magic link, Google / Samsung linking, etc.).
-4. Re-point foreign keys so memories, conversations, skills, and approvals belong to the Nally Account.
+## Next steps
 
-See the design doc for full details.
+1. Automatic migration of existing Telegram users → Nally Accounts
+2. Session issuance & validation helpers
+3. First-party "Continue with Nally" on Android / web
+4. Full **Login with Nally** OIDC surface
+
+See the design doc for the complete roadmap.
