@@ -1,18 +1,53 @@
 # Nally Account
 
 **Branch:** `NallyAccountancy`  
-**Status:** Data model only (no auth flows, no migration of live Telegram users yet)
+**Status:** Data model foundation (no live auth flows yet)
 
-Nally Account is the first-party identity for Nally — the equivalent of an xAI account, a Google account, or a Samsung account. It is independent of any single surface (Telegram, Android, future web) and can later link multiple external providers.
+Nally Account is the first-party identity for the Nally ecosystem — the same class of thing as a Google account, an Apple account, a Samsung account, or an xAI account.
+
+The public promise is simple:
+
+> **Login with Nally**
+
+One durable identity that owns your memories, conversations, skills, schedules, approvals, and future Nally products. Telegram, Android, web, and external apps become *surfaces* that talk to this identity, not the identity itself.
+
+## Vision
+
+| Today (this branch) | Near future | Longer term |
+| --- | --- | --- |
+| Data model only | Sessions + migration of existing Telegram users | "Login with Nally" button (OIDC/OAuth) for Nally apps and third parties |
+| Optional `@handle` | Email / magic-link + linked providers | Nally as a proper identity provider |
+| Additive tables | Re-point foreign keys to Nally Account | Cross-product single sign-on |
+
+### The mental model
+
+```text
+┌─────────────────────────────────────────┐
+│           Nally Account                 │
+│   @clinton  ·  display name  ·  email   │
+└──────────────────┬──────────────────────┘
+                   │
+     ┌─────────────┼─────────────┐
+     ▼             ▼             ▼
+ Telegram      Google /      Future apps
+ (linked)      Samsung       (Login with Nally)
+```
+
+You create a Nally Account once. Then you can:
+
+- Continue talking to Nally on Telegram (linked identity)
+- Sign into the Android app with the same account
+- Eventually click **Login with Nally** on any Nally surface or partner product
 
 ## Design goals
 
 - One durable Nally identity that owns memories, conversations, skills, schedules, and approvals.
 - Telegram remains a first-class *linked* surface, not the sole root of identity.
-- Clean path to email, Google, Samsung, Apple, and other providers later.
+- Clean path to email, Google, Samsung, Apple, and other providers.
 - Optional public vanity handle that feels polished and personal.
+- Foundation for a real **"Login with Nally"** experience (sessions now, OIDC later).
 
-## Public handle recommendation
+## Public handle
 
 **Recommended form: optional vanity handle presented as `@handle`**
 
@@ -35,7 +70,7 @@ Alternatives considered and rejected for v1:
 
 ### `nally_accounts`
 
-The root identity.
+The root identity — what you actually log into.
 
 ```text
 id                 uuid PK
@@ -67,11 +102,43 @@ UNIQUE (provider, provider_user_id)
 INDEX  (account_id)
 ```
 
-### Future (not in this PR)
+### `account_sessions`
 
-- `account_sessions` — opaque sessions scoped to `nally_accounts.id`
-- `account_recovery` / magic-link challenges
-- Automatic migration that creates a `nally_accounts` row + `telegram` identity for every existing Telegram user
+Opaque sessions for "Login with Nally" and first-party surfaces (Android, future web).
+
+```text
+id                 uuid PK
+account_id         uuid NOT NULL → nally_accounts.id  ON DELETE CASCADE
+token_hash         text UNIQUE NOT NULL     -- only a keyed HMAC is stored
+expires_at         timestamptz NOT NULL
+revoked_at         timestamptz NULL
+created_at         timestamptz NOT NULL
+last_seen_at       timestamptz NULL
+user_agent         text NULL
+ip_hint            text NULL               -- coarse, never full raw IP long-term
+
+INDEX (account_id)
+INDEX (expires_at)
+```
+
+### `oauth_clients` (foundation for Login with Nally as IdP)
+
+Registered applications that will one day be allowed to offer **Login with Nally**.
+
+```text
+id                 uuid PK
+client_id          text UNIQUE NOT NULL     -- public identifier
+client_secret_hash text NULL                -- null for public/native clients
+name               text NOT NULL
+redirect_uris      jsonb NOT NULL DEFAULT '[]'
+grant_types        jsonb NOT NULL DEFAULT '["authorization_code"]'
+scopes             jsonb NOT NULL DEFAULT '["openid","profile"]'
+status             text NOT NULL DEFAULT 'active'
+created_at         timestamptz NOT NULL
+updated_at         timestamptz NOT NULL
+```
+
+This table is deliberately minimal. Full OIDC authorization-code + token tables will arrive when the Login with Nally flow is implemented.
 
 ## Relationship to existing `users` table
 
@@ -81,6 +148,7 @@ This branch intentionally introduces the new tables side-by-side. A later migrat
 1. Create a `nally_accounts` row for each existing user.
 2. Insert a matching `account_identities` row with `provider = 'telegram'`.
 3. Re-point foreign keys (or keep a compatibility view) so memories, conversations, etc. belong to the Nally Account.
+4. Optionally issue the first `account_sessions` for mobile clients.
 
 Until that migration lands, the new tables are inert and safe to merge.
 
@@ -88,5 +156,13 @@ Until that migration lands, the new tables are inert and safe to merge.
 
 ```text
 docs/identity/nally-account.md     ← this document
-src/db/schema-accounts.ts          ← Drizzle definitions for the two tables
+src/db/schema-accounts.ts          ← Drizzle definitions for all account tables
 ```
+
+## Next steps (ordered)
+
+1. ~~Data model~~ ← you are here
+2. Automatic migration of existing Telegram users → Nally Accounts
+3. Session issuance & validation helpers
+4. First-party "Continue with Nally" on Android / web
+5. Full **Login with Nally** OIDC surface for external clients
