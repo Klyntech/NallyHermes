@@ -71,8 +71,8 @@ export function verifyTelegramLoginWidget(data: unknown): { telegramId: string }
   const hash = typeof value.hash === "string" ? value.hash : "";
   const id = typeof value.id === "number" || typeof value.id === "string" ? String(value.id) : "";
   const authDate = typeof value.auth_date === "number" ? value.auth_date
-    : typeof value.auth_date === "string" && /^\\d+$/.test(value.auth_date) ? Number(value.auth_date) : NaN;
-  if (!/^\\d{1,20}$/.test(id) || typeof value.first_name !== "string" ||
+    : typeof value.auth_date === "string" && /^\d+$/.test(value.auth_date) ? Number(value.auth_date) : NaN;
+  if (!/^\d{1,20}$/.test(id) || typeof value.first_name !== "string" ||
       !Number.isSafeInteger(authDate) || !/^[a-f0-9]{64}$/i.test(hash)) {
     throw new TelegramLoginError("Telegram sign-in response is invalid.", 401);
   }
@@ -88,8 +88,8 @@ export function verifyTelegramLoginWidget(data: unknown): { telegramId: string }
       }
       return [key, String(field)] as const;
     })
-    .sort(([a], [b]) => a.localeCompare(b));
-  const dataCheckString = fields.map(([key, field]) => `${key}=${field}`).join("\\n");
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  const dataCheckString = fields.map(([key, field]) => `${key}=${field}`).join("\n");
   const secretKey = createHash("sha256").update(config.TELEGRAM_BOT_TOKEN).digest();
   const expected = createHmac("sha256", secretKey).update(dataCheckString).digest();
   const supplied = Buffer.from(hash, "hex");
