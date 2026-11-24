@@ -2,6 +2,7 @@ package com.klyntech.nallyhermes.ui
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -63,12 +64,16 @@ internal class NativeVoiceSession(
     @Volatile private var noiseSuppressor: NoiseSuppressor? = null
     private var captureJob: Job? = null
     private var playbackJob: Job? = null
-    private val playbackChunks = LinkedBlockingQueue<ByteArray>(64)
+    // Bounded by bytes (MAX_PLAYBACK_QUEUE_BYTES), not by chunk count: provider chunk sizes vary a lot.
+    private val playbackChunks = LinkedBlockingQueue<ByteArray>()
     private val playbackLock = Any()
     private val playbackQueuedBytes = AtomicInteger(0)
     @Volatile private var playbackReceivedBytes = 0L
     @Volatile private var playbackReceivedChunks = 0
     private var audioFocusRequest: AudioFocusRequest? = null
+    // Communication audio state (call mode + loudspeaker routing), restored when the call ends.
+    private var previousAudioMode: Int? = null
+    private var speakerphoneForced = false
 
     fun connect() {
         callback(Event.State(VoiceUiState.Connecting))
@@ -110,21 +115,26 @@ internal class NativeVoiceSession(
                 if (playbackReceivedChunks == 1) {
                     Log.i(TAG, "First TTS PCM received: bytes=${chunk.size}, rms=${pcmLevel(chunk)}")
                 }
-                var failure: String? = null
+                var overflowed = false
                 synchronized(playbackLock) {
                     if (stopped.get() || phase != "speaking") return
                     val queuedBytes = playbackQueuedBytes.addAndGet(chunk.size)
                     if (queuedBytes > MAX_PLAYBACK_QUEUE_BYTES) {
                         playbackQueuedBytes.addAndGet(-chunk.size)
-                        failure = "playback memory limit"
-                    } else if (!playbackChunks.offer(chunk)) {
-                        playbackQueuedBytes.addAndGet(-chunk.size)
-                        failure = "playback backpressure"
+                        overflowed = true
+                    } else {
+                        playbackChunks.offer(chunk)
                     }
                 }
-                if (failure != null) {
-                    callback(Event.Error("Audio playback fell behind the live response."))
-                    stop(failure!!)
+                if (overflowed) {
+                    // Only this reply is lost; the call stays up. The server paces audio, so this
+                    // should only happen against an older server that bursts the whole reply.
+                    Log.w(TAG, "Playback backlog exceeded $MAX_PLAYBACK_QUEUE_BYTES bytes; interrupting this reply")
+                    phase = "listening"
+                    socket?.send(JSONObject().put("type", "interrupt").toString())
+                    clearPlayback()
+                    callback(Event.Caption("That reply was too long to play. Please ask again.", true))
+                    callback(Event.State(VoiceUiState.Listening))
                     return
                 }
                 if (phase == "speaking") callback(Event.AudioLevel(pcmLevel(chunk)))
@@ -213,6 +223,8 @@ internal class NativeVoiceSession(
                     stop("unsupported format")
                     return
                 }
+                // Call mode + loudspeaker routing must be in place before focus, capture and playback.
+                configureCommunicationAudio()
                 if (!requestAudioFocus()) {
                     callback(Event.Error("Audio focus is unavailable."))
                     stop("audio focus")
@@ -249,10 +261,7 @@ internal class NativeVoiceSession(
             "audio_end" -> {
                 // Empty frame is a drain marker; the playback worker switches back to listening only
                 // after all PCM already received has reached AudioTrack.
-                if (!playbackChunks.offer(ByteArray(0))) {
-                    callback(Event.Error("Audio playback fell behind the live response."))
-                    stop("playback backpressure")
-                }
+                playbackChunks.offer(ByteArray(0))
             }
             "assistant_end" -> {
                 // A turn may validly have no spoken output. Do not leave the UI in Thinking;
@@ -272,6 +281,16 @@ internal class NativeVoiceSession(
                 val message = event.optString("message").ifBlank {
                     event.optString("code").ifBlank { "Voice service error." }
                 }
+                if (event.optString("scope") == "turn") {
+                    // The server ended only this reply (TTS timeout, agent error, approval needed...).
+                    // The call and live transcription are still up, so keep listening.
+                    Log.w(TAG, "Voice turn error ${event.optString("code")}: $message")
+                    phase = "listening"
+                    clearPlayback()
+                    callback(Event.Caption(message, true))
+                    callback(Event.State(VoiceUiState.Listening))
+                    return
+                }
                 lastServerError = message
                 phase = "server_error"
                 callback(Event.Error(message))
@@ -280,13 +299,70 @@ internal class NativeVoiceSession(
         }
     }
 
+    /**
+     * Put the device in a real voice-call configuration. Without this, USAGE_VOICE_COMMUNICATION audio
+     * is routed to the earpiece on many phones (quiet or "silent" speaking), and the platform echo
+     * canceller cannot engage, so Nally's own voice gets re-transcribed and interrupts her.
+     */
+    private fun configureCommunicationAudio() {
+        if (previousAudioMode != null) return
+        try {
+            previousAudioMode = audioManager.mode
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            if (Build.VERSION.SDK_INT >= 31) {
+                val devices = audioManager.availableCommunicationDevices
+                // Respect a connected headset; otherwise use the loudspeaker like other voice assistants.
+                val target = devices.firstOrNull { it.type in EXTERNAL_ROUTE_TYPES }
+                    ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                if (target != null) {
+                    val selected = audioManager.setCommunicationDevice(target)
+                    Log.i(TAG, "Communication device type=${target.type} selected=$selected")
+                }
+            } else {
+                configureLegacyRoute()
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "Could not configure communication audio", error)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun configureLegacyRoute() {
+        val headset = audioManager.isWiredHeadsetOn || audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+        audioManager.isSpeakerphoneOn = !headset
+        speakerphoneForced = !headset
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreLegacyRoute() {
+        audioManager.isSpeakerphoneOn = false
+    }
+
+    private fun restoreCommunicationAudio() {
+        val previous = previousAudioMode ?: return
+        previousAudioMode = null
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                audioManager.clearCommunicationDevice()
+            } else if (speakerphoneForced) {
+                restoreLegacyRoute()
+            }
+            audioManager.mode = previous
+        } catch (error: Exception) {
+            Log.w(TAG, "Could not restore audio routing", error)
+        }
+        speakerphoneForced = false
+    }
+
     private fun requestAudioFocus(): Boolean = try {
         if (Build.VERSION.SDK_INT >= 26) {
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setOnAudioFocusChangeListener { change ->
-                    if (change <= AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    // A notification that merely asks to duck (LOSS_TRANSIENT_CAN_DUCK) must not cancel
+                    // Nally's reply; only a real loss (phone call, another player) does.
+                    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
                         phase = "interrupted"
                         socket?.send(JSONObject().put("type", "interrupt").toString())
                         clearPlayback()
@@ -309,21 +385,24 @@ internal class NativeVoiceSession(
         val minimum = AudioRecord.getMinBufferSize(16_000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minimum <= 0) { callback(Event.Error("This device cannot capture 16 kHz mono audio.")); stop("capture unsupported"); return }
         try {
-            val record = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16_000,
+            // VOICE_COMMUNICATION enables the platform's call-grade echo cancellation, noise suppression
+            // and gain control. VOICE_RECOGNITION typically disables them, which defeats barge-in.
+            val record = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16_000,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum, 6_400))
             if (record.state != AudioRecord.STATE_INITIALIZED) {
                 record.release(); callback(Event.Error("Microphone could not be initialized.")); stop("mic initialization"); return
             }
             recorder = record
-            record.startRecording()
-            // Voice remains open during playback for barge-in. Platform AEC prevents the
-            // loudspeaker's own TTS audio from being re-transcribed as the user's speech.
+            // Voice remains open during playback for barge-in. Attach the effects BEFORE recording
+            // starts so they apply from the first frame; they prevent the loudspeaker's own TTS audio
+            // from being re-transcribed as the user's speech.
             echoCanceler = runCatching {
                 if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(record.audioSessionId)?.apply { enabled = true } else null
             }.getOrNull()
             noiseSuppressor = runCatching {
                 if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(record.audioSessionId)?.apply { enabled = true } else null
             }.getOrNull()
+            record.startRecording()
             captureJob = sessionScope.launch {
                 val frame = ByteArray(3_200) // 100 ms, safely below the server's 32 KB frame cap
                 var queueBackedUpSince = 0L
@@ -500,6 +579,7 @@ internal class NativeVoiceSession(
             audioManager.abandonAudioFocus(null)
         }
         audioFocusRequest = null
+        restoreCommunicationAudio()
     }
 
     private companion object {
@@ -509,10 +589,18 @@ internal class NativeVoiceSession(
         const val SOCKET_QUEUE_STALL_MS = 5_000L
         const val SOCKET_QUEUE_POLL_MS = 100L
         const val MAX_PLAYBACK_FRAME_BYTES = 32_000
-        // 256 KiB is about 8.2 seconds of 16 kHz mono PCM (32,000 bytes/second).
-        // This keeps several seconds of burst headroom without allowing stale speech
-        // to accumulate into a large memory-heavy playback backlog.
-        const val MAX_PLAYBACK_QUEUE_BYTES = 256 * 1024
+        // 2 MiB is about 65 seconds of 16 kHz mono PCM (32,000 bytes/second). The current server
+        // paces audio to a few seconds ahead, so this is only a safety net; an older server that sends
+        // a whole reply in a burst is still handled. Overflow drops that reply, not the call.
+        const val MAX_PLAYBACK_QUEUE_BYTES = 2 * 1024 * 1024
+        // Headsets/accessories to prefer over the loudspeaker (API 31+ communication-device routing).
+        val EXTERNAL_ROUTE_TYPES = setOf(
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET
+        )
         val sharedClient = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)

@@ -569,11 +569,15 @@ private fun beginVoiceSession(
         try {
             val ticket = api.createVoiceTicket()
             var serverErrorShown = false
+            var reachedListening = false
             val voice = NativeVoiceSession(context.applicationContext, api.voiceWebSocketUrl(ticket)) { event ->
                 Handler(Looper.getMainLooper()).post {
                     when (event) {
                         NativeVoiceSession.Event.Connected -> onState(VoiceUiState.Connecting)
-                        is NativeVoiceSession.Event.State -> onState(event.state)
+                        is NativeVoiceSession.Event.State -> {
+                            if (event.state == VoiceUiState.Listening) reachedListening = true
+                            onState(event.state)
+                        }
                         is NativeVoiceSession.Event.Caption -> onCaption(event.text)
                         is NativeVoiceSession.Event.AudioLevel -> onAudioLevel(event.value)
                         is NativeVoiceSession.Event.Error -> {
@@ -582,11 +586,10 @@ private fun beginVoiceSession(
                         }
                         NativeVoiceSession.Event.Ended -> {
                             WakeWordService.resumeAfterVoiceCall(context)
-                            if (!serverErrorShown) {
-                                onState(VoiceUiState.Ended)
+                            onState(VoiceUiState.Ended)
+                            // A normal hang-up after the call was live must not replace "Call ended." with an error.
+                            if (!serverErrorShown && !reachedListening) {
                                 onError("Call ended before voice was ready.")
-                            } else {
-                                onState(VoiceUiState.Ended)
                             }
                             onEnded()
                         }
