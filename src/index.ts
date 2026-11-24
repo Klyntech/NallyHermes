@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { config } from "./config.js";
 import { db, ensureDatabase } from "./db/client.js";
@@ -1020,6 +1021,35 @@ const server = createServer((req, res) => {
     void handleMobileApiRequest(req, res, {
       submitMessage: submitMobileMessage,
       getActivity: getMobileActivity
+    });
+    return;
+  }
+  if (req.method === "GET" && (pathname === "/account" || pathname === "/account/" || pathname.startsWith("/account/"))) {
+    const asset = pathname === "/account" || pathname === "/account/"
+      ? "index.html"
+      : pathname === "/account/app.js" ? "app.js"
+      : pathname === "/account/styles.css" ? "styles.css" : null;
+    if (!asset) {
+      res.writeHead(404);
+      res.end("Not found");
+      return;
+    }
+    const contentTypes: Record<string, string> = {
+      "index.html": "text/html; charset=utf-8",
+      "app.js": "text/javascript; charset=utf-8",
+      "styles.css": "text/css; charset=utf-8"
+    };
+    void readFile(`${process.cwd()}/web/account/${asset}`).then((body) => {
+      res.writeHead(200, {
+        "content-type": contentTypes[asset]!,
+        "cache-control": asset === "index.html" ? "no-cache" : "public, max-age=300",
+        "x-content-type-options": "nosniff"
+      });
+      res.end(body);
+    }).catch((error) => {
+      console.error("Nally Account UI asset could not be read:", error);
+      if (!res.headersSent) res.writeHead(404);
+      res.end("Not found");
     });
     return;
   }
