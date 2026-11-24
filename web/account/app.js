@@ -123,16 +123,11 @@ async function finishTelegramCallback() {
   try {
     const endpoint = flow.action === "link"
       ? "/api/accounts/telegram/link" : "/api/accounts/telegram/login";
-    await api(endpoint, {
+    const result = await api(endpoint, {
       method: "POST",
       body: JSON.stringify({ idToken, nonce: flow.nonce })
     }, flow.action === "link");
-    if (flow.action === "login") {
-      const result = await api("/api/accounts/telegram/login", {
-        method: "POST", body: JSON.stringify({ idToken, nonce: flow.nonce })
-      });
-      setToken(result.accessToken);
-    }
+    if (flow.action === "login") setToken(result.accessToken);
     sessionStorage.removeItem("nally_telegram_flow");
     history.replaceState(null, "", "/account");
     await loadAccount();
