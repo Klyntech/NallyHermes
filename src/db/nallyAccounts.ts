@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "./client.js";
 import { accountIdentities, accountSessions, nallyAccounts, users } from "./schema.js";
 
@@ -70,7 +70,7 @@ function hashSessionToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
-async function createSession(accountId: string): Promise<CreatedNallyAccountSession> {
+export async function createNallyAccountSession(accountId: string): Promise<CreatedNallyAccountSession> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await db.insert(accountSessions).values({
@@ -125,7 +125,7 @@ export async function ensureNallyAccountSchema(): Promise<void> {
       WHERE account_id IS NOT NULL
       ON CONFLICT (provider, subject) DO NOTHING`
   ];
-  for (const statement of statements) await db.execute((await import("drizzle-orm")).sql.raw(statement));
+  for (const statement of statements) await db.execute(sql.raw(statement));
 }
 
 export async function registerNallyAccount(input: {
@@ -148,7 +148,7 @@ export async function registerNallyAccount(input: {
       passwordHash
     }).returning({ id: nallyAccounts.id });
     if (!account) throw new Error("Account creation returned no row.");
-    return await createSession(account.id);
+    return await createNallyAccountSession(account.id);
   } catch (error) {
     if (error instanceof NallyAccountError) throw error;
     const message = error instanceof Error ? error.message : "";
@@ -170,11 +170,11 @@ export async function loginNallyAccount(emailInput: string, password: string): P
   // Use a fixed-cost dummy hash for unknown accounts to reduce account-enumeration timing differences.
   const valid = account?.passwordHash
     ? await verifyPassword(password, account.passwordHash)
-    : await verifyPassword(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    : (await scrypt(password, Buffer.alloc(16), SCRYPT_KEY_LENGTH, { N: 16384, r: 8, p: 1 }), false);
   if (!account || !valid || account.status !== "active" || !account.passwordHash) {
     throw new NallyAccountError("Email or password is incorrect.", "invalid_credentials");
   }
-  return createSession(account.id);
+  return createNallyAccountSession(account.id);
 }
 
 export async function authenticateNallyAccountSession(token: string): Promise<NallyAccountSession | null> {
