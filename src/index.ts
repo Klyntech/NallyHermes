@@ -36,12 +36,38 @@ import {
   grantAlwaysAllow,
   markPending
 } from "./agent/approvals.js";
+import { acceptLearnedSkill, deprecateLearnedSkill, getLearnedSkill } from "./agent/learning/store.js";
+import { setSkillProposalNotifier } from "./agent/learning/review.js";
+import {
+  formatSkillProposalMessage,
+  parseSkillCallbackData,
+  skillCallbackAckText,
+  skillCallbackResultText,
+  skillProposalKeyboard
+} from "./telegram/skillProposal.js";
 import { callV22Operation } from "./connectors/v22.js";
 import { fileIO, memoryTool, scheduleTool, workflowTool } from "./agent/tools/extended.js";
 import { calendarTool } from "./agent/calendar.js";
 import { callGitHubOperation } from "./connectors/github.js";
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
+
+setSkillProposalNotifier(async (proposal) => {
+  const chatId = Number(proposal.telegramId);
+  if (!Number.isFinite(chatId)) return;
+  await bot.api.sendMessage(
+    chatId,
+    formatSkillProposalMessage({
+      id: proposal.skillId,
+      name: proposal.name,
+      description: proposal.description,
+      domain: proposal.domain,
+      rationale: proposal.rationale
+    }),
+    { reply_markup: skillProposalKeyboard(proposal.skillId) }
+  );
+});
+
 
 async function notifyApprovalIfNeeded(chatId: number | undefined, event: ProgressEvent): Promise<boolean> {
   if (!chatId) return false;
@@ -360,6 +386,39 @@ const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, s
 
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data ?? "";
+
+  const skillCb = parseSkillCallbackData(data);
+  if (skillCb) {
+    const telegramId = String(ctx.from?.id ?? "");
+    await ctx.answerCallbackQuery({ text: skillCallbackAckText(skillCb.decision) });
+    const skill = await getLearnedSkill(telegramId, skillCb.skillId);
+    if (!skill) {
+      await ctx.editMessageText("Skill proposal not found or not yours.");
+      return;
+    }
+    if (skillCb.decision === "accept") {
+      const result = await acceptLearnedSkill(telegramId, skill.id);
+      if ("error" in result) {
+        await ctx.editMessageText(`Could not accept skill: ${result.error}`);
+        return;
+      }
+      await ctx.editMessageText(skillCallbackResultText("accept", result.name));
+      return;
+    }
+    if (skillCb.decision === "reject") {
+      const result = await deprecateLearnedSkill(telegramId, skill.id);
+      if ("error" in result) {
+        await ctx.editMessageText(`Could not reject skill: ${result.error}`);
+        return;
+      }
+      await ctx.editMessageText(skillCallbackResultText("reject", result.name));
+      return;
+    }
+    // edit — leave proposed, prompt user
+    await ctx.editMessageText(skillCallbackResultText("edit", skill.name));
+    return;
+  }
+
   if (!data.startsWith("appr:")) return;
   const telegramId = String(ctx.from?.id ?? "");
   const parts = data.split(":");
