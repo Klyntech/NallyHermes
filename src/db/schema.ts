@@ -7,7 +7,8 @@ import {
   jsonb,
   index,
   integer,
-  uniqueIndex
+  uniqueIndex,
+  boolean
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -235,4 +236,65 @@ export const pendingApprovals = pgTable("pending_approvals", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true })
 }, (table) => [
   index("pending_approvals_user_status_idx").on(table.telegramId, table.status),
+]);
+
+/* -------------------------------------------------------------------------- */
+/*  Self-Improvement foundations (Grok-Self-Improvement-3.6)                   */
+/* -------------------------------------------------------------------------- */
+
+/** High-level execution trajectories for the learning loop. */
+export const trajectories = pgTable("trajectories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  /** Short human-readable summary of what the user asked */
+  requestSummary: text("request_summary").notNull(),
+  /** Domain tags: law | code | trading | cross | general */
+  domains: jsonb("domains").$type<string[]>().default([]).notNull(),
+  /** Ordered list of tool names / high-level steps that were used */
+  steps: jsonb("steps").$type<Array<{ tool?: string; summary: string; success: boolean }>>().default([]).notNull(),
+  /** Overall outcome */
+  outcome: text("outcome").notNull().default("success"), // success | partial | failed
+  /** Whether this trajectory looks reusable enough to propose a skill */
+  reusable: boolean("reusable").notNull().default(false),
+  /** Optional link to a skill that was created/updated from this trajectory */
+  skillId: uuid("skill_id"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("trajectories_user_id_idx").on(table.userId),
+  index("trajectories_outcome_idx").on(table.userId, table.outcome),
+  index("trajectories_created_idx").on(table.userId, table.createdAt)
+]);
+
+/**
+ * Learned / proposed skills.
+ * Repository skills (file-based) remain the source of truth for static packages.
+ * This table holds agent-proposed and user-accepted dynamic skills.
+ */
+export const learnedSkills = pgTable("learned_skills", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** kebab-case name, unique per user */
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  /** Full SKILL.md body (frontmatter + content) */
+  body: text("body").notNull(),
+  /** law | code | trading | cross | general */
+  domain: text("domain").notNull().default("general"),
+  status: text("status").notNull().default("proposed"), // proposed | accepted | active | deprecated
+  /** How many times this skill has been successfully applied */
+  successCount: integer("success_count").notNull().default(0),
+  /** Source trajectory that produced the initial proposal */
+  sourceTrajectoryId: uuid("source_trajectory_id").references(() => trajectories.id, { onDelete: "set null" }),
+  /** Optional link into the future Agency Graph (Project node) */
+  projectId: uuid("project_id"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true })
+}, (table) => [
+  index("learned_skills_user_id_idx").on(table.userId),
+  index("learned_skills_status_idx").on(table.userId, table.status),
+  uniqueIndex("learned_skills_user_name_idx").on(table.userId, table.name)
 ]);
