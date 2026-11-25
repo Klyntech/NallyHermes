@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { config } from "../config.js";
 import { db } from "../db/client.js";
 import {
@@ -189,14 +189,12 @@ async function verifyMagicLink(req: IncomingMessage, res: ServerResponse): Promi
 
   try {
     // A single conditional UPDATE makes a challenge single-use under concurrent requests.
-    const consumed = await db.execute(
-      `UPDATE magic_link_challenges
+    const consumed = await db.execute(sql`UPDATE magic_link_challenges
        SET consumed_at = now()
-       WHERE token_hash = '${sha256(token)}'
+       WHERE token_hash = ${sha256(token)}
          AND consumed_at IS NULL
          AND expires_at > now()
-       RETURNING account_id, email`
-    );
+       RETURNING account_id, email`);
     const row = (consumed as unknown as { rows?: Array<{ account_id: string; email: string }> }).rows?.[0];
     if (!row?.account_id) {
       json(res, 400, { error: "This sign-in link is invalid or expired." });
