@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the app canvas so a cold start never flashes white before Compose draws. -->
+    <color name="nally_launch_background">#0B0C0B</color>
+
+    <style name="Theme.NallyHermes.Launch" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/nally_launch_background</item>
+        <item name="android:colorBackground">@color/nally_launch_background</item>
+    </style>
+</resources>
