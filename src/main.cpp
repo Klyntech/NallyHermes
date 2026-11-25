@@ -1,5 +1,6 @@
 #include "deskdear/device_identity.hpp"
 #include "deskdear/permissions.hpp"
+#include "deskdear/platform.hpp"
 
 #include <exception>
 #include <iostream>
@@ -33,21 +34,16 @@ int main(int argc, char** argv) {
     try {
         const auto identity = deskdear::DeviceIdentityStore::load_or_create();
         const deskdear::PermissionSet permissions;
+        const auto platform = deskdear::detect_platform();
         std::cout << "NallyDeskDear " << version << '\n'
                   << "Device ID: " << identity.id << '\n'
                   << "Device name: " << identity.display_name << '\n'
                   << "Pairing: not paired\n"
                   << "Control session: inactive\n"
                   << "Permissions: all denied\n"
-                  << "Platform adapter: " 
-#if defined(_WIN32)
-                  << "Windows"
-#elif defined(__linux__)
-                  << "Linux (desktop portal integration pending)"
-#else
-                  << "unsupported"
-#endif
-                  << '\n';
+                  << "Platform: " << platform.operating_system << '\n'
+                  << "Desktop: " << platform.desktop_environment << '\n'
+                  << "Display server: " << platform.display_server << '\n';
         (void)permissions;
         return 0;
     } catch (const std::exception& error) {
