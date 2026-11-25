@@ -1,10 +1,8 @@
 package com.klyntech.nallyhermes.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -33,18 +31,6 @@ private val ProductTypography = Typography(
     labelSmall = TextStyle(fontFamily = ProductFont, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.25.sp)
 )
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF626F55), onPrimary = Color.White,
-    primaryContainer = Color(0xFFE8EBE3), onPrimaryContainer = Color(0xFF30392A),
-    secondary = Color(0xFF777A75), onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEBECE7), onSecondaryContainer = Color(0xFF343731),
-    background = Color(0xFFF4F4F1), onBackground = Color(0xFF20221F),
-    surface = Color(0xFFFFFFFF), onSurface = Color(0xFF20221F),
-    surfaceVariant = Color(0xFFEBECE7), onSurfaceVariant = Color(0xFF777A75),
-    outline = Color(0xFF9A9D95), outlineVariant = Color(0xFFD9DAD5),
-    error = Color(0xFFB3261E), onError = Color.White
-)
-
 private val DarkColors = darkColorScheme(
     primary = Color(0xFFA7B09A), onPrimary = Color(0xFF252B20),
     primaryContainer = Color(0xFF343B30), onPrimaryContainer = Color(0xFFE0E6D8),
@@ -57,8 +43,11 @@ private val DarkColors = darkColorScheme(
     error = Color(0xFFF2B8B5), onError = Color(0xFF601410)
 )
 
+/**
+ * The login, welcome and voice screens use a hard-coded dark palette, so following a light system
+ * theme produced a half-light, half-dark app. Dark is used everywhere until a full light theme exists.
+ */
 @Composable
 fun NallyHermesTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) DarkColors else LightColors
-    MaterialTheme(colorScheme = colors, typography = ProductTypography, content = content)
+    MaterialTheme(colorScheme = DarkColors, typography = ProductTypography, content = content)
 }
