@@ -24,7 +24,8 @@ On Windows, run `build\Release\deskdear.exe --status` for a multi-configuration 
 - C++20 executable and CMake build.
 - Stable local device identifier, stored in the user's configuration directory.
 - Capability model that denies all permissions by default.
-- Status and initialization CLI.
+- Status and initialization CLI with Windows / GNOME / KDE and Wayland / X11 environment detection.
+- CTest coverage for the deny-by-default permission model.
 
 ## Security boundary
 
