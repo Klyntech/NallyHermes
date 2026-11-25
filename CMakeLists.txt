@@ -28,3 +28,14 @@ else()
 endif()
 
 install(TARGETS deskdear RUNTIME DESTINATION bin)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(deskdear_permissions_test
+        tests/permissions_test.cpp
+        src/permissions.cpp
+    )
+    target_include_directories(deskdear_permissions_test PRIVATE include)
+    target_compile_features(deskdear_permissions_test PRIVATE cxx_std_20)
+    add_test(NAME deskdear_permissions COMMAND deskdear_permissions_test)
+endif()
