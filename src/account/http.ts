@@ -52,6 +52,11 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown> |
 
 function allowedByRateLimit(key: string): boolean {
   const now = Date.now();
+  if (rateLimits.size > 5_000) {
+    for (const [entry, value] of rateLimits) {
+      if (value.resetAt <= now) rateLimits.delete(entry);
+    }
+  }
   const current = rateLimits.get(key);
   if (!current || current.resetAt <= now) {
     rateLimits.set(key, { count: 1, resetAt: now + 15 * 60_000 });
@@ -110,6 +115,7 @@ async function sendMagicLink(email: string, token: string): Promise<void> {
   const link = new URL("/account/verify", accountUrl);
   link.searchParams.set("token", token);
   const response = await fetch("https://api.resend.com/emails", {
+    signal: AbortSignal.timeout(10_000),
     method: "POST",
     headers: {
       authorization: `Bearer ${config.RESEND_API_KEY}`,
