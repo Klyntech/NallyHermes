@@ -11,11 +11,21 @@ This integration branch is based on `Manus-Work-Full-Deplex-v3.5`. The existing 
 - Combined Drizzle schema registration so the account tables are available through the existing database client.
 - Opaque account session primitives that store only keyed HMAC token hashes.
 
+## Passwordless email wiring
+
+- `POST /api/account/magic-link` accepts JSON `{ "email": "..." }` and sends through Resend.
+- `POST /api/account/verify` accepts JSON `{ "token": "..." }`, consumes the challenge once, marks the email verified, and sets an HttpOnly session cookie.
+- Tokens are random, stored as SHA-256 hashes, and expire after 15 minutes.
+- Responses do not disclose whether an email address has an account.
+- Basic in-process request throttling is applied per email and source IP; a shared rate limiter is still needed before horizontally scaling.
+
+Configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `NALLY_ACCOUNT_URL`, and a dedicated `ACCOUNT_SESSION_SECRET` (at least 32 characters) in Render. Verify the sending domain in Resend and publish its required DNS records first. Use an account URL on the same site as the API until an explicit credentialed CORS policy is added.
+
 ## Not enabled yet
 
 - No account migration/backfill runs automatically.
-- No email is sent and no magic-link endpoint is exposed yet.
 - No OAuth/OIDC endpoint is exposed yet.
+- No account UI verification page is connected yet.
 - No existing Telegram/mobile authentication route is changed.
 - No production database migration or Render deployment is performed by this PR.
 
