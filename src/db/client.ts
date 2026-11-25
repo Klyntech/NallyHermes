@@ -58,8 +58,8 @@ export async function ensureDatabase(): Promise<void> {
       client_secret_hash text,
       name text NOT NULL,
       redirect_uris jsonb NOT NULL DEFAULT '[]'::jsonb,
-      grant_types jsonb NOT NULL DEFAULT '[\\"authorization_code\\"]'::jsonb,
-      scopes jsonb NOT NULL DEFAULT '[\\"openid\\",\\"profile\\"]'::jsonb,
+      grant_types jsonb NOT NULL DEFAULT '[\"authorization_code\"]'::jsonb,
+      scopes jsonb NOT NULL DEFAULT '[\"openid\",\"profile\"]'::jsonb,
       status text NOT NULL DEFAULT 'active',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -73,7 +73,7 @@ export async function ensureDatabase(): Promise<void> {
       redirect_uri text NOT NULL,
       code_challenge text NOT NULL,
       code_challenge_method text NOT NULL DEFAULT 'S256',
-      scopes jsonb NOT NULL DEFAULT '[\\"openid\\",\\"profile\\"]'::jsonb,
+      scopes jsonb NOT NULL DEFAULT '[\"openid\",\"profile\"]'::jsonb,
       expires_at timestamptz NOT NULL,
       consumed_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now()
@@ -85,7 +85,7 @@ export async function ensureDatabase(): Promise<void> {
       token_hash text NOT NULL UNIQUE,
       client_id text NOT NULL,
       account_id uuid NOT NULL REFERENCES nally_accounts(id) ON DELETE CASCADE,
-      scopes jsonb NOT NULL DEFAULT '[\\"openid\\",\\"profile\\"]'::jsonb,
+      scopes jsonb NOT NULL DEFAULT '[\"openid\",\"profile\"]'::jsonb,
       expires_at timestamptz NOT NULL,
       revoked_at timestamptz,
       parent_token_id uuid,
