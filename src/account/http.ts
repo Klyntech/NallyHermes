@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { config } from "../config.js";
+import { accountPage } from "./page.js";
 import { db } from "../db/client.js";
 import {
   accountSessions,
@@ -230,6 +231,17 @@ export async function handleAccountApiRequest(
   res: ServerResponse
 ): Promise<boolean> {
   const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+  if (req.method === "GET" && (pathname === "/account" || pathname === "/account/" || pathname === "/account/verify")) {
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    });
+    res.end(accountPage);
+    return true;
+  }
   if (pathname === "/api/account/magic-link" && req.method === "POST") {
     await requestMagicLink(req, res);
     return true;
