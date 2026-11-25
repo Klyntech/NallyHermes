@@ -7,6 +7,7 @@ add_executable(deskdear
     src/main.cpp
     src/device_identity.cpp
     src/permissions.cpp
+    src/platform.cpp
 )
 target_include_directories(deskdear PRIVATE include)
 target_compile_features(deskdear PRIVATE cxx_std_20)
