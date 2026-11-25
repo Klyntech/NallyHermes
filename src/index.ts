@@ -1015,7 +1015,7 @@ await bot.api.setMyCommands([
 
 const server = createServer((req, res) => {
   const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-  if (pathname.startsWith("/api/account/")) {
+  if (pathname.startsWith("/api/account/") || pathname === "/account" || pathname.startsWith("/account/")) {
     void handleAccountApiRequest(req, res).catch((error) => {
       console.error("Nally Account API request failed:", error);
       if (!res.headersSent) {
