@@ -3,13 +3,109 @@ import { drizzle } from "drizzle-orm/neon-http";
 import { sql } from "drizzle-orm";
 import { config } from "../config.js";
 import * as schema from "./schema.js";
+import * as accountSchema from "./schema-accounts.js";
+
+const combinedSchema = { ...schema, ...accountSchema };
 
 const neonSql = neon(config.DATABASE_URL);
-export const db = drizzle({ client: neonSql, schema });
+export const db = drizzle({ client: neonSql, schema: combinedSchema });
 
 /** Create the application schema safely during startup. Existing data is preserved. */
 export async function ensureDatabase(): Promise<void> {
   const statements = [
+    `CREATE TABLE IF NOT EXISTS nally_accounts (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      handle text,
+      display_name text,
+      email text,
+      email_verified_at timestamptz,
+      password_hash text,
+      timezone text NOT NULL DEFAULT 'Africa/Lagos',
+      status text NOT NULL DEFAULT 'active',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS nally_accounts_handle_idx ON nally_accounts(handle)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS nally_accounts_email_idx ON nally_accounts(email)",
+    "CREATE INDEX IF NOT EXISTS nally_accounts_status_idx ON nally_accounts(status)",
+    `CREATE TABLE IF NOT EXISTS account_identities (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      account_id uuid NOT NULL REFERENCES nally_accounts(id) ON DELETE CASCADE,
+      provider text NOT NULL,
+      provider_user_id text NOT NULL,
+      provider_username text,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      linked_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS account_identities_provider_user_idx ON account_identities(provider, provider_user_id)",
+    "CREATE INDEX IF NOT EXISTS account_identities_account_id_idx ON account_identities(account_id)",
+    `CREATE TABLE IF NOT EXISTS account_sessions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      account_id uuid NOT NULL REFERENCES nally_accounts(id) ON DELETE CASCADE,
+      token_hash text NOT NULL UNIQUE,
+      expires_at timestamptz NOT NULL,
+      revoked_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      last_seen_at timestamptz,
+      user_agent text,
+      ip_hint text
+    )`,
+    "CREATE INDEX IF NOT EXISTS account_sessions_account_id_idx ON account_sessions(account_id)",
+    "CREATE INDEX IF NOT EXISTS account_sessions_expires_at_idx ON account_sessions(expires_at)",
+    `CREATE TABLE IF NOT EXISTS oauth_clients (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id text NOT NULL UNIQUE,
+      client_secret_hash text,
+      name text NOT NULL,
+      redirect_uris jsonb NOT NULL DEFAULT '[]'::jsonb,
+      grant_types jsonb NOT NULL DEFAULT '["authorization_code"]'::jsonb,
+      scopes jsonb NOT NULL DEFAULT '["openid","profile"]'::jsonb,
+      status text NOT NULL DEFAULT 'active',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS oauth_clients_status_idx ON oauth_clients(status)",
+    `CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      code_hash text NOT NULL UNIQUE,
+      client_id text NOT NULL,
+      account_id uuid NOT NULL REFERENCES nally_accounts(id) ON DELETE CASCADE,
+      redirect_uri text NOT NULL,
+      code_challenge text NOT NULL,
+      code_challenge_method text NOT NULL DEFAULT 'S256',
+      scopes jsonb NOT NULL DEFAULT '["openid","profile"]'::jsonb,
+      expires_at timestamptz NOT NULL,
+      consumed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS oauth_authorization_codes_account_idx ON oauth_authorization_codes(account_id)",
+    "CREATE INDEX IF NOT EXISTS oauth_authorization_codes_expires_idx ON oauth_authorization_codes(expires_at)",
+    `CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      token_hash text NOT NULL UNIQUE,
+      client_id text NOT NULL,
+      account_id uuid NOT NULL REFERENCES nally_accounts(id) ON DELETE CASCADE,
+      scopes jsonb NOT NULL DEFAULT '["openid","profile"]'::jsonb,
+      expires_at timestamptz NOT NULL,
+      revoked_at timestamptz,
+      parent_token_id uuid,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS oauth_refresh_tokens_account_idx ON oauth_refresh_tokens(account_id)",
+    "CREATE INDEX IF NOT EXISTS oauth_refresh_tokens_client_idx ON oauth_refresh_tokens(client_id)",
+    "CREATE INDEX IF NOT EXISTS oauth_refresh_tokens_expires_idx ON oauth_refresh_tokens(expires_at)",
+    `CREATE TABLE IF NOT EXISTS magic_link_challenges (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      email text NOT NULL,
+      token_hash text NOT NULL UNIQUE,
+      account_id uuid REFERENCES nally_accounts(id) ON DELETE CASCADE,
+      expires_at timestamptz NOT NULL,
+      consumed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    "CREATE INDEX IF NOT EXISTS magic_link_challenges_email_created_idx ON magic_link_challenges(email, created_at)",
+    "CREATE INDEX IF NOT EXISTS magic_link_challenges_expires_idx ON magic_link_challenges(expires_at)",
+
     `CREATE TABLE IF NOT EXISTS users (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       telegram_id text NOT NULL UNIQUE,
