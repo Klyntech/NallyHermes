@@ -37,6 +37,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import com.klyntech.nallyhermes.WakeWordService
+import com.klyntech.nallyhermes.NallyAssistant
 import com.klyntech.nallyhermes.WakeWordPrefs
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -149,18 +150,32 @@ private data class AgentActivity(
     val elapsedMs: Long = 0L
 )
 
+private class TabTracker(var last: AppTab) { var direction = 1 }
+
 @Composable
 fun NallyHermesApp(
     onStartTelegramLogin: (TelegramLoginChallenge) -> Unit,
     loginEvents: StateFlow<TelegramLoginEvent?>,
     onLoginEventConsumed: () -> Unit,
-    openVoiceTick: Int = 0
+    openVoiceTick: Int = 0,
+    autoStartVoiceTick: Int = 0
 ) {
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CHAT.name) }
     LaunchedEffect(openVoiceTick) {
         if (openVoiceTick > 0) selectedTabName = AppTab.VOICE.name
     }
     val selectedTab = AppTab.valueOf(selectedTabName)
+    // Direction of travel between tabs: drives the shared-axis slide transitions below.
+    val tabTracker = remember { TabTracker(selectedTab) }
+    if (tabTracker.last != selectedTab) {
+        tabTracker.direction = if (selectedTab.ordinal > tabTracker.last.ordinal) 1 else -1
+        tabTracker.last = selectedTab
+    }
+    val tabDirection = tabTracker.direction
+    // Highest wake/assistant auto-start request already handed to the Voice tab.
+    var autoStartConsumed by rememberSaveable { mutableStateOf(0) }
+    // Back from Voice or Settings returns to Chat instead of leaving the app.
+    androidx.activity.compose.BackHandler(enabled = selectedTab != AppTab.CHAT) { selectedTabName = AppTab.CHAT.name }
     val tabStateHolder = rememberSaveableStateHolder()
     val chatListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     var chatDraft by rememberSaveable { mutableStateOf("") }
@@ -258,15 +273,23 @@ fun NallyHermesApp(
     // Auth screens get a solid canvas (no photo bleed at status / nav bars).
     // Paired app keeps the branded background treatment.
     val onAuthSurface = !paired || showPairingCode || !syncReady
-    Box(Modifier.fillMaxSize().background(if (onAuthSurface) Color(0xFF0B0C0B) else Color.Transparent)) {
-        if (!onAuthSurface) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B0C0B))) {
+        val photoAlpha by animateFloatAsState(
+            targetValue = if (onAuthSurface) 0f else 1f,
+            animationSpec = tween(520, easing = FastOutSlowInEasing),
+            label = "photoAlpha"
+        )
+        if (photoAlpha > 0.01f) {
             Image(
                 painter = painterResource(R.drawable.spiderman_bg),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = photoAlpha }
             )
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f)))
+            Box(
+                Modifier.fillMaxSize().graphicsLayer { alpha = photoAlpha }
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.82f))
+            )
         }
         val density = LocalDensity.current
         val imeVisible = WindowInsets.ime.getBottom(density) > with(density) { 6.dp.toPx() }
@@ -373,7 +396,7 @@ fun NallyHermesApp(
                             label = "chatTabScale"
                         )
                         val chatShift by animateFloatAsState(
-                            targetValue = if (chatVisible) 0f else -0.018f,
+                            targetValue = if (chatVisible) 0f else -0.05f * tabDirection,
                             animationSpec = tween(190, easing = FastOutSlowInEasing),
                             label = "chatTabShift"
                         )
@@ -413,14 +436,17 @@ fun NallyHermesApp(
 
                         androidx.compose.animation.AnimatedVisibility(
                             visible = selectedTab == AppTab.VOICE,
-                            enter = fadeIn(tween(190, easing = FastOutSlowInEasing)) +
-                                scaleIn(initialScale = 0.985f, animationSpec = tween(220, easing = FastOutSlowInEasing)),
+                            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { (it * 0.06f * tabDirection).toInt() } +
+                                scaleIn(initialScale = 0.985f, animationSpec = tween(260, easing = FastOutSlowInEasing)),
                             exit = fadeOut(tween(140, easing = FastOutSlowInEasing)) +
-                                scaleOut(targetScale = 0.992f, animationSpec = tween(140, easing = FastOutSlowInEasing)),
+                                slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { (-it * 0.06f * tabDirection).toInt() },
                             modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.VOICE) 2f else 0f)
                         ) {
                             VoiceScreen(
-                                api = api,
+                            api = api,
+                            autoStart = autoStartVoiceTick > autoStartConsumed,
+                            onAutoStartConsumed = { autoStartConsumed = autoStartVoiceTick },
                                 onSettings = { selectedTabName = AppTab.SETTINGS.name },
                                 onTextSubmitted = { text ->
                                     scope.launch {
@@ -438,10 +464,11 @@ fun NallyHermesApp(
 
                         androidx.compose.animation.AnimatedVisibility(
                             visible = selectedTab == AppTab.SETTINGS,
-                            enter = fadeIn(tween(190, easing = FastOutSlowInEasing)) +
-                                scaleIn(initialScale = 0.985f, animationSpec = tween(220, easing = FastOutSlowInEasing)),
+                            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { (it * 0.06f * tabDirection).toInt() } +
+                                scaleIn(initialScale = 0.985f, animationSpec = tween(260, easing = FastOutSlowInEasing)),
                             exit = fadeOut(tween(140, easing = FastOutSlowInEasing)) +
-                                scaleOut(targetScale = 0.992f, animationSpec = tween(140, easing = FastOutSlowInEasing)),
+                                slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { (-it * 0.06f * tabDirection).toInt() },
                             modifier = Modifier.fillMaxSize().zIndex(if (selectedTab == AppTab.SETTINGS) 2f else 0f)
                         ) {
                             tabStateHolder.SaveableStateProvider(AppTab.SETTINGS.name) {
@@ -1931,7 +1958,7 @@ private fun SettingsScreen(
         val ok = WakeWordService.start(context)
         wakeWordEnabled = ok && WakeWordPrefs.isEnabled(context)
         feedback = if (wakeWordEnabled) {
-            "On-device $phrase is listening with a persistent microphone notification. Tap its alert to open Voice; Android does not let an ordinary background service silently open the app. Listening pauses during live calls."
+            "On-device $phrase is listening. Android shows its microphone indicator while an app listens for a wake word, and no ordinary app can hide it. For an indicator-free way in, set Nally as your default assistant. Listening pauses during live calls."
         } else {
             WakeWordPrefs.lastError ?: "Could not start wake word. Check microphone and notification permissions, then try again."
         }
@@ -1986,9 +2013,8 @@ private fun SettingsScreen(
 
         SettingsSectionLabel("App")
         SettingsGroup {
-            SettingsNavRow(LucideR.drawable.lucide_ic_sun, "Appearance", appearanceLabel) {
-                appearanceLabel = when (appearanceLabel) { "System" -> "Dark"; "Dark" -> "Light"; else -> "System" }
-                feedback = "Theme preference: $appearanceLabel"
+            SettingsNavRow(LucideR.drawable.lucide_ic_sun, "Appearance", "Dark") {
+                feedback = "Nally uses its dark theme everywhere for now. A light theme is planned."
             }
             SettingsDivider()
             SettingsNavRow(LucideR.drawable.lucide_ic_layout_grid, "Widget", "Add from home screen") {
@@ -2039,9 +2065,19 @@ private fun SettingsScreen(
                     WakeWordPrefs.setEnabled(context, false)
                     WakeWordService.stop(context)
                     feedback = "Wake word off."
-                }
-            }
-        }
+                    }
+                    }
+                    SettingsDivider()
+                    SettingsNavRow(
+                        LucideR.drawable.lucide_ic_smartphone,
+                        "Default assistant",
+                        if (NallyAssistant.isDefaultAssistant(context)) "Nally · power button and gestures" else "Not set · opens Nally with no mic indicator",
+                        trailing = if (NallyAssistant.isDefaultAssistant(context)) "On" else "Set"
+                    ) {
+                        NallyAssistant.openAssistantSettings(context)
+                        feedback = "Choose Nally under Digital assistant app. Nally then opens straight into a call, with no microphone in use while idle."
+                    }
+                    }
 
         Spacer(Modifier.height(20.dp))
         SettingsSectionLabel("Account")
