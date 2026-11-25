@@ -1,19 +1,24 @@
 # Service branch: NallyDeskDear
 
-**Base:** `main`  
-**Pattern:** same as `NallPuter` / `NallyCreepyCrawley` — dedicated service branch.
+**Product:** NallyDeskDear  
+**Role:** C++ desktop device agent  
+**Control plane:** NallyHermes + Device System  
+**Initial platforms:** Windows, Ubuntu GNOME, KDE Plasma
 
-| | |
-|--|--|
-| **Product** | NallyDeskDear |
-| **Role** | Desktop device agent — full computer use (apps, terminal, later UI) under approval |
-| **Control plane** | NallyHermes mainline + Device System (`Grok-Device-System-3.7`) |
-| **Siblings** | `NallPuter`, `NallyCreepyCrawley`, `NallyMobileCompanion` |
+## Architecture
 
-## Build on this branch
+- C++20 core: device identity, lifecycle, capability checks, and protocol types.
+- Platform adapters: Windows APIs; Linux desktop integration through XDG Desktop Portal / PipeWire, with GNOME and KDE coverage.
+- Control plane client: authenticated outbound connection, pairing, heartbeat, and task routing (not yet implemented).
 
-1. DeskDear agent package (Python or Node)
-2. Pair / heartbeat / job worker against Device Protocol
-3. Capabilities: `health`, workspace I/O, `run_command`, `open_app` → later `screenshot`, `ui_drive`
+## Current milestone
 
-Mobile work does **not** land here — use `NallyMobileCompanion`.
+The branch now contains a CMake-based C++20 executable, persistent local device ID, and deny-by-default capability set. Pairing and remote-control transports remain intentionally unimplemented until the NallyHermes device protocol and account-authentication endpoints are integrated.
+
+## Required security properties
+
+- Account login alone does not authorize desktop control.
+- Device pairing requires explicit local user approval.
+- Permissions are granular, session-scoped, visible, and revocable.
+- No remote command execution, screen capture, or input control without explicit authorization.
+- Device identity is not a bearer credential or proof of identity.
