@@ -19,19 +19,23 @@ import org.telegram.login.TelegramLogin
 class MainActivity : ComponentActivity() {
     private val loginEvent = MutableStateFlow<TelegramLoginEvent?>(null)
     private val openVoiceRequests = MutableStateFlow(0)
+    // Counts launches that should start listening immediately (wake word, assistant gesture).
+    private val autoStartVoiceRequests = MutableStateFlow(0)
     private var redirectHost: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             val voiceTick by openVoiceRequests.collectAsState()
+            val autoStartTick by autoStartVoiceRequests.collectAsState()
             NallyHermesTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     NallyHermesApp(
                         onStartTelegramLogin = ::startTelegramLogin,
                         loginEvents = loginEvent,
                         onLoginEventConsumed = { loginEvent.value = null },
-                        openVoiceTick = voiceTick
+                        openVoiceTick = voiceTick,
+                        autoStartVoiceTick = autoStartTick
                     )
                 }
             }
@@ -60,6 +64,9 @@ class MainActivity : ComponentActivity() {
             intent?.action == WakeWordService.ACTION_OPEN_VOICE
         ) {
             openVoiceRequests.value = openVoiceRequests.value + 1
+            if (intent.getBooleanExtra(WakeWordService.EXTRA_AUTO_START, false)) {
+                autoStartVoiceRequests.value = autoStartVoiceRequests.value + 1
+            }
         }
     }
 
