@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NallyHermes.Launch" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/nally_launch_background</item>
+        <item name="android:colorBackground">@color/nally_launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/nally_launch_background</item>
+    </style>
+</resources>
