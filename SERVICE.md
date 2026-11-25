@@ -13,7 +13,7 @@
 
 ## Current milestone
 
-The branch now contains a CMake-based C++20 executable, persistent local device ID, and deny-by-default capability set. Pairing and remote-control transports remain intentionally unimplemented until the NallyHermes device protocol and account-authentication endpoints are integrated.
+The branch now contains a CMake-based C++20 executable, persistent local device ID, deny-by-default capability set, and Linux desktop-session detection for GNOME/KDE and Wayland/X11. Pairing and remote-control transports remain intentionally unimplemented until the NallyHermes device protocol and account-authentication endpoints are integrated.
 
 ## Required security properties
 
