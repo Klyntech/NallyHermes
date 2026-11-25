@@ -17,6 +17,10 @@ const envSchema = z.object({
   NVIDIA_NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NVIDIA_NIM_MODEL: z.string().default("nvidia/nemotron-3.5-super-vl-120b-a12b"),
   DATABASE_URL: z.string().min(1),
+  RESEND_API_KEY: optionalTrimmedString,
+  RESEND_FROM_EMAIL: optionalTrimmedString,
+  NALLY_ACCOUNT_URL: z.string().url().optional(),
+  ACCOUNT_SESSION_SECRET: optionalTrimmedString,
   DEFAULT_TIMEZONE: z.string().default("Africa/Lagos"),
   TAVILY_API_KEY: z.string().optional(),
   /** Nally Creepy Crawley base URL (no trailing slash). Primary web search/fetch backend when set with API key. */
