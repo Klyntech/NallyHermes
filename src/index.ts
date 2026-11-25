@@ -14,6 +14,7 @@ import {
 } from "./db/conversationStore.js";
 import { createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
 import { handleMobileApiRequest } from "./mobile/http.js";
+import { handleAccountApiRequest } from "./account/http.js";
 import { attachVoiceWebSocket } from "./mobile/voiceSession.js";
 import { respond } from "./agent/orchestrator.js";
 import { splitAnswerAndSources } from "./agent/sourceAttribution.js";
@@ -1014,6 +1015,16 @@ await bot.api.setMyCommands([
 
 const server = createServer((req, res) => {
   const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+  if (pathname.startsWith("/api/account/")) {
+    void handleAccountApiRequest(req, res).catch((error) => {
+      console.error("Nally Account API request failed:", error);
+      if (!res.headersSent) {
+        res.writeHead(500, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
+    });
+    return;
+  }
   if (pathname.startsWith("/api/mobile/")) {
     void handleMobileApiRequest(req, res, {
       submitMessage: submitMobileMessage,
