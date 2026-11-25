@@ -21,6 +21,16 @@ export interface ExecutionBudget {
   maxParallelCalls: number;
 }
 
+/** Structured route signals for telemetry (O3) — never used as permission authority. */
+export type RouteSignals = {
+  multiPart: boolean;
+  comparative: boolean;
+  multiQuestion: boolean;
+  multiIntent: boolean;
+  numbered: boolean;
+  length: number;
+};
+
 export interface ExecutionState {
   requestId: string;
   conversationId?: string;
@@ -36,6 +46,12 @@ export interface ExecutionState {
   budget: ExecutionBudget;
   routeReason?: string;
   complexity?: RouteComplexity;
+  /** Router recommended calling the smart planner (before plan result). */
+  usePlanner?: boolean;
+  /** True only when createExecutionPlan returned a validated plan. */
+  planCreated?: boolean;
+  planSteps?: number;
+  routeSignals?: RouteSignals;
 }
 
 export interface RouteDecision {
@@ -44,6 +60,8 @@ export interface RouteDecision {
   /** When true, the controller may call the smart planner before the tool loop. */
   usePlanner: boolean;
   complexity: RouteComplexity;
+  /** Cheap structural signals for logs and future budget tiers — not intent labels. */
+  signals?: RouteSignals;
 }
 
 export interface RouteOptions {
@@ -63,11 +81,19 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
       mode: "adaptive",
       reason: "empty request handled by the model",
       usePlanner: false,
-      complexity: "simple"
+      complexity: "simple",
+      signals: {
+        multiPart: false,
+        comparative: false,
+        multiQuestion: false,
+        multiIntent: false,
+        numbered: false,
+        length: 0
+      }
     };
   }
 
-  const complexity = estimateComplexity(trimmed);
+  const { complexity, signals } = estimateComplexityDetailed(trimmed);
   // Voice turns prefer a direct loop unless the transcript is clearly multi-step;
   // planning latency hurts spoken UX more than text.
   const voiceBias = (options?.channel === "voice" || options?.responseStyle === "spoken") && complexity !== "complex";
@@ -75,9 +101,12 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
   if (complexity === "complex" && !voiceBias) {
     return {
       mode: "adaptive",
-      reason: "multi-step or comparative ask; planner may decompose",
+      reason: signals.multiIntent
+        ? "multi-intent structure; planner may decompose"
+        : "multi-step or comparative ask; planner may decompose",
       usePlanner: true,
-      complexity
+      complexity,
+      signals
     };
   }
 
@@ -86,7 +115,8 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
       mode: "adaptive",
       reason: "standard ask; direct adaptive loop",
       usePlanner: false,
-      complexity
+      complexity,
+      signals
     };
   }
 
@@ -96,7 +126,8 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
       ? "spoken/simple path; skip planner for lower latency"
       : "simple ask; direct adaptive loop",
     usePlanner: false,
-    complexity
+    complexity,
+    signals
   };
 }
 
@@ -105,40 +136,82 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
  * (e.g. treating "when the match starts" as a workflow by keyword alone).
  */
 export function estimateComplexity(text: string): RouteComplexity {
+  return estimateComplexityDetailed(text).complexity;
+}
+
+/**
+ * O1: richer structural signals without domain keyword modes.
+ * multiIntent catches dual-action asks ("search X and email Y") that length
+ * heuristics alone often classify as standard.
+ */
+export function estimateComplexityDetailed(text: string): {
+  complexity: RouteComplexity;
+  signals: RouteSignals;
+} {
   const trimmed = text.trim();
   const length = trimmed.length;
   const lower = trimmed.toLowerCase();
 
-  // Short social / single-shot replies stay simple.
-  if (length <= 48 && !/[?\n]/.test(trimmed)) {
-    return "simple";
-  }
-
   const sentenceBreaks = (trimmed.match(/[.!?](?:\s|$)/g) ?? []).length;
   const lineBreaks = (trimmed.match(/\n/g) ?? []).length;
-  const numbered = /^\s*\d+[\).:-]/m.test(trimmed) || /(?:^|\n)\s*[-*]\s+\S+/m.test(trimmed);
+  const numbered =
+    /^\s*\d+[\).:-]/m.test(trimmed) || /(?:^|\n)\s*[-*]\s+\S+/m.test(trimmed);
+
+  const sequenceWords =
+    /\b(?:then|after that|next|also|additionally|finally|afterwards)\b/i.test(trimmed);
 
   // Explicit multi-part structure without claiming what the parts mean.
   const multiPart =
-    sentenceBreaks >= 2 ||
-    lineBreaks >= 2 ||
-    numbered ||
-    /\b(?:then|after that|next|also|additionally|finally)\b/i.test(trimmed);
+    sentenceBreaks >= 2 || lineBreaks >= 2 || numbered || sequenceWords;
 
   const comparative =
     /\b(?:compare|versus|vs\.?|difference between|pros and cons)\b/i.test(lower);
 
   const multiQuestion = (trimmed.match(/\?/g) ?? []).length >= 2;
 
-  if ((multiPart && length >= 100) || comparative || multiQuestion || (numbered && length >= 60)) {
-    return "complex";
+  // Dual-task / multi-intent: two distinct action-ish verbs joined by and/then/,
+  // without inventing product domains (no "monitor", "workflow", sport keywords).
+  const actionVerb =
+    /\b(?:search|find|look\s*up|fetch|read|write|edit|create|draft|send|email|schedule|remind|list|summarize|analyse|analyze|compare|check|update|delete|rename|build|prepare)\b/gi;
+  const actionMatches = lower.match(actionVerb) ?? [];
+  const uniqueActions = new Set(actionMatches.map((m) => m.replace(/\s+/g, " ").trim()));
+  const joinedActions =
+    uniqueActions.size >= 2 &&
+    /\b(?:and|then|,\s*(?:also|then)?|after that)\b/i.test(trimmed);
+  const multiIntent = joinedActions || (uniqueActions.size >= 3 && length >= 40);
+
+  const signals: RouteSignals = {
+    multiPart,
+    comparative,
+    multiQuestion,
+    multiIntent,
+    numbered,
+    length
+  };
+
+  // Short social / single-shot replies stay simple unless multi-intent is clear.
+  if (length <= 48 && !/[?\n]/.test(trimmed) && !multiIntent) {
+    return { complexity: "simple", signals };
   }
 
-  if (length >= 220 || sentenceBreaks >= 1 && length >= 120 || multiPart) {
-    return "standard";
+  if (
+    (multiPart && length >= 100) ||
+    comparative ||
+    multiQuestion ||
+    (numbered && length >= 60) ||
+    (multiIntent && length >= 35)
+  ) {
+    return { complexity: "complex", signals };
   }
 
-  return length <= 80 ? "simple" : "standard";
+  if (length >= 220 || (sentenceBreaks >= 1 && length >= 120) || multiPart || multiIntent) {
+    return { complexity: "standard", signals };
+  }
+
+  return {
+    complexity: length <= 80 ? "simple" : "standard",
+    signals
+  };
 }
 
 /** Resolve response style from explicit option or channel default. */
@@ -170,7 +243,11 @@ export function createExecutionState(
     failures: 0,
     budget: { ...budget, deadlineAt: budget.deadlineAt ?? Date.now() + 120_000 },
     routeReason: route.reason,
-    complexity: route.complexity
+    complexity: route.complexity,
+    usePlanner: route.usePlanner,
+    planCreated: false,
+    planSteps: 0,
+    routeSignals: route.signals
   };
 }
 
@@ -193,6 +270,25 @@ export function completeExecution(
   state.status = status;
 }
 
+/** Mark planner outcome on the execution state for O3 hit-rate telemetry. */
+export function recordPlanOutcome(
+  state: ExecutionState,
+  plan: { steps: unknown[] } | null
+): void {
+  if (plan && Array.isArray(plan.steps) && plan.steps.length > 0) {
+    state.planCreated = true;
+    state.planSteps = plan.steps.length;
+  } else {
+    state.planCreated = false;
+    state.planSteps = 0;
+  }
+}
+
+/**
+ * Structured execution summary for logs / aggregation (O3).
+ * Fields are stable so planner hit rate can be computed offline:
+ *   use_planner, plan_created, plan_steps, complexity, total_ms, tool_calls
+ */
 export function summarizeExecution(state: ExecutionState): Record<string, unknown> {
   const totalMs = Date.now() - state.startedAt;
   return {
@@ -202,6 +298,10 @@ export function summarizeExecution(state: ExecutionState): Record<string, unknow
     response_style: state.responseStyle,
     complexity: state.complexity,
     route: state.routeReason,
+    use_planner: Boolean(state.usePlanner),
+    plan_created: Boolean(state.planCreated),
+    plan_steps: state.planSteps ?? 0,
+    route_signals: state.routeSignals ?? null,
     status: state.status,
     total_ms: totalMs,
     phases: Object.fromEntries(

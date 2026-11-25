@@ -4,8 +4,11 @@ import test from "node:test";
 const {
   routeRequest,
   estimateComplexity,
+  estimateComplexityDetailed,
   resolveResponseStyle,
   createExecutionState,
+  recordPlanOutcome,
+  summarizeExecution,
   toVoiceResponse,
   SPOKEN_STYLE_GUIDANCE
 } = await import("../src/agent/orchestra.js");
@@ -48,6 +51,17 @@ test("multi-step and comparative asks may use the planner", () => {
   assert.equal(structured.complexity, "complex");
 });
 
+test("O1 multi-intent dual-action asks can use the planner", () => {
+  const dual = routeRequest("Search for the latest release notes and draft a short summary for the team");
+  assert.equal(dual.complexity, "complex");
+  assert.equal(dual.usePlanner, true);
+  assert.equal(dual.signals?.multiIntent, true);
+
+  const shortDual = routeRequest("Find the repo and list open issues");
+  assert.equal(shortDual.complexity, "complex");
+  assert.equal(shortDual.usePlanner, true);
+});
+
 test("adaptive routing does not invent event-monitor intent from wording alone", () => {
   const decision = routeRequest(
     "Message me when the Barcelona match starts and update me every 30 minutes"
@@ -82,7 +96,7 @@ test("response style defaults to spoken on the voice channel", () => {
   assert.equal(resolveResponseStyle("telegram", "spoken"), "spoken");
 });
 
-test("execution state records channel, style, and route metadata", () => {
+test("execution state records channel, style, route, and planner telemetry", () => {
   const route = routeRequest("Hi");
   const state = createExecutionState(
     { text: "Hi", telegramId: "1", channel: "voice" },
@@ -92,12 +106,32 @@ test("execution state records channel, style, and route metadata", () => {
   assert.equal(state.channel, "voice");
   assert.equal(state.responseStyle, "spoken");
   assert.equal(state.complexity, route.complexity);
+  assert.equal(state.usePlanner, false);
+  assert.equal(state.planCreated, false);
   assert.ok(state.routeReason);
+
+  recordPlanOutcome(state, { steps: [{ id: "a" }, { id: "b" }] });
+  assert.equal(state.planCreated, true);
+  assert.equal(state.planSteps, 2);
+
+  const summary = summarizeExecution(state);
+  assert.equal(summary.use_planner, false);
+  assert.equal(summary.plan_created, true);
+  assert.equal(summary.plan_steps, 2);
+  assert.ok("route_signals" in summary);
 });
 
 test("estimateComplexity stays conservative on short messages", () => {
   assert.equal(estimateComplexity("Hi"), "simple");
   assert.equal(estimateComplexity("Remind me in 15 minutes"), "simple");
+});
+
+test("estimateComplexityDetailed exposes structural signals", () => {
+  const detailed = estimateComplexityDetailed(
+    "Compare A and B pricing, then list platforms"
+  );
+  assert.equal(detailed.complexity, "complex");
+  assert.equal(detailed.signals.comparative, true);
 });
 
 test("spoken style guidance is present for controller injection", () => {
