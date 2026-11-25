@@ -1,55 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <queries>
         <intent>
-            <action android:name="android.intent.action.ASSIST" />
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tg" />
         </intent>
         <intent>
-            <action android:name="android.intent.action.VOICE_COMMAND" />
-        </intent>
-        <intent>
-            <action android:name="android.service.voice.VoiceInteractionService" />
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <application
-        android:allowBackup="true"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.NallyHermes"
-        android:usesCleartextTraffic="false">
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Theme.NallyHermes.Launch">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.NallyLaunch"
             android:windowSoftInputMode="adjustResize"
-            android:enableOnBackInvokedCallback="true">
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <intent-filter>
-                <action android:name="android.intent.action.ASSIST" />
+                <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="*.tg.dev" android:pathPrefix="/tglogin" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VOICE_COMMAND" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/nally_assistant" />
         </activity>
 
         <service
@@ -57,30 +52,33 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Lets the user pick Nally under Settings > Apps > Default apps > Digital assistant app.
+             Power-button / gesture launches then open Nally straight into a call, with no microphone
+             indicator while idle. -->
         <service
-            android:name=".NallyAssistant"
+            android:name=".NallyVoiceInteractionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
-            <intent-filter>
-                <action android:name="android.service.voice.VoiceInteractionService" />
-            </intent-filter>
             <meta-data
                 android:name="android.voice_interaction"
                 android:resource="@xml/nally_assistant" />
-        </service>
-
-        <service
-            android:name=".NallyAssistant$Session"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter>
-                <action android:name="android.service.voice.VoiceInteractionSessionService" />
+                <action android:name="android.service.voice.VoiceInteractionService" />
             </intent-filter>
         </service>
+        <service
+            android:name=".NallyVoiceInteractionSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <!-- Required by the assistant metadata. Not exported, so apps cannot pick it as dictation. -->
+        <service
+            android:name=".NallyRecognitionService"
+            android:exported="false" />
 
         <receiver
             android:name=".NallyWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="NallyHermes">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
