@@ -25,13 +25,13 @@ Configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `NALLY_ACCOUNT_URL`, and a dedi
 
 - No account migration/backfill runs automatically.
 - No OAuth/OIDC endpoint is exposed yet.
-- No account UI verification page is connected yet.
+- The same-origin `/account` page now requests and verifies sign-in links.
 - No existing Telegram/mobile authentication route is changed.
 - No production database migration or Render deployment is performed by this PR.
 
 ## Next implementation stages
 
-1. Add a configured transactional email adapter and rate-limited magic-link request/consume endpoints. Store only a hash of the random one-time token; consume it atomically and enforce expiry.
+1. Add shared/distributed rate limiting, persistent abuse controls, and operational email delivery monitoring. The initial endpoints use in-process throttling.
 2. Create/link a Nally Account for an email identity without changing legacy `users.id` values.
 3. Add account profile, session listing/revocation, and secure cookie handling (HttpOnly, Secure, SameSite, bounded lifetime, CSRF protections for mutations).
 4. Implement OIDC discovery, authorization, PKCE S256, token exchange, refresh-token rotation/reuse detection, UserInfo, and revocation.
