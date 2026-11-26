@@ -21,9 +21,55 @@ DeskDear should not expose one unrestricted `computer` or `shell` capability. It
 9. **Privacy by design.** Screen content, clipboard data, credentials, and personal files are not collected implicitly.
 10. **Independent emergency stop.** The local user can immediately pause or revoke all remote execution.
 
+## Public tool names
+
+The names exposed to Nally should be short and easy for a model to select. The longer names remain internal policy identifiers only.
+
+| Public tool | Internal policy capability | Purpose |
+|---|---|---|
+| `status` | `device.status` | Device and agent state |
+| `read` | `workspace.files.read` | Read an approved workspace file |
+| `write` | `workspace.files.write` | Write an approved workspace file |
+| `list` | `workspace.files.list` | List an approved directory |
+| `info` | `workspace.files.stat` | Inspect an approved path |
+| `mkdir` | `workspace.files.mkdir` | Create an approved directory |
+| `mv` | `workspace.files.move` | Move an approved path |
+| `delete` | `workspace.files.delete` | Delete an approved path |
+| `open` | `application.launch` | Open a registered app or URL |
+| `shot` | `screen.observe.capture` | Capture one bounded screen image |
+| `zoom` | `screen.observe.inspect_region` | Capture one screen region |
+| `cursor` | `screen.observe.cursor` | Read cursor position |
+| `move` | `input.pointer.move` | Move the pointer |
+| `click` | `input.pointer.click` | Click at a coordinate |
+| `drag` | `input.pointer.drag` | Drag between coordinates |
+| `scroll` | `input.pointer.scroll` | Scroll in a direction |
+| `type` | `input.keyboard.text` | Type non-sensitive text |
+| `key` | `input.keyboard.key` | Press an approved key or chord |
+| `hold` | `input.keyboard.hold` | Hold an approved key briefly |
+| `wait` | `task.control.wait` | Wait for a bounded duration |
+| `pause` | `task.control.pause` | Pause the current task |
+| `resume` | `task.control.resume` | Resume the current task |
+| `cancel` | `task.control.cancel` | Cancel an operation or task |
+
+`move` is reserved for pointer movement and `mv` is used for file movement. This keeps the public names short while avoiding ambiguity for the model and the tool router.
+
+The public tool call should look like this:
+
+```json
+{
+  "tool": "read",
+  "arguments": {
+    "path": "project/README.md",
+    "max_bytes": 65536
+  }
+}
+```
+
+The agent does not receive the internal policy capability name as a choice. DeskDear resolves the public name, validates its typed arguments, applies the session policy, and records the internal capability in the audit event.
+
 ## Capability catalogue
 
-### 1. `device.status`
+### 1. Internal capability: `device.status`
 
 Read-only health and connection information.
 
@@ -34,7 +80,7 @@ Read-only health and connection information.
 
 This capability must never return private files, screen pixels, tokens, environment variables, or unrestricted process lists.
 
-### 2. `workspace.files`
+### 2. Internal capability: `workspace.files`
 
 Read and modify files only inside user-configured workspace roots.
 
@@ -58,7 +104,7 @@ Rules:
 - Hidden/system directories and credential files are denied by default.
 - Every mutation is logged with path, operation, actor, result, and content hash where appropriate.
 
-### 3. `application.launch`
+### 3. Internal capability: `application.launch`
 
 Open a user-approved application or URL through a local allow-list.
 
@@ -70,7 +116,7 @@ Open a user-approved application or URL through a local allow-list.
 
 DeskDear must not accept an arbitrary executable path or arbitrary command-line string. Application registrations are local policy objects with executable identity, allowed arguments, and optional URL schemes.
 
-### 4. `screen.observe`
+### 4. Internal capability: `screen.observe`
 
 Read-only visual observation of the desktop.
 
@@ -89,7 +135,7 @@ Safety requirements:
 - Images are not persisted locally by default.
 - Sensitive-window exclusion and privacy masking are future requirements.
 
-### 5. `input.pointer`
+### 5. Internal capability: `input.pointer`
 
 Bounded mouse/pointer operations for a user-approved active session.
 
@@ -102,7 +148,7 @@ Bounded mouse/pointer operations for a user-approved active session.
 
 Coordinates must be validated against the current display geometry. DeskDear should reject operations on displays that changed since the last observation. No input is accepted when the session is paused, the emergency stop is active, or the user has revoked control.
 
-### 6. `input.keyboard`
+### 6. Internal capability: `input.keyboard`
 
 Keyboard input for an active, locally approved session.
 
@@ -114,7 +160,7 @@ Keyboard input for an active, locally approved session.
 
 The first release should deny key input to password fields where the platform can identify them. DeskDear must never log raw typed text. Clipboard injection is not part of the initial surface.
 
-### 7. `task.control`
+### 7. Internal capability: `task.control`
 
 Control the current remote task, not the operating system.
 
@@ -127,7 +173,7 @@ Control the current remote task, not the operating system.
 
 `wait` is a bounded coordination primitive. It must not be used to bypass deadlines or keep a session alive indefinitely.
 
-### 8. `approval.request`
+### 8. Internal capability: `approval.request`
 
 Create a user-facing approval request for a sensitive operation. This is an internal coordination capability and should not be granted to Nally as a free-form tool.
 
@@ -161,7 +207,7 @@ A future `command.sandbox` capability may be considered only after a real sandbo
 
 ## Tool envelope
 
-All remote operations use a versioned envelope. The operation payload is capability-specific and must not be represented by a generic string pair such as `action` and `content` in the long term.
+All remote operations use a versioned envelope. The operation payload is tool-specific and must not be represented by a generic string pair such as `action` and `content` in the long term. DeskDear resolves the short public tool name to its internal capability and action.
 
 ```json
 {
@@ -170,8 +216,7 @@ All remote operations use a versioned envelope. The operation payload is capabil
   "correlation_id": "task_01...",
   "operation_id": "op_01...",
   "session_id": "ses_01...",
-  "capability": "workspace.files",
-  "action": "read",
+  "tool": "read",
   "arguments": {
     "path": "project/README.md",
     "max_bytes": 65536
@@ -208,12 +253,12 @@ Errors must use stable codes such as `unauthenticated`, `session_expired`, `capa
 
 Expose only:
 
-- `device.status.get`
-- `workspace.files.read`
-- `workspace.files.write`
-- `workspace.files.list`
-- `workspace.files.stat`
-- `task.control.wait`
+- `status`
+- `read`
+- `write`
+- `list`
+- `info`
+- `wait`
 
 Test malformed envelopes, traversal, symlink escapes, duplicate IDs, replay, deadlines, size limits, concurrent requests, restart behavior, and revocation.
 
@@ -221,8 +266,8 @@ Test malformed envelopes, traversal, symlink escapes, duplicate IDs, replay, dea
 
 Add:
 
-- `application.launch.open_app`
-- `application.launch.open_url`
+- `open`
+- `open`
 - Local approval UI.
 - Audit viewer.
 - Per-capability enable/disable settings.
@@ -233,9 +278,9 @@ Do not add screen or keyboard control yet.
 
 Add:
 
-- `screen.observe.capture`
-- `screen.observe.inspect_region`
-- `screen.observe.cursor`
+- `shot`
+- `zoom`
+- `cursor`
 
 Require visible local capture status, bounded images, retention controls, and privacy tests.
 
