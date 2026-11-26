@@ -44,7 +44,31 @@ cmake -S . -B build -DDESKDEAR_BUILD_UI=ON
 cmake --build build --config Release
 ```
 
-The `desktop-release.yml` GitHub Action installs Qt, builds and tests the application on Windows and Linux, deploys the Qt runtime, and uploads a Windows ZIP and Linux AppImage. Push a `v*` tag or start the workflow manually to produce downloadable artifacts.
+The `desktop-release.yml` GitHub Action installs Qt, builds and tests the application on Windows and Linux, deploys the Qt runtime, and uploads:
+
+| Platform | Artifact | What you get |
+|----------|----------|--------------|
+| **Windows** | `DeskDear-windows-x64-Setup.exe` | **Single installable Setup.exe** (NSIS). Double-click to install; Start Menu shortcut; uninstall entry. |
+| **Windows** | `DeskDear-windows-x64-portable.zip` | Portable folder (exe + Qt DLLs) for side-by-side testing. |
+| **Linux** | `DeskDear-linux-x64.AppImage` | Self-contained AppImage. |
+| **Linux** | `DeskDear-linux-x64.tar.gz` | Staged tree for packaging. |
+
+Push a `v*` tag or start the workflow manually (**Actions → DeskDear Desktop Builds → Run workflow**) to produce downloadable artifacts.
+
+### Windows: how to get the installer
+
+1. Open the Actions tab on the repo.
+2. Run **DeskDear Desktop Builds** (workflow_dispatch) or push a `v0.1.0`-style tag.
+3. Download the **DeskDear-windows-x64** artifact.
+4. Inside it you will find **`DeskDear-windows-x64-Setup.exe`** — that is the single installable executable.
+
+Local packaging (Windows, after a UI build):
+
+```pwsh
+cmake --install build --config Release --prefix staging
+windeployqt --release --qmldir ui/qml staging\bin\deskdear-ui.exe
+# Then either zip staging/ or run cpack -G NSIS (NSIS must be installed)
+```
 
 ## Security boundary
 

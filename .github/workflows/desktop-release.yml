@@ -51,6 +51,17 @@ jobs:
           arch: ${{ matrix.os == 'windows-2022' && 'win64_msvc2022_64' || 'linux_gcc_64' }}
           cache: true
 
+      - name: Install NSIS (Windows installer)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          # Ensure makensis is on PATH for this job
+          $nsis = "C:\Program Files (x86)\NSIS"
+          if (Test-Path $nsis) {
+            echo "$nsis" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
       - name: Configure
         shell: bash
         run: >-
@@ -69,12 +80,78 @@ jobs:
       - name: Install application
         run: cmake --install build --config Release --prefix staging
 
-      - name: Deploy Qt on Windows
+      - name: Deploy Qt + package Windows (Setup.exe + portable ZIP)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          windeployqt --release --qmldir ui/qml staging/bin/deskdear-ui.exe
-          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
+          $ErrorActionPreference = "Stop"
+
+          # Deploy Qt runtime next to the UI binary
+          $ui = "staging/bin/deskdear-ui.exe"
+          if (-not (Test-Path $ui)) {
+            throw "deskdear-ui.exe not found at $ui"
+          }
+          windeployqt --release --qmldir ui/qml $ui
+
+          # Also keep the headless CLI next to the UI (optional but useful)
+          if (Test-Path "staging/bin/deskdear.exe") {
+            Write-Host "CLI deskdear.exe present in staging/bin"
+          }
+
+          # Portable ZIP (folder of files — useful for side-by-side testing)
+          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}-portable.zip" -Force
+
+          # Single installable Setup.exe via CPack NSIS.
+          # Point CPack at the already-deployed staging tree so all Qt DLLs are included.
+          $cpackConfig = @"
+          set(CPACK_PACKAGE_NAME "DeskDear")
+          set(CPACK_PACKAGE_VENDOR "NallyHermes")
+          set(CPACK_PACKAGE_VERSION "0.1.0")
+          set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Secure desktop agent for Nally")
+          set(CPACK_PACKAGE_FILE_NAME "${{ matrix.artifact }}")
+          set(CPACK_GENERATOR "NSIS")
+          set(CPACK_PACKAGE_INSTALL_DIRECTORY "DeskDear")
+          set(CPACK_INSTALLED_DIRECTORIES "${{ github.workspace }}/staging;/")
+          set(CPACK_NSIS_DISPLAY_NAME "DeskDear")
+          set(CPACK_NSIS_PACKAGE_NAME "DeskDear")
+          set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+          set(CPACK_NSIS_MODIFY_PATH OFF)
+          set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\deskdear-ui.exe")
+          set(CPACK_NSIS_MENU_LINKS "bin/deskdear-ui.exe" "DeskDear")
+          set(CPACK_NSIS_EXECUTABLES_DIRECTORY "bin")
+          set(CPACK_NSIS_DEFINES "RequestExecutionLevel user")
+          set(CPACK_PACKAGE_EXECUTABLES "deskdear-ui;DeskDear")
+          set(CPACK_CREATE_DESKTOP_LINKS "deskdear-ui")
+          "@
+          $cpackConfigPath = "build/CPackConfig.nsi.cmake"
+          Set-Content -Path $cpackConfigPath -Value $cpackConfig -Encoding UTF8
+
+          # Generate the NSIS installer into the workspace root
+          cpack --config $cpackConfigPath -B "${{ github.workspace }}" -D CPACK_PACKAGE_DIRECTORY="${{ github.workspace }}"
+
+          # Normalize the installer name to a stable artifact name
+          $setup = Get-ChildItem -Path . -Filter "*.exe" -File |
+            Where-Object { $_.Name -match "DeskDear|Setup" -or $_.DirectoryName -eq (Get-Location).Path } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $setup) {
+            # CPack often writes into a _CPack_Packages tree; search recursively
+            $setup = Get-ChildItem -Path . -Recurse -Filter "*.exe" -File |
+              Where-Object { $_.Name -like "*DeskDear*" -or $_.Name -like "*Setup*" } |
+              Sort-Object LastWriteTime -Descending |
+              Select-Object -First 1
+          }
+
+          if (-not $setup) {
+            Write-Host "Listing workspace for diagnostics:"
+            Get-ChildItem -Recurse -File | Select-Object -First 80 FullName
+            throw "NSIS Setup.exe was not produced by cpack"
+          }
+
+          $dest = "${{ matrix.artifact }}-Setup.exe"
+          Copy-Item $setup.FullName $dest -Force
+          Write-Host "Installer ready: $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB)"
 
       - name: Package Linux application
         if: runner.os == 'Linux'
@@ -102,6 +179,8 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
+            *-Setup.exe
+            *-portable.zip
             *.zip
             *.AppImage
             *.tar.gz
