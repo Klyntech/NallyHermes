@@ -1,6 +1,6 @@
 FROM debian:bookworm-slim AS build
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends cmake g++ \
+    && apt-get install -y --no-install-recommends cmake g++ make \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
