@@ -51,6 +51,8 @@ export interface ExecutionState {
   /** True only when createExecutionPlan returned a validated plan. */
   planCreated?: boolean;
   planSteps?: number;
+  /** Soft outline injected; no planner model call. */
+  softPlanUsed?: boolean;
   routeSignals?: RouteSignals;
 }
 
@@ -59,6 +61,8 @@ export interface RouteDecision {
   reason: string;
   /** When true, the controller may call the smart planner before the tool loop. */
   usePlanner: boolean;
+  /** When true, inject a soft structure hint without a planner model call (O4). */
+  useSoftPlan: boolean;
   complexity: RouteComplexity;
   /** Cheap structural signals for logs and future budget tiers — not intent labels. */
   signals?: RouteSignals;
@@ -81,6 +85,7 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
       mode: "adaptive",
       reason: "empty request handled by the model",
       usePlanner: false,
+      useSoftPlan: false,
       complexity: "simple",
       signals: {
         multiPart: false,
@@ -105,16 +110,25 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
         ? "multi-intent structure; planner may decompose"
         : "multi-step or comparative ask; planner may decompose",
       usePlanner: true,
+      useSoftPlan: false,
       complexity,
       signals
     };
   }
 
+  // O4: standard multi-part / multi-intent gets a soft outline in-system, not a planner model call.
+  const softCandidate =
+    !voiceBias &&
+    Boolean(signals.multiPart || signals.multiIntent || signals.numbered);
+
   if (complexity === "standard") {
     return {
       mode: "adaptive",
-      reason: "standard ask; direct adaptive loop",
+      reason: softCandidate
+        ? "standard multi-part ask; soft outline without planner"
+        : "standard ask; direct adaptive loop",
       usePlanner: false,
+      useSoftPlan: softCandidate,
       complexity,
       signals
     };
@@ -126,6 +140,7 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
       ? "spoken/simple path; skip planner for lower latency"
       : "simple ask; direct adaptive loop",
     usePlanner: false,
+    useSoftPlan: false,
     complexity,
     signals
   };
@@ -291,6 +306,7 @@ export function createExecutionState(
     usePlanner: route.usePlanner,
     planCreated: false,
     planSteps: 0,
+    softPlanUsed: Boolean(route.useSoftPlan),
     routeSignals: route.signals
   };
 }
@@ -345,6 +361,7 @@ export function summarizeExecution(state: ExecutionState): Record<string, unknow
     use_planner: Boolean(state.usePlanner),
     plan_created: Boolean(state.planCreated),
     plan_steps: state.planSteps ?? 0,
+    soft_plan_used: Boolean(state.softPlanUsed),
     route_signals: state.routeSignals ?? null,
     budget_max_model_rounds: state.budget.maxModelRounds,
     budget_max_tool_rounds: state.budget.maxToolRounds,
@@ -361,6 +378,14 @@ export function summarizeExecution(state: ExecutionState): Record<string, unknow
     failures: state.failures
   };
 }
+
+/** O4: structure hint for mid-tier multi-part asks without a planner model call. */
+export const SOFT_PLAN_GUIDANCE = [
+  "This request looks multi-part. Before tool use, briefly outline 2–5 ordered steps for yourself,",
+  "then execute them in the direct adaptive loop. Prefer the minimum sufficient evidence.",
+  "Do not narrate the outline to the user unless they asked for a plan. Do not invent permissions.",
+  "If a later step depends on an earlier result, finish the earlier step first."
+].join(" ");
 
 /** System guidance injected when the user should hear the answer, not only read it. */
 export const SPOKEN_STYLE_GUIDANCE = [
