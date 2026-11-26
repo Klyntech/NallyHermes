@@ -106,7 +106,19 @@ export async function searchSavedMemories(userId: string, query: string) {
     .orderBy(desc(sql`ts_rank_cd(${vector}, ${tsQuery}, 32)`), desc(memories.updatedAt))
     .limit(MAX_MEMORY_RESULTS);
 
-  if (exact.length) return exact.map((item) => ({ ...item, match_type: "full_text" as const }));
+  if (exact.length) {
+    const now = Date.now();
+    return exact
+      .map((item) => {
+        const ageMs = Math.max(0, now - new Date(item.updated_at).getTime());
+        const recency = Math.max(0, 1 - ageMs / (30 * 86_400_000)); // decays over ~30 days
+        const conf = Math.min(100, Math.max(0, item.confidence ?? 50)) / 100;
+        const rel = typeof item.relevance === "number" ? item.relevance : 0;
+        const combined = rel * 0.65 + conf * 0.2 + recency * 0.15;
+        return { ...item, match_type: "full_text" as const, rank_score: combined };
+      })
+      .sort((a, b) => (b.rank_score ?? 0) - (a.rank_score ?? 0));
+  }
 
   const tokens = normalizedTokens(normalizedQuery);
   if (!tokens.length) return [];
@@ -133,6 +145,12 @@ export async function searchSavedMemories(userId: string, query: string) {
       return { ...item, relevance: matched.length / tokens.length, matched_tokens: matched.length, match_type: "token_overlap" as const };
     })
     .filter((item) => item.matched_tokens > 0)
-    .sort((a, b) => b.relevance - a.relevance || b.updated_at.getTime() - a.updated_at.getTime())
+    .sort((a, b) => {
+      const ca = (a.confidence ?? 50) / 100;
+      const cb = (b.confidence ?? 50) / 100;
+      const sa = a.relevance * 0.75 + ca * 0.25;
+      const sb = b.relevance * 0.75 + cb * 0.25;
+      return sb - sa || b.updated_at.getTime() - a.updated_at.getTime();
+    })
     .slice(0, MAX_MEMORY_RESULTS);
 }
