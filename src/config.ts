@@ -94,7 +94,9 @@ const envSchema = z.object({
   VOICE_SPEECH_SPEED: z.coerce.number().min(0.7).max(1.2).default(0.9),
   VOICE_STABILITY: z.coerce.number().min(0).max(1).default(0.45),
   VOICE_SIMILARITY_BOOST: z.coerce.number().min(0).max(1).default(0.8),
-  VOICE_STYLE: z.coerce.number().min(0).max(1).default(0.35)
+  VOICE_STYLE: z.coerce.number().min(0).max(1).default(0.35),
+  /** ElevenLabs auto_mode for whole-sentence chunks (lower first-audio latency). Set false to disable. */
+  VOICE_TTS_AUTO_MODE: z.enum(["true", "false"]).default("true").transform((value) => value === "true")
 }).superRefine((env, context) => {
   if (Boolean(env.TELEGRAM_LOGIN_CLIENT_ID) !== Boolean(env.TELEGRAM_LOGIN_REDIRECT_URI)) {
     context.addIssue({
