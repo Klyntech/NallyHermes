@@ -8,7 +8,7 @@ import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor
 import { streamModelTurn } from "./streamingTurn.js";
 import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
-import { beginPhase, budgetForComplexity, completeExecution, createExecutionState, endPhase, recordPlanOutcome, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
+import { beginPhase, budgetForComplexity, completeExecution, createExecutionState, endPhase, recordPlanOutcome, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, SOFT_PLAN_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
 import { buildAdaptiveContextPack, formatContextPackForModel } from "./contextPack.js";
 import { composePartialAnswer } from "./partial.js";
 import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
@@ -579,6 +579,9 @@ export async function runAgent(
   }
   if (affect?.promptHint) {
     messages.push({ role: "system", content: affect.promptHint });
+  }
+  if (route.useSoftPlan) {
+    messages.push({ role: "system", content: SOFT_PLAN_GUIDANCE });
   }
   endPhase(state, "context");
   console.info("orchestra.context_pack", JSON.stringify({
