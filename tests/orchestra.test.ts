@@ -10,7 +10,8 @@ const {
   recordPlanOutcome,
   summarizeExecution,
   toVoiceResponse,
-  SPOKEN_STYLE_GUIDANCE
+  SPOKEN_STYLE_GUIDANCE,
+  budgetForComplexity
 } = await import("../src/agent/orchestra.js");
 const { classifyFailure } = await import("../src/agent/failure.js");
 const { applyObservation, shouldNotify } = await import("../src/agent/eventMonitor.js");
@@ -174,4 +175,27 @@ test("voice responses remain interruptible and bounded at the interface", () => 
   const clipped = toVoiceResponse(long, { maxChars: 100 });
   assert.ok(clipped.text.length <= 110);
   assert.equal(clipped.speak, true);
+});
+
+
+test("O2 budget tiers shrink simple and expand complex within config caps", () => {
+  const defaults = {
+    maxModelRounds: 12,
+    maxToolRounds: 60,
+    maxParallelCalls: 5,
+    deadlineMs: 480_000
+  };
+  const simple = budgetForComplexity("simple", defaults);
+  assert.equal(simple.maxModelRounds, 4);
+  assert.equal(simple.maxToolRounds, 8);
+  assert.ok(simple.deadlineMs <= 90_000);
+
+  const standard = budgetForComplexity("standard", defaults);
+  assert.equal(standard.maxModelRounds, 8);
+  assert.equal(standard.maxToolRounds, 24);
+
+  const complex = budgetForComplexity("complex", defaults);
+  assert.equal(complex.maxModelRounds, 12);
+  assert.equal(complex.maxToolRounds, 60);
+  assert.equal(complex.deadlineMs, 480_000);
 });
