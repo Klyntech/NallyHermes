@@ -638,7 +638,7 @@ export async function runAgent(
             temperature: 0.4,
             stream: true
           }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal }),
-          requestOptions.onTextDelta
+          { onTextDelta: requestOptions.onTextDelta, signal }
         )
       : (await llm.chat.completions.create({
           model: config.NVIDIA_NIM_MODEL,
