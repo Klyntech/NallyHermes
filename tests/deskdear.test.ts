@@ -6,41 +6,57 @@ const {
   getDeskDearOperation,
   isDeskDearWriteOperation,
   callDeskDearOperation,
-  getDeskDearStatus
+  getDeskDearStatus,
+  DESKDEAR_OPERATIONS
 } = await import("../src/agent/deskdear.js");
 const { isWriteOperation } = await import("../src/agent/approvals.js");
 
-test("deskdear catalog exposes phase A ops", () => {
-  const ops = listDeskDearOperations();
-  assert.ok(ops.some((o) => o.name === "workspace_write"));
-  assert.ok(ops.some((o) => o.name === "health"));
-  assert.equal(getDeskDearOperation("workspace_read").readOnly, true);
-  assert.equal(isDeskDearWriteOperation("workspace_write"), true);
-  assert.equal(isDeskDearWriteOperation("health"), false);
+/** Must stay aligned with DeskDear tool_registry.cpp public names. */
+const DESKDEAR_PUBLIC_NAMES = [
+  "status", "read", "write", "list", "info", "mkdir", "mv", "delete", "open",
+  "shot", "zoom", "cursor", "move", "click", "drag", "scroll", "type", "key", "hold",
+  "wait", "pause", "resume", "cancel"
+] as const;
+
+test("Hermes catalog matches DeskDear public tool names", () => {
+  const names = DESKDEAR_OPERATIONS.map((o) => o.name);
+  assert.deepEqual(names, [...DESKDEAR_PUBLIC_NAMES]);
+  assert.equal(listDeskDearOperations().length, 23);
 });
 
-test("deskdear mutations need approval and fail closed without device", async () => {
-  const denied = await callDeskDearOperation("workspace_write", { path: "a.txt", content: "x" }, false);
+test("enabled tools are status, read, write", () => {
+  const enabled = DESKDEAR_OPERATIONS.filter((o) => o.state === "enabled").map((o) => o.name);
+  assert.deepEqual(enabled, ["status", "read", "write"]);
+});
+
+test("approval flags match device registry", () => {
+  assert.equal(getDeskDearOperation("write").approvalRequired, true);
+  assert.equal(getDeskDearOperation("read").approvalRequired, false);
+  assert.equal(getDeskDearOperation("shot").approvalRequired, true);
+  assert.equal(isDeskDearWriteOperation("write"), true);
+  assert.equal(isDeskDearWriteOperation("status"), false);
+});
+
+test("calls fail closed without device; status is local", async () => {
+  const status = await callDeskDearOperation("status", {}, false);
+  assert.equal(status.status, "ok");
+  const denied = await callDeskDearOperation("write", { path: "a.txt", content: "x" }, false);
   assert.equal(denied.status, "denied_local");
-  const unavail = await callDeskDearOperation("workspace_write", { path: "a.txt", content: "x" }, true);
+  const unavail = await callDeskDearOperation("write", { path: "a.txt", content: "x" }, true);
   assert.equal(unavail.status, "unavailable");
-  const health = await callDeskDearOperation("health", {}, false);
-  assert.equal(health.status, "ok");
+  const planned = await callDeskDearOperation("click", { coordinate: [1, 2] }, true);
+  assert.equal(planned.status, "not_implemented");
 });
 
-test("approval gate treats deskdear workspace_write as write", () => {
-  assert.equal(
-    isWriteOperation("deskdear", { operation: "call_operation", name: "workspace_write" }),
-    true
-  );
-  assert.equal(
-    isWriteOperation("deskdear", { operation: "list_operations" }),
-    false
-  );
+test("approval gate uses DeskDear public names", () => {
+  assert.equal(isWriteOperation("deskdear", { operation: "call_operation", name: "write" }), true);
+  assert.equal(isWriteOperation("deskdear", { operation: "call_operation", name: "read" }), false);
+  assert.equal(isWriteOperation("deskdear", { operation: "list_operations" }), false);
 });
 
-test("status reports not connected", () => {
+test("status reports enabled tool list", () => {
   const s = getDeskDearStatus();
+  assert.deepEqual(s.enabledTools, ["status", "read", "write"]);
+  assert.equal(s.toolCount, 23);
   assert.equal(s.transport, "not_connected");
-  assert.equal(s.available, false);
 });
