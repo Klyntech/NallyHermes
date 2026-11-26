@@ -223,6 +223,50 @@ export function resolveResponseStyle(
   return channel === "voice" ? "spoken" : "text";
 }
 
+
+/** O2: budget tiers by complexity — simple must not burn research budgets. */
+export type ComplexityBudget = {
+  maxModelRounds: number;
+  maxToolRounds: number;
+  maxParallelCalls: number;
+  deadlineMs: number;
+};
+
+export function budgetForComplexity(
+  complexity: RouteComplexity,
+  defaults: {
+    maxModelRounds: number;
+    maxToolRounds: number;
+    maxParallelCalls: number;
+    deadlineMs: number;
+  }
+): ComplexityBudget {
+  switch (complexity) {
+    case "simple":
+      return {
+        maxModelRounds: Math.min(4, defaults.maxModelRounds),
+        maxToolRounds: Math.min(8, defaults.maxToolRounds),
+        maxParallelCalls: Math.min(2, defaults.maxParallelCalls),
+        deadlineMs: Math.min(90_000, defaults.deadlineMs)
+      };
+    case "standard":
+      return {
+        maxModelRounds: Math.min(8, defaults.maxModelRounds),
+        maxToolRounds: Math.min(24, defaults.maxToolRounds),
+        maxParallelCalls: Math.min(4, defaults.maxParallelCalls),
+        deadlineMs: Math.min(240_000, defaults.deadlineMs)
+      };
+    case "complex":
+    default:
+      return {
+        maxModelRounds: defaults.maxModelRounds,
+        maxToolRounds: defaults.maxToolRounds,
+        maxParallelCalls: defaults.maxParallelCalls,
+        deadlineMs: defaults.deadlineMs
+      };
+  }
+}
+
 export function createExecutionState(
   input: OrchestraRequest,
   route: RouteDecision,
@@ -302,6 +346,9 @@ export function summarizeExecution(state: ExecutionState): Record<string, unknow
     plan_created: Boolean(state.planCreated),
     plan_steps: state.planSteps ?? 0,
     route_signals: state.routeSignals ?? null,
+    budget_max_model_rounds: state.budget.maxModelRounds,
+    budget_max_tool_rounds: state.budget.maxToolRounds,
+    budget_deadline_ms: Math.max(0, state.budget.deadlineAt - state.startedAt),
     status: state.status,
     total_ms: totalMs,
     phases: Object.fromEntries(
