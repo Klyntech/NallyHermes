@@ -34,6 +34,7 @@ import {
   claimPendingApproval,
   getPendingApproval,
   grantAlwaysAllow,
+  isPendingExpired,
   markPending
 } from "./agent/approvals.js";
 import { callV22Operation } from "./connectors/v22.js";
@@ -383,6 +384,11 @@ bot.on("callback_query:data", async (ctx) => {
   }
   if (pending.status !== "pending") {
     await ctx.editMessageText(`Already ${pending.status}.`);
+    return;
+  }
+  if (isPendingExpired(pending)) {
+    await markPending(pendingId, "failed", { error: "Approval expired." });
+    await ctx.editMessageText("This approval expired (older than one hour). Ask me again if you still want the write.");
     return;
   }
 
