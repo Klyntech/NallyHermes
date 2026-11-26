@@ -657,12 +657,11 @@ export async function runAgent(
     const evaluation = evaluateTurn(message, round, state.budget.maxModelRounds);
     if (evaluation.kind === "complete") {
       const sources = extractAnswerSources(messages);
-      const audit = state.responseStyle === "spoken"
-        ? { ok: true, issues: [] as Array<{ code: string }>, rewriteHint: "" }
-        : auditFactualAnswer(evaluation.answer, {
-            hadResearchTools: historyUsedResearchTools(messages),
-            hasSources: sources.length > 0
-          });
+      const audit = auditFactualAnswer(evaluation.answer, {
+        hadResearchTools: historyUsedResearchTools(messages),
+        hasSources: sources.length > 0,
+        style: state.responseStyle === "spoken" ? "spoken" : "text"
+      });
       if (!audit.ok && round < state.budget.maxModelRounds - 1) {
         messages.push({
           role: "system",
