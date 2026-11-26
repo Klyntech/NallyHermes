@@ -1,98 +1,300 @@
 /**
- * DeskDear — Nally's permissioned desktop endpoint (Phase A scaffold).
+ * DeskDear — Nally control-plane surface.
  *
- * Model proposes operations; Hermes validates + approvals; DeskDear executes
- * only with a future JobTicket. Until a device is paired and transport is live,
- * all mutating/remote calls fail closed with a clear status.
+ * Public tool names MUST match DeskDear `tool_registry.cpp` (NallyDeskDear branch).
+ * Internal capability/action strings stay on the device; Hermes only uses public names.
  *
- * This module is the application-controlled surface. It does not grant the model
- * raw mouse/keyboard authority.
+ * Model proposes → Hermes approvals → DeskDear executes with session policy.
+ * Until a device is paired, remote ops fail closed.
  */
 
-export type DeskDearOpKind = "observe" | "workspace_mutate" | "app" | "input" | "danger";
+export type DeskDearOpKind =
+  | "health"
+  | "workspace"
+  | "application"
+  | "screen"
+  | "input"
+  | "task";
+
+export type DeskDearToolState = "enabled" | "planned";
 
 export type DeskDearOperation = {
+  /** Public name — identical to DeskDear ToolSpec.name */
   name: string;
+  /** DeskDear internal action id (documentation / future tickets) */
+  action: string;
   description: string;
+  /** Mirrors ToolSpec.approval_required */
+  approvalRequired: boolean;
   readOnly: boolean;
   kind: DeskDearOpKind;
-  /** Phase when this op is expected to be implemented on the device. */
-  phase: "A" | "B" | "C";
+  state: DeskDearToolState;
+  capability:
+    | "Health"
+    | "WorkspaceRead"
+    | "WorkspaceWrite"
+    | "OpenApplication"
+    | "RunCommand"
+    | "ScreenCapture"
+    | "InputControl";
 };
 
-/** Catalog of operations the control plane understands. Device may support a subset. */
+/**
+ * Single source of truth aligned with deskdear::tools in tool_registry.cpp.
+ * Keep order and names in sync with the C++ table when either side changes.
+ */
 export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
   {
-    name: "health",
-    description: "Device health, OS, policy version, and pairing status.",
+    name: "status",
+    action: "health.status",
+    description: "Device/session health and pairing status.",
+    approvalRequired: false,
     readOnly: true,
-    kind: "observe",
-    phase: "A"
+    kind: "health",
+    state: "enabled",
+    capability: "Health"
   },
   {
-    name: "list_capabilities",
-    description: "Capabilities currently granted on the paired device (deny-by-default).",
+    name: "read",
+    action: "workspace.read",
+    description: "Read a file under the DeskDear sandboxed workspace (relative path only).",
+    approvalRequired: false,
     readOnly: true,
-    kind: "observe",
-    phase: "A"
+    kind: "workspace",
+    state: "enabled",
+    capability: "WorkspaceRead"
   },
   {
-    name: "workspace_list",
-    description: "List files in the DeskDear sandboxed workspace root.",
-    readOnly: true,
-    kind: "observe",
-    phase: "A"
-  },
-  {
-    name: "workspace_read",
-    description: "Read a file under the sandboxed workspace (relative path only).",
-    readOnly: true,
-    kind: "observe",
-    phase: "A"
-  },
-  {
-    name: "workspace_write",
+    name: "write",
+    action: "workspace.write",
     description: "Write a file under the sandboxed workspace. Requires user approval.",
+    approvalRequired: true,
     readOnly: false,
-    kind: "workspace_mutate",
-    phase: "A"
+    kind: "workspace",
+    state: "enabled",
+    capability: "WorkspaceWrite"
   },
   {
-    name: "screenshot",
-    description: "Capture the desktop screen (Phase B+). High privacy risk; approval required.",
+    name: "list",
+    action: "workspace.list",
+    description: "List entries in the sandboxed workspace.",
+    approvalRequired: false,
     readOnly: true,
-    kind: "observe",
-    phase: "B"
+    kind: "workspace",
+    state: "planned",
+    capability: "WorkspaceRead"
   },
   {
-    name: "left_click",
-    description: "Left-click at coordinates in an allowlisted context (Phase C). Approval required.",
+    name: "info",
+    action: "workspace.info",
+    description: "Metadata for a workspace path.",
+    approvalRequired: false,
+    readOnly: true,
+    kind: "workspace",
+    state: "planned",
+    capability: "WorkspaceRead"
+  },
+  {
+    name: "mkdir",
+    action: "workspace.mkdir",
+    description: "Create a directory in the sandbox. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "workspace",
+    state: "planned",
+    capability: "WorkspaceWrite"
+  },
+  {
+    name: "mv",
+    action: "workspace.move",
+    description: "Move/rename within the sandbox. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "workspace",
+    state: "planned",
+    capability: "WorkspaceWrite"
+  },
+  {
+    name: "delete",
+    action: "workspace.delete",
+    description: "Delete a sandbox path. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "workspace",
+    state: "planned",
+    capability: "WorkspaceWrite"
+  },
+  {
+    name: "open",
+    action: "application.open",
+    description: "Open an application (allowlisted when implemented). Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "application",
+    state: "planned",
+    capability: "OpenApplication"
+  },
+  {
+    name: "shot",
+    action: "screen.capture",
+    description: "Capture the screen. High privacy risk; requires approval.",
+    approvalRequired: true,
+    readOnly: true,
+    kind: "screen",
+    state: "planned",
+    capability: "ScreenCapture"
+  },
+  {
+    name: "zoom",
+    action: "screen.region",
+    description: "Capture a screen region. Requires approval.",
+    approvalRequired: true,
+    readOnly: true,
+    kind: "screen",
+    state: "planned",
+    capability: "ScreenCapture"
+  },
+  {
+    name: "cursor",
+    action: "screen.cursor",
+    description: "Report cursor position.",
+    approvalRequired: true,
+    readOnly: true,
+    kind: "screen",
+    state: "planned",
+    capability: "ScreenCapture"
+  },
+  {
+    name: "move",
+    action: "input.move",
+    description: "Move the pointer. Requires approval.",
+    approvalRequired: true,
     readOnly: false,
     kind: "input",
-    phase: "C"
+    state: "planned",
+    capability: "InputControl"
+  },
+  {
+    name: "click",
+    action: "input.click",
+    description: "Click at coordinates or current cursor. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "input",
+    state: "planned",
+    capability: "InputControl"
+  },
+  {
+    name: "drag",
+    action: "input.drag",
+    description: "Drag between coordinates. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "input",
+    state: "planned",
+    capability: "InputControl"
+  },
+  {
+    name: "scroll",
+    action: "input.scroll",
+    description: "Scroll the focused surface. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "input",
+    state: "planned",
+    capability: "InputControl"
   },
   {
     name: "type",
-    description: "Type text into the focused allowlisted surface (Phase C). Approval required.",
+    action: "input.type",
+    description: "Type text. Requires approval.",
+    approvalRequired: true,
     readOnly: false,
     kind: "input",
-    phase: "C"
+    state: "planned",
+    capability: "InputControl"
+  },
+  {
+    name: "key",
+    action: "input.key",
+    description: "Press a key or chord (e.g. ctrl+s). Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "input",
+    state: "planned",
+    capability: "InputControl"
+  },
+  {
+    name: "hold",
+    action: "input.hold",
+    description: "Hold a key. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "input",
+    state: "planned",
+    capability: "InputControl"
+  },
+  {
+    name: "wait",
+    action: "task.wait",
+    description: "Pause the device-side task loop briefly.",
+    approvalRequired: false,
+    readOnly: true,
+    kind: "task",
+    state: "planned",
+    capability: "Health"
+  },
+  {
+    name: "pause",
+    action: "task.pause",
+    description: "Pause an in-flight DeskDear task.",
+    approvalRequired: false,
+    readOnly: true,
+    kind: "task",
+    state: "planned",
+    capability: "Health"
+  },
+  {
+    name: "resume",
+    action: "task.resume",
+    description: "Resume a paused task. Requires approval.",
+    approvalRequired: true,
+    readOnly: false,
+    kind: "task",
+    state: "planned",
+    capability: "Health"
+  },
+  {
+    name: "cancel",
+    action: "task.cancel",
+    description: "Cancel an in-flight task.",
+    approvalRequired: false,
+    readOnly: true,
+    kind: "task",
+    state: "planned",
+    capability: "Health"
   }
 ] as const;
 
 export function listDeskDearOperations(): Array<{
   name: string;
+  action: string;
   description: string;
   readOnly: boolean;
+  approvalRequired: boolean;
   kind: DeskDearOpKind;
-  phase: string;
+  state: DeskDearToolState;
+  capability: string;
 }> {
   return DESKDEAR_OPERATIONS.map((op) => ({
     name: op.name,
+    action: op.action,
     description: op.description,
     readOnly: op.readOnly,
+    approvalRequired: op.approvalRequired,
     kind: op.kind,
-    phase: op.phase
+    state: op.state,
+    capability: op.capability
   }));
 }
 
@@ -100,17 +302,17 @@ export function getDeskDearOperation(name: string): DeskDearOperation {
   const op = DESKDEAR_OPERATIONS.find((item) => item.name === name);
   if (!op) {
     throw new Error(
-      `Unknown DeskDear operation "${name}". Call list_operations or get_operation with a known name.`
+      `Unknown DeskDear tool "${name}". Use list_operations. Public names match DeskDear tool_registry (status, read, write, …).`
     );
   }
   return op;
 }
 
+/** True when Hermes must run the universal write/approval gate before call_operation. */
 export function isDeskDearWriteOperation(name: string): boolean {
   try {
-    return !getDeskDearOperation(name).readOnly;
+    return getDeskDearOperation(name).approvalRequired;
   } catch {
-    // Unknown ops fail closed as writes so they require approval before schema rejects them.
     return true;
   }
 }
@@ -118,40 +320,38 @@ export function isDeskDearWriteOperation(name: string): boolean {
 export type DeskDearStatus = {
   available: boolean;
   transport: "not_connected" | "paired" | "online";
-  phase: "A";
+  /** Tools DeskDear marks Enabled today */
+  enabledTools: string[];
+  /** Full public catalog size */
+  toolCount: number;
   note: string;
   operations: ReturnType<typeof listDeskDearOperations>;
 };
 
-/**
- * Control-plane status. Phase A: no live transport yet — always not_connected
- * unless a future pairing store marks a device online.
- */
 export function getDeskDearStatus(): DeskDearStatus {
+  const enabledTools = DESKDEAR_OPERATIONS.filter((o) => o.state === "enabled").map((o) => o.name);
   return {
     available: false,
     transport: "not_connected",
-    phase: "A",
+    enabledTools,
+    toolCount: DESKDEAR_OPERATIONS.length,
     note:
-      "DeskDear is registered in Nally but no paired device is online yet. " +
-      "Pairing, JobTickets, and outbound device transport are not active. " +
-      "Do not claim desktop actions succeeded.",
+      "DeskDear public tools are registered in Nally and aligned with the device tool_registry. " +
+      "No paired device is online yet. Enabled device tools today: status, read, write. " +
+      "Do not claim desktop actions succeeded without a device result.",
     operations: listDeskDearOperations()
   };
 }
 
 export type DeskDearCallResult =
-  | { status: "ok"; operation: string; result: unknown }
+  | { status: "ok"; operation: string; action: string; result: unknown }
   | {
       status: "unavailable" | "denied_local" | "not_implemented";
       operation: string;
+      action?: string;
       message: string;
     };
 
-/**
- * Execute (or refuse) a DeskDear operation from Hermes.
- * Fail-closed until device transport exists.
- */
 export async function callDeskDearOperation(
   name: string,
   _args: Record<string, unknown>,
@@ -159,29 +359,36 @@ export async function callDeskDearOperation(
 ): Promise<DeskDearCallResult> {
   const op = getDeskDearOperation(name);
 
-  if (!op.readOnly && !approved) {
+  if (op.approvalRequired && !approved) {
     return {
       status: "denied_local",
       operation: name,
-      message: "Mutating DeskDear operations require explicit approval (approved=true after the user allows)."
+      action: op.action,
+      message:
+        "This DeskDear tool requires explicit user approval (approved=true after Deny/Allow/Always allow)."
     };
   }
 
-  // Observe helpers that are pure control-plane metadata can answer without a device.
-  if (name === "health" || name === "list_capabilities") {
+  // Control-plane metadata without a live device
+  if (name === "status") {
+    return { status: "ok", operation: name, action: op.action, result: getDeskDearStatus() };
+  }
+
+  if (op.state === "planned") {
     return {
-      status: "ok",
+      status: "not_implemented",
       operation: name,
-      result: getDeskDearStatus()
+      action: op.action,
+      message: `DeskDear tool "${name}" (${op.action}) is planned on the device (ToolState::Planned), not enabled yet.`
     };
   }
 
-  // Everything else needs a live paired device.
+  // Enabled tools that need a device (read, write, …)
   return {
     status: "unavailable",
     operation: name,
+    action: op.action,
     message:
-      "No DeskDear device is paired and online for this account. " +
-      "The operation was not sent to any desktop. Pair a device when DeskDear transport is enabled."
+      "No DeskDear device is paired and online. The operation was not sent to any desktop."
   };
 }
