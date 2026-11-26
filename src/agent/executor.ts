@@ -45,7 +45,8 @@ const schemas = {
     predicate: z.string().max(200).optional(),
     object: z.string().max(500).optional(),
     confidence: z.number().int().min(0).max(100).optional(),
-    expires_at: z.string().max(64).optional()
+    expires_at: z.string().max(64).optional(),
+    confirmed_sensitive: z.boolean().optional()
   }).strict(),
   academic: z.object({
     operation: z.enum(["list", "search", "get", "delete", "rename"]),
