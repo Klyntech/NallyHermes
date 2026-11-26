@@ -8,6 +8,7 @@ import { calendarTool } from "./calendar.js";
 import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { classifyFailure } from "./failure.js";
 import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from "../connectors/github.js";
+import { callDeskDearOperation, getDeskDearOperation, listDeskDearOperations } from "./deskdear.js";
 import { callV22Operation, getV22Operation, listV22Operations, type V22Connector } from "../connectors/v22.js";
 import { gateWriteOrPending } from "./approvals.js";
 
@@ -72,7 +73,7 @@ const schemas = {
     max_runs: z.number().int().min(1).max(1000).optional(),
     until_at: z.string().max(64).optional(),
     timezone: z.string().max(100).optional(),
-    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"])).max(10).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer", "deskdear"])).max(10).optional(),
     approval_policy: z.string().trim().min(1).max(100).optional(),
     output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()
@@ -99,7 +100,8 @@ const schemas = {
   }).strict(),
   notion: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
   gmail: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
-  nallputer: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict()
+  nallputer: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict(),
+  deskdear: z.object({ operation: z.enum(["list_operations", "get_operation", "call_operation"]), name: z.string().trim().max(100).optional(), arguments: z.record(z.string(), z.unknown()).optional(), approved: z.boolean().optional() }).strict()
 };
 
 type ToolName = keyof typeof schemas;
@@ -191,6 +193,14 @@ async function executeToolCallOnce(
         else result = await callGitHubOperation(githubArgs.name, githubArgs.arguments ?? {}, githubArgs.approved === true);
         break;
       }
+      case "deskdear": {
+        const dd = args as { operation: "list_operations" | "get_operation" | "call_operation"; name?: string; arguments?: Record<string, unknown>; approved?: boolean };
+        if (dd.operation === "list_operations") result = listDeskDearOperations();
+        else if (!dd.name) throw new Error("DeskDear operation name is required.");
+        else if (dd.operation === "get_operation") result = getDeskDearOperation(dd.name);
+        else result = await callDeskDearOperation(dd.name, dd.arguments ?? {}, dd.approved === true);
+        break;
+      }
       case "notion":
       case "gmail":
       case "nallputer": {
@@ -280,6 +290,12 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
       case "gmail":
       case "nallputer":
         return args.operation === "list_operations" || args.operation === "get_operation";
+      case "deskdear":
+        if (args.operation === "list_operations" || args.operation === "get_operation") return true;
+        if (args.operation === "call_operation" && typeof args.name === "string") {
+          try { return getDeskDearOperation(args.name).readOnly; } catch { return false; }
+        }
+        return false;
       default:
         return false;
     }
@@ -353,7 +369,7 @@ export async function executeToolCalls(
 
 function shouldForceApprovedFlag(toolName: string, args: Record<string, unknown>): boolean {
   // Always-allow path already returned null from gate; mark approved for connectors that check the flag.
-  if (toolName === "notion" || toolName === "gmail" || toolName === "nallputer" || toolName === "github") {
+  if (toolName === "notion" || toolName === "gmail" || toolName === "nallputer" || toolName === "github" || toolName === "deskdear") {
     return args.operation === "call_operation" || Boolean(args.name);
   }
   return false;
