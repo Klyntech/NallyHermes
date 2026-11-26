@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { approvalGrants, pendingApprovals } from "../db/schema.js";
 import { getGitHubOperation } from "../connectors/github.js";
+import { isDeskDearWriteOperation } from "./deskdear.js";
 
 export type ApprovalDecision = "deny" | "allow" | "always";
 
@@ -44,7 +45,8 @@ const WRITE_OPS: Record<string, ReadonlySet<string> | "*"> = {
   github: "*", // non-readOnly ops checked via approved flag path; treat call_operation as gated when not read-only list
   notion: new Set(["create_page", "append_blocks", "update_page"]),
   gmail: new Set(["create_draft", "update_draft", "send_draft", "modify_message"]),
-  nallputer: new Set(["write_file", "run_command", "run_tests", "run_build", "restart_service"])
+  nallputer: new Set(["write_file", "run_command", "run_tests", "run_build", "restart_service"]),
+  deskdear: "*" // non-readOnly ops via isDeskDearWriteOperation
 };
 
 export function isWriteOperation(toolName: string, args: Record<string, unknown>): boolean {
@@ -78,6 +80,15 @@ export function isWriteOperation(toolName: string, args: Record<string, unknown>
         return true;
       }
     }
+  }
+
+  if (toolName === "deskdear") {
+    if (args.operation === "list_operations" || args.operation === "get_operation") return false;
+    if (args.operation === "call_operation") {
+      const name = typeof args.name === "string" ? args.name : "";
+      return isDeskDearWriteOperation(name);
+    }
+    return false;
   }
 
   return false;
