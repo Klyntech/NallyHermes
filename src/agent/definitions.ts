@@ -229,7 +229,7 @@ export const agentTools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "deskdear",
-      description: "NallyDeskDear — permissioned desktop endpoint on the user's machine. Discover operations, check status, and request sandboxed workspace or (later) input actions. Deny-by-default: the model proposes; Hermes approvals and DeskDear policy execute. Until a device is paired, remote ops return unavailable — never invent desktop success. Prefer connectors (gmail, github) over GUI when both work. Mutating ops require approval.",
+      description: "NallyDeskDear desktop endpoint. Public tool names match the device registry: status, read, write, list, info, mkdir, mv, delete, open, shot, zoom, cursor, move, click, drag, scroll, type, key, hold, wait, pause, resume, cancel. Discover with list_operations. Tools with approval_required need user approval. Prefer API connectors over GUI when both work. Until a device is paired, remote ops return unavailable — never invent success.",
       parameters: {
         type: "object",
         properties: {
