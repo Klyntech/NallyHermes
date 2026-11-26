@@ -17,6 +17,8 @@ export interface AdaptiveContextPack {
   channel: InteractionChannel;
   responseStyle: ResponseStyle;
   userMessage: string;
+  /** Preferred address from profile (first name / username) — not a hard-coded owner label. */
+  userDisplayName?: string;
   /** Short topic guess for logs / routing hints — not shown to the user. */
   activeTopic: string;
   entities: Array<{ subject: string; predicate?: string | null; object?: string | null; kind?: string | null }>;
@@ -164,6 +166,19 @@ export async function buildAdaptiveContextPack(input: {
     voice?: boolean;
   };
 }): Promise<AdaptiveContextPack> {
+  let userDisplayName: string | undefined;
+  try {
+    const rows = await db
+      .select({ firstName: users.firstName, username: users.username })
+      .from(users)
+      .where(eq(users.telegramId, input.telegramId))
+      .limit(1);
+    const row = rows[0];
+    if (row?.firstName?.trim()) userDisplayName = row.firstName.trim().slice(0, 80);
+    else if (row?.username?.trim()) userDisplayName = row.username.trim().slice(0, 80);
+  } catch {
+    /* profile optional */
+  }
   const spoken = input.responseStyle === "spoken" || input.channel === "voice";
   const tight = spoken || input.latencyBudgetMs < 45_000;
   const caps = tight
@@ -177,6 +192,7 @@ export async function buildAdaptiveContextPack(input: {
     channel: input.channel,
     responseStyle: input.responseStyle,
     userMessage: input.userMessage,
+    userDisplayName,
     activeTopic: topicFromMessage(input.userMessage),
     entities: memory.entities,
     preferences: memory.preferences,
@@ -201,6 +217,7 @@ export function formatContextPackForModel(pack: AdaptiveContextPack): string {
     `channel=${pack.channel}; style=${pack.responseStyle}; risk=${pack.risk}; latency_budget_ms=${pack.latencyBudgetMs}`
   ];
   if (pack.complexityHint) lines.push(`complexity_hint=${pack.complexityHint}`);
+  if (pack.userDisplayName) lines.push(`user_name=${pack.userDisplayName}`);
   if (pack.entities.length) {
     lines.push("Known entities (resolve incomplete references when unambiguous):");
     for (const e of pack.entities.slice(0, entityCap)) {
