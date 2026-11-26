@@ -117,7 +117,7 @@ export const agentTools: ChatCompletionTool[] = [
           timezone: { type: "string", description: "IANA timezone for recurring wall-clock behavior." },
           max_runs: { type: "integer", minimum: 1, maximum: 1000, description: "Optional maximum number of successful runs, e.g. 2." },
           until_at: { type: "string", description: "Optional ISO-8601 end date/time. No occurrence after this time will run." },
-          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer"] }, maxItems: 10 },
+          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer", "deskdear"] }, maxItems: 10 },
           approval_policy: { type: "string", description: "Policy label such as confirm_mutations or read_only." },
           output_destination: { type: "string", enum: ["telegram"] },
           id: { type: "string", description: "Workflow ID for pause or cancel." }
@@ -225,5 +225,24 @@ export const agentTools: ChatCompletionTool[] = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "deskdear",
+      description: "NallyDeskDear — permissioned desktop endpoint on the user's machine. Discover operations, check status, and request sandboxed workspace or (later) input actions. Deny-by-default: the model proposes; Hermes approvals and DeskDear policy execute. Until a device is paired, remote ops return unavailable — never invent desktop success. Prefer connectors (gmail, github) over GUI when both work. Mutating ops require approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: { type: "string", enum: ["list_operations", "get_operation", "call_operation"] },
+          name: { type: "string", maxLength: 100, description: "Operation name for get_operation or call_operation." },
+          arguments: { type: "object", description: "Arguments for the selected DeskDear operation." },
+          approved: { type: "boolean", description: "Explicit approval for mutating DeskDear operations." }
+        },
+        required: ["operation"],
+        additionalProperties: false
+      }
+    }
+  },
   academicAgentTool
 ];
+
