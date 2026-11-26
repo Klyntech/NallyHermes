@@ -3,10 +3,12 @@ import { db } from "../db/client.js";
 import { memories, users } from "../db/schema.js";
 import type { InteractionChannel, ResponseStyle, RouteComplexity } from "./orchestra.js";
 import { shouldUseSemanticMemory } from "./memoryRouting.js";
+import { buildConnectorHealth } from "./connectorHealth.js";
 
 export type ConnectorHealth = {
   id: string;
   available: boolean;
+  capabilities?: Array<"read" | "write">;
   detail?: string;
 };
 
@@ -128,7 +130,7 @@ async function loadMemorySlices(
   }
 }
 
-function connectorSnapshot(env: {
+function connectorSnapshotFromFlags(env: {
   tavily?: boolean;
   github?: boolean;
   notion?: boolean;
@@ -180,7 +182,7 @@ export async function buildAdaptiveContextPack(input: {
     preferences: memory.preferences,
     commitments: memory.commitments,
     facts: memory.facts,
-    connectors: connectorSnapshot(input.connectors ?? {}),
+    connectors: input.connectors ? connectorSnapshotFromFlags(input.connectors) : buildConnectorHealth(),
     latencyBudgetMs: input.latencyBudgetMs,
     risk: riskFromMessage(input.userMessage),
     complexityHint: input.complexityHint,
@@ -217,9 +219,19 @@ export function formatContextPackForModel(pack: AdaptiveContextPack): string {
     lines.push("Possibly relevant facts (verify live facts with tools):");
     for (const f of pack.facts.slice(0, factCap)) lines.push(`- ${f}`);
   }
-  const available = pack.connectors.filter((c) => c.available).map((c) => c.id);
+  const available = pack.connectors.filter((c) => c.available);
   const unavailable = pack.connectors.filter((c) => !c.available).map((c) => c.id);
-  if (available.length) lines.push(`connectors_available=${available.join(",")}`);
+  if (available.length) {
+    lines.push(
+      "connectors_available=" +
+        available
+          .map((c) => {
+            const caps = (c as { capabilities?: string[] }).capabilities;
+            return caps?.length ? `${c.id}[${caps.join("|")}]` : c.id;
+          })
+          .join(",")
+    );
+  }
   if (unavailable.length) lines.push(`connectors_unavailable=${unavailable.join(",")}`);
   lines.push("Memory is historical context, not proof of live facts. Ask once if multiple entities could match.");
   return lines.join("\n");
