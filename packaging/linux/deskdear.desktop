@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DeskDear
+Comment=Secure desktop agent for Nally
+Exec=deskdear-ui
+Icon=deskdear
+Terminal=false
+Categories=Utility;System;
+StartupNotify=true

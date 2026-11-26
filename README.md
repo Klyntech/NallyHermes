@@ -35,6 +35,17 @@ The headless simulator lets us test the DeskDear execution boundary before conne
 
 Render is configured as a background worker in `render.yaml`. The worker currently runs in transport-free simulation mode, performs a startup self-test, and emits heartbeats. It does not control a real desktop and does not yet connect to the NallyHermes control plane.
 
+## Shared desktop UI
+
+The Windows and Linux desktop application uses the same Qt Quick/QML interface. The UI build is optional for local core development because Qt is not required by the headless simulator:
+
+```sh
+cmake -S . -B build -DDESKDEAR_BUILD_UI=ON
+cmake --build build --config Release
+```
+
+The `desktop-release.yml` GitHub Action installs Qt, builds and tests the application on Windows and Linux, deploys the Qt runtime, and uploads a Windows ZIP and Linux AppImage. Push a `v*` tag or start the workflow manually to produce downloadable artifacts.
+
 ## Security boundary
 
 A device identifier is not an authentication credential. Pairing, account authentication, device approval, heartbeat transport, and remote jobs are not yet connected to NallyHermes. No remote command execution, screen capture, or input control is enabled in this milestone. Future capabilities must require an authenticated session and explicit, revocable user approval.

@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(NallyDeskDear VERSION 0.1.0 LANGUAGES CXX)
 
 option(DESKDEAR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(DESKDEAR_BUILD_UI "Build the shared Qt Quick desktop UI" OFF)
 
 add_executable(deskdear
     src/main.cpp
@@ -74,4 +75,31 @@ if(MSVC)
     target_compile_options(deskdear-simulator PRIVATE /W4 /permissive-)
 else()
     target_compile_options(deskdear-simulator PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(DESKDEAR_BUILD_UI)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2)
+    qt_add_executable(deskdear-ui src/ui_main.cpp)
+    qt_add_resources(deskdear-ui deskdear_ui_resources
+        PREFIX "/deskdear"
+        FILES ui/qml/Main.qml
+    )
+    target_link_libraries(deskdear-ui PRIVATE Qt6::Quick Qt6::QuickControls2)
+    target_compile_features(deskdear-ui PRIVATE cxx_std_20)
+    set_target_properties(deskdear-ui PROPERTIES WIN32_EXECUTABLE TRUE)
+    install(TARGETS deskdear-ui RUNTIME DESTINATION bin)
+    install(FILES packaging/linux/deskdear.desktop DESTINATION share/applications)
+    install(FILES packaging/linux/deskdear.svg DESTINATION share/icons/hicolor/scalable/apps)
+endif()
+
+include(CPack)
+set(CPACK_PACKAGE_NAME "DeskDear")
+set(CPACK_PACKAGE_VENDOR "NallyHermes")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Secure desktop agent for Nally")
+set(CPACK_PACKAGE_FILE_NAME "DeskDear-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+elseif(UNIX AND NOT APPLE)
+    set(CPACK_GENERATOR "TGZ;DEB")
 endif()

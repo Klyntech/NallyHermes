@@ -1,0 +1,109 @@
+name: DeskDear Desktop Builds
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'include/**'
+      - 'ui/**'
+      - 'packaging/**'
+      - '.github/workflows/desktop-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deskdear-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: '6.8.3'
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-2022
+            artifact: DeskDear-windows-x64
+          - name: Linux x64
+            os: ubuntu-22.04
+            artifact: DeskDear-linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: ${{ matrix.os == 'windows-2022' && 'windows' || 'linux' }}
+          target: desktop
+          arch: ${{ matrix.os == 'windows-2022' && 'win64_msvc2022_64' || 'linux_gcc_64' }}
+          modules: qtquickcontrols2
+          cache: true
+
+      - name: Configure
+        shell: bash
+        run: >-
+          cmake -S . -B build
+          -DDESKDEAR_BUILD_UI=ON
+          -DBUILD_TESTING=ON
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/staging
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Install application
+        run: cmake --install build --config Release --prefix staging
+
+      - name: Deploy Qt on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          windeployqt --release --qmldir ui/qml staging/bin/deskdear-ui.exe
+          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
+
+      - name: Package Linux application
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
+          cp -a staging/. AppDir/usr/
+          cp packaging/linux/deskdear.desktop AppDir/usr/share/applications/
+          cp packaging/linux/deskdear.svg AppDir/usr/share/icons/hicolor/scalable/apps/deskdear.svg
+          curl -L --fail --retry 3 -o linuxdeploy.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L --fail --retry 3 -o linuxdeploy-plugin-qt.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage linuxdeploy-plugin-qt.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export PATH="$PWD:$PATH"
+          export QMAKE=$(command -v qmake6 || command -v qmake)
+          export QMLDIR="$PWD/ui/qml"
+          ./linuxdeploy.AppImage --appdir AppDir --plugin qt --output appimage
+          mv DeskDear*.AppImage "${{ matrix.artifact }}.AppImage"
+          tar -czf "${{ matrix.artifact }}.tar.gz" -C AppDir .
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            *.zip
+            *.AppImage
+            *.tar.gz
+          if-no-files-found: error
