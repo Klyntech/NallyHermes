@@ -277,12 +277,21 @@ async function getUserId(telegramId: string): Promise<string> {
   return user.id;
 }
 
-type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string; kind?: "fact" | "preference" | "project" | "commitment" | "entity" | "episode"; subject?: string; predicate?: string; object?: string; confidence?: number; expires_at?: string };
+const SENSITIVE_MEMORY =
+  /\b(password|passcode|otp|one[- ]time code|ssn|social security|credit card|card number|cvv|bank account|private key|secret key|api[- ]?key|seed phrase|recovery phrase)\b/i;
+
+type MemoryInput = { operation: "recall" | "remember" | "forget" | "update"; content?: string; id?: string; query?: string; kind?: "fact" | "preference" | "project" | "commitment" | "entity" | "episode"; subject?: string; predicate?: string; object?: string; confidence?: number; expires_at?: string; confirmed_sensitive?: boolean };
 export async function memoryTool(telegramId: string, input: MemoryInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const userId = await getUserId(telegramId);
   switch (input.operation) {
     case "remember": {
       if (!input.content?.trim() || input.content.length > 4000) throw new Error("Memory content must be 1–4000 characters.");
+      if (SENSITIVE_MEMORY.test(input.content) && input.confirmed_sensitive !== true) {
+        return {
+          status: "needs_consent",
+          message: "This looks like sensitive personal data. Ask the user to confirm they want it stored, then call remember again with confirmed_sensitive=true only if they clearly agree."
+        };
+      }
       const confidence = Math.min(100, Math.max(0, Math.round(input.confidence ?? 80)));
       const expiresAt = input.expires_at ? new Date(input.expires_at) : undefined;
       if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new Error("expires_at must be a valid ISO-8601 timestamp.");
