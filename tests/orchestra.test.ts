@@ -11,7 +11,8 @@ const {
   summarizeExecution,
   toVoiceResponse,
   SPOKEN_STYLE_GUIDANCE,
-  budgetForComplexity
+  budgetForComplexity,
+  SOFT_PLAN_GUIDANCE
 } = await import("../src/agent/orchestra.js");
 const { classifyFailure } = await import("../src/agent/failure.js");
 const { applyObservation, shouldNotify } = await import("../src/agent/eventMonitor.js");
@@ -198,4 +199,25 @@ test("O2 budget tiers shrink simple and expand complex within config caps", () =
   assert.equal(complex.maxModelRounds, 12);
   assert.equal(complex.maxToolRounds, 60);
   assert.equal(complex.deadlineMs, 480_000);
+});
+
+
+test("O4 soft plan for standard multi-part without full planner", () => {
+  const multi = routeRequest(
+    "Please search the latest release notes and also summarize the breaking changes for the team."
+  );
+  if (multi.complexity === "complex") {
+    assert.equal(multi.usePlanner, true);
+    assert.equal(multi.useSoftPlan, false);
+  } else {
+    assert.equal(multi.usePlanner, false);
+    assert.equal(multi.useSoftPlan, true);
+  }
+  assert.match(SOFT_PLAN_GUIDANCE, /multi-part/i);
+});
+
+test("O4 soft plan does not fire on simple chat", () => {
+  const decision = routeRequest("Hi");
+  assert.equal(decision.useSoftPlan, false);
+  assert.equal(decision.usePlanner, false);
 });
