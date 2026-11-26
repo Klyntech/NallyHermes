@@ -5,6 +5,7 @@ import type { ProgressEvent } from "./progress.js";
 import { agentTools } from "./definitions.js";
 import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
+import { streamModelTurn } from "./streamingTurn.js";
 import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
 import { beginPhase, budgetForComplexity, completeExecution, createExecutionState, endPhase, recordPlanOutcome, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
@@ -460,6 +461,8 @@ export type RunAgentOptions = {
   responseStyle?: ResponseStyle;
   conversationId?: string;
   signal?: AbortSignal;
+  /** Receives model text as it streams (voice uses it to start speaking before the reply is complete). */
+  onTextDelta?: (delta: string) => void;
 };
 
 export async function runAgent(
@@ -541,7 +544,7 @@ export async function runAgent(
       })
     );
   }
-  const pack = await buildAdaptiveContextPack({
+  const packPromise = buildAdaptiveContextPack({
     telegramId,
     userMessage,
     channel: state.channel,
@@ -557,7 +560,10 @@ export async function runAgent(
       voice: Boolean(config.VOICE_ENABLED && config.DEEPGRAM_API_KEY && config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID)
     }
   });
-  const prepared = await prepareRequest(history, userMessage, telegramId);
+  const [pack, prepared] = await Promise.all([
+    packPromise,
+    prepareRequest(history, userMessage, telegramId)
+  ]);
   const messages = [...prepared.messages];
   messages.push({ role: "system", content: formatContextPackForModel(pack) });
   if (academicSourceCheck) {
@@ -618,18 +624,33 @@ export async function runAgent(
   for (let round = 0; round < state.budget.maxModelRounds; round++) {
     await reportProgress({ type: "thinking", phase: "model" });
     throwIfAborted();
-    const response = await llm.chat.completions.create({
-      model: config.NVIDIA_NIM_MODEL,
-      messages,
-      tools: workflowAllowedTools
-        ? agentTools.filter((tool) => tool.type === "function" && workflowAllowedTools.has(tool.function.name))
-        : agentTools,
-      tool_choice: forceAcademicTool && round === 0
-        ? { type: "function", function: { name: "academic" } }
-        : "auto",
-      temperature: 0.4
-    }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal });
-    const message = response.choices[0]?.message;
+    const message = requestOptions?.onTextDelta
+      ? await streamModelTurn(
+          () => llm.chat.completions.create({
+            model: config.NVIDIA_NIM_MODEL,
+            messages,
+            tools: workflowAllowedTools
+              ? agentTools.filter((tool) => tool.type === "function" && workflowAllowedTools.has(tool.function.name))
+              : agentTools,
+            tool_choice: forceAcademicTool && round === 0
+              ? { type: "function", function: { name: "academic" } }
+              : "auto",
+            temperature: 0.4,
+            stream: true
+          }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal }),
+          requestOptions.onTextDelta
+        )
+      : (await llm.chat.completions.create({
+          model: config.NVIDIA_NIM_MODEL,
+          messages,
+          tools: workflowAllowedTools
+            ? agentTools.filter((tool) => tool.type === "function" && workflowAllowedTools.has(tool.function.name))
+            : agentTools,
+          tool_choice: forceAcademicTool && round === 0
+            ? { type: "function", function: { name: "academic" } }
+            : "auto",
+          temperature: 0.4
+        }, { timeout: config.AGENT_MODEL_TIMEOUT_MS, signal })).choices[0]?.message;
     if (!message) {
       stopReason = "The model returned an empty response.";
       break;
@@ -639,10 +660,12 @@ export async function runAgent(
     const evaluation = evaluateTurn(message, round, state.budget.maxModelRounds);
     if (evaluation.kind === "complete") {
       const sources = extractAnswerSources(messages);
-      const audit = auditFactualAnswer(evaluation.answer, {
-        hadResearchTools: historyUsedResearchTools(messages),
-        hasSources: sources.length > 0
-      });
+      const audit = state.responseStyle === "spoken"
+        ? { ok: true, issues: [] as Array<{ code: string }>, rewriteHint: "" }
+        : auditFactualAnswer(evaluation.answer, {
+            hadResearchTools: historyUsedResearchTools(messages),
+            hasSources: sources.length > 0
+          });
       if (!audit.ok && round < state.budget.maxModelRounds - 1) {
         messages.push({
           role: "system",
