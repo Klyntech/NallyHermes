@@ -143,6 +143,17 @@ export async function createWorkflow(telegramId: string, input: CreateWorkflowIn
     max_attempts: Math.min(5, Math.max(1, input.retryPolicy?.max_attempts ?? 2)),
     backoff_seconds: Math.min(86_400, Math.max(15, input.retryPolicy?.backoff_seconds ?? 60))
   };
+  // Monitoring / interval-style workflows must declare a stop bound (maxRuns or untilAt).
+  const looksMonitoring =
+    /\b(every\s+\d+\s*(?:min|minute|hour|hr)s?|keep checking|when (?:it|the) (?:starts|ends|happens)|monitor|until (?:it|the))\b/i.test(
+      input.instructions
+    );
+  if (looksMonitoring && input.maxRuns == null && !input.untilAt && recurrence !== "once") {
+    throw new Error(
+      "Monitoring or interval workflows need a stop condition: set maxRuns or untilAt so they cannot loop forever."
+    );
+  }
+
   const [row] = await db.insert(workflows).values({
     userId,
     name: input.name.trim(),
