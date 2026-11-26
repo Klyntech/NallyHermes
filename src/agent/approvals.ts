@@ -10,6 +10,10 @@ import { getGitHubOperation } from "../connectors/github.js";
 
 export type ApprovalDecision = "deny" | "allow" | "always";
 
+/** Pending approvals older than this cannot be claimed (fail-closed). */
+export const PENDING_APPROVAL_TTL_MS = 60 * 60 * 1000;
+
+
 export type PendingApprovalRecord = {
   id: string;
   telegramId: string;
@@ -18,6 +22,7 @@ export type PendingApprovalRecord = {
   arguments: Record<string, unknown>;
   summary: string;
   status: string;
+  createdAt?: string;
 };
 
 export type ApprovalNeededResult = {
@@ -129,6 +134,30 @@ export async function grantAlwaysAllow(
     .limit(1);
   if (existing.length) return;
   await db.insert(approvalGrants).values({ telegramId, provider, scope });
+  console.info("approval.grant", JSON.stringify({ telegramId, provider, scope }));
+}
+
+/** Remove a previously granted always-allow scope (exact operation scope only). */
+export async function revokeAlwaysAllow(
+  telegramId: string,
+  provider: string,
+  operation: string
+): Promise<number> {
+  const scope = approvalScope(provider, operation);
+  const rows = await db
+    .delete(approvalGrants)
+    .where(
+      and(
+        eq(approvalGrants.telegramId, telegramId),
+        eq(approvalGrants.provider, provider),
+        eq(approvalGrants.scope, scope)
+      )
+    )
+    .returning({ id: approvalGrants.id });
+  if (rows.length) {
+    console.info("approval.revoke", JSON.stringify({ telegramId, provider, scope, count: rows.length }));
+  }
+  return rows.length;
 }
 
 export async function createPendingApproval(input: {
@@ -157,8 +186,17 @@ export async function createPendingApproval(input: {
     operation: row.operation,
     arguments: row.arguments as Record<string, unknown>,
     summary: row.summary,
-    status: row.status
+    status: row.status,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? "")
   };
+}
+
+export function isPendingExpired(pending: Pick<PendingApprovalRecord, "createdAt" | "status">, now = Date.now()): boolean {
+  if (pending.status !== "pending") return false;
+  if (!pending.createdAt) return false;
+  const created = Date.parse(pending.createdAt);
+  if (!Number.isFinite(created)) return false;
+  return now - created > PENDING_APPROVAL_TTL_MS;
 }
 
 export async function getPendingApproval(id: string): Promise<PendingApprovalRecord | null> {
@@ -171,12 +209,20 @@ export async function getPendingApproval(id: string): Promise<PendingApprovalRec
     operation: row.operation,
     arguments: (row.arguments ?? {}) as Record<string, unknown>,
     summary: row.summary,
-    status: row.status
+    status: row.status,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? "")
   };
 }
 
 /** Claim a pending approval exactly once before executing its mutation. */
 export async function claimPendingApproval(id: string): Promise<boolean> {
+  const current = await getPendingApproval(id);
+  if (!current || current.status !== "pending") return false;
+  if (isPendingExpired(current)) {
+    await markPending(id, "failed", { error: "Approval expired before claim." });
+    console.info("approval.expired", JSON.stringify({ pending_id: id }));
+    return false;
+  }
   const rows = await db
     .update(pendingApprovals)
     .set({ status: "approved" })
@@ -207,17 +253,23 @@ export function summarizeWriteRequest(
   args: Record<string, unknown>
 ): string {
   const bits = [`${provider}.${operation}`];
-  for (const key of ["path", "page_id", "block_id", "command", "title", "id"]) {
+  const keys = [
+    "path", "page_id", "block_id", "command", "title", "id", "repo", "repository",
+    "owner", "to", "subject", "query", "name", "file", "branch"
+  ];
+  for (const key of keys) {
     const v = args[key];
-    if (typeof v === "string" && v.trim()) bits.push(`${key}=${v.slice(0, 40)}`);
+    if (typeof v === "string" && v.trim()) bits.push(`${key}=${v.slice(0, 48)}`);
   }
   if (typeof args.content === "string") bits.push(`content=${args.content.length} chars`);
   if (Array.isArray(args.children)) bits.push(`blocks=${args.children.length}`);
-  // nested connector arguments
   const nested = args.arguments;
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
     const n = nested as Record<string, unknown>;
-    if (typeof n.path === "string") bits.push(`path=${n.path.slice(0, 40)}`);
+    for (const key of keys) {
+      const v = n[key];
+      if (typeof v === "string" && v.trim()) bits.push(`${key}=${v.slice(0, 48)}`);
+    }
     if (typeof n.content === "string") bits.push(`content=${n.content.length} chars`);
     if (Array.isArray(n.children)) bits.push(`blocks=${n.children.length}`);
   }
@@ -232,7 +284,7 @@ export function approvalNeededPayload(pending: PendingApprovalRecord): ApprovalN
     operation: pending.operation,
     summary: pending.summary,
     message:
-      "Write paused for your confirmation. Tap Deny, Allow once, or Always allow. I will not keep asking in chat once you choose."
+      "Write paused for your confirmation. Deny cancels this write. Allow runs it once. Always allow remembers this operation for future runs. Pending approvals expire after one hour."
   };
 }
 
