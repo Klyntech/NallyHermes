@@ -82,3 +82,29 @@ describe("accuracy contract — query planner", () => {
     assert.ok(variants.some((q) => /anthropic\.com/i.test(q) || /official/i.test(q)));
   });
 });
+
+
+test("price claims without research tools fail the audit", () => {
+  const result = auditFactualAnswer(
+    "The Pro plan costs $49 per month with unlimited seats for every team.",
+    { hadResearchTools: false, hasSources: false }
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((i) => i.code === "price_without_evidence"));
+});
+
+test("spoken style skips table_without_proof but still flags prices", () => {
+  const table = [
+    "| Plan | Price |",
+    "| --- | --- |",
+    "| Pro | $49 |",
+    "| Team | $99 |"
+  ].join("\n");
+  const spoken = auditFactualAnswer(table, {
+    hadResearchTools: false,
+    hasSources: false,
+    style: "spoken"
+  });
+  assert.ok(!spoken.issues.some((i) => i.code === "table_without_proof"));
+  assert.ok(spoken.issues.some((i) => i.code === "price_without_evidence"));
+});
