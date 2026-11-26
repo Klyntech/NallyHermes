@@ -28,6 +28,8 @@ export type RouteSignals = {
   multiQuestion: boolean;
   multiIntent: boolean;
   numbered: boolean;
+  /** Structural "use result of earlier step" language — not a domain intent label. */
+  dependencyCue: boolean;
   length: number;
 };
 
@@ -93,6 +95,7 @@ export function routeRequest(text: string, options?: RouteOptions): RouteDecisio
         multiQuestion: false,
         multiIntent: false,
         numbered: false,
+        dependencyCue: false,
         length: 0
       }
     };
@@ -195,12 +198,19 @@ export function estimateComplexityDetailed(text: string): {
     /\b(?:and|then|,\s*(?:also|then)?|after that)\b/i.test(trimmed);
   const multiIntent = joinedActions || (uniqueActions.size >= 3 && length >= 40);
 
+  // Structural dependency between steps (still not domain intent).
+  const dependencyCue =
+    /\b(?:based on|using (?:the|that|those) (?:result|output|findings?)|after (?:you|that)|from (?:the|that) (?:search|list|table)|then (?:use|send|write|email|summarize))\b/i.test(
+      trimmed
+    );
+
   const signals: RouteSignals = {
     multiPart,
     comparative,
     multiQuestion,
     multiIntent,
     numbered,
+    dependencyCue,
     length
   };
 
@@ -214,12 +224,13 @@ export function estimateComplexityDetailed(text: string): {
     comparative ||
     multiQuestion ||
     (numbered && length >= 60) ||
-    (multiIntent && length >= 35)
+    (multiIntent && length >= 35) ||
+    (dependencyCue && multiPart && length >= 50)
   ) {
     return { complexity: "complex", signals };
   }
 
-  if (length >= 220 || (sentenceBreaks >= 1 && length >= 120) || multiPart || multiIntent) {
+  if (length >= 220 || (sentenceBreaks >= 1 && length >= 120) || multiPart || multiIntent || dependencyCue) {
     return { complexity: "standard", signals };
   }
 
