@@ -56,11 +56,18 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis -y --no-progress
-          # Ensure makensis is on PATH for this job
-          $nsis = "C:\Program Files (x86)\NSIS"
-          if (Test-Path $nsis) {
-            echo "$nsis" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $candidates = @(
+            "C:\Program Files (x86)\NSIS",
+            "C:\Program Files\NSIS"
+          )
+          foreach ($nsis in $candidates) {
+            if (Test-Path "$nsis\makensis.exe") {
+              echo "$nsis" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              Write-Host "NSIS found at $nsis"
+              break
+            }
           }
+          makensis /VERSION
 
       - name: Configure
         shell: bash
@@ -86,72 +93,52 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Deploy Qt runtime next to the UI binary
-          $ui = "staging/bin/deskdear-ui.exe"
+          $ui = "staging\bin\deskdear-ui.exe"
           if (-not (Test-Path $ui)) {
             throw "deskdear-ui.exe not found at $ui"
           }
+
+          # Deploy Qt runtime next to the UI binary
           windeployqt --release --qmldir ui/qml $ui
 
-          # Also keep the headless CLI next to the UI (optional but useful)
-          if (Test-Path "staging/bin/deskdear.exe") {
+          if (Test-Path "staging\bin\deskdear.exe") {
             Write-Host "CLI deskdear.exe present in staging/bin"
           }
 
-          # Portable ZIP (folder of files — useful for side-by-side testing)
-          Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}-portable.zip" -Force
+          # Portable ZIP
+          $portable = "${{ matrix.artifact }}-portable.zip"
+          if (Test-Path $portable) { Remove-Item $portable -Force }
+          Compress-Archive -Path staging\* -DestinationPath $portable -Force
+          Write-Host "Portable ZIP: $portable ($([math]::Round((Get-Item $portable).Length / 1MB, 1)) MB)"
 
-          # Single installable Setup.exe via CPack NSIS.
-          # Point CPack at the already-deployed staging tree so all Qt DLLs are included.
-          $cpackConfig = @"
-          set(CPACK_PACKAGE_NAME "DeskDear")
-          set(CPACK_PACKAGE_VENDOR "NallyHermes")
-          set(CPACK_PACKAGE_VERSION "0.1.0")
-          set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Secure desktop agent for Nally")
-          set(CPACK_PACKAGE_FILE_NAME "${{ matrix.artifact }}")
-          set(CPACK_GENERATOR "NSIS")
-          set(CPACK_PACKAGE_INSTALL_DIRECTORY "DeskDear")
-          set(CPACK_INSTALLED_DIRECTORIES "${{ github.workspace }}/staging;/")
-          set(CPACK_NSIS_DISPLAY_NAME "DeskDear")
-          set(CPACK_NSIS_PACKAGE_NAME "DeskDear")
-          set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-          set(CPACK_NSIS_MODIFY_PATH OFF)
-          set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\deskdear-ui.exe")
-          set(CPACK_NSIS_MENU_LINKS "bin/deskdear-ui.exe" "DeskDear")
-          set(CPACK_NSIS_EXECUTABLES_DIRECTORY "bin")
-          set(CPACK_NSIS_DEFINES "RequestExecutionLevel user")
-          set(CPACK_PACKAGE_EXECUTABLES "deskdear-ui;DeskDear")
-          set(CPACK_CREATE_DESKTOP_LINKS "deskdear-ui")
-          "@
-          $cpackConfigPath = "build/CPackConfig.nsi.cmake"
-          Set-Content -Path $cpackConfigPath -Value $cpackConfig -Encoding UTF8
+          # Build a real NSIS installer with makensis (avoids CPack Windows path escapes)
+          $stagingAbs = (Resolve-Path "staging").Path
+          $outExe = Join-Path (Get-Location) "${{ matrix.artifact }}-Setup.exe"
+          $nsiPath = Join-Path (Get-Location) "packaging\windows\deskdear.nsi"
 
-          # Generate the NSIS installer into the workspace root
-          cpack --config $cpackConfigPath -B "${{ github.workspace }}" -D CPACK_PACKAGE_DIRECTORY="${{ github.workspace }}"
-
-          # Normalize the installer name to a stable artifact name
-          $setup = Get-ChildItem -Path . -Filter "*.exe" -File |
-            Where-Object { $_.Name -match "DeskDear|Setup" -or $_.DirectoryName -eq (Get-Location).Path } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-
-          if (-not $setup) {
-            # CPack often writes into a _CPack_Packages tree; search recursively
-            $setup = Get-ChildItem -Path . -Recurse -Filter "*.exe" -File |
-              Where-Object { $_.Name -like "*DeskDear*" -or $_.Name -like "*Setup*" } |
-              Sort-Object LastWriteTime -Descending |
-              Select-Object -First 1
+          if (-not (Test-Path $nsiPath)) {
+            throw "NSIS script missing: $nsiPath"
           }
 
-          if (-not $setup) {
-            Write-Host "Listing workspace for diagnostics:"
-            Get-ChildItem -Recurse -File | Select-Object -First 80 FullName
-            throw "NSIS Setup.exe was not produced by cpack"
+          # NSIS wants backslashes; pass absolute paths as defines
+          & makensis `
+            "/DSTAGING_DIR=$stagingAbs" `
+            "/DOUTFILE=$outExe" `
+            "/DPRODUCT_VERSION=0.1.0" `
+            $nsiPath
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "makensis failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Test-Path $outExe)) {
+            throw "Expected installer not found: $outExe"
           }
 
-          $dest = "${{ matrix.artifact }}-Setup.exe"
-          Copy-Item $setup.FullName $dest -Force
-          Write-Host "Installer ready: $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB)"
+          $sizeMb = [math]::Round((Get-Item $outExe).Length / 1MB, 1)
+          if ($sizeMb -lt 5) {
+            throw "Installer is only $sizeMb MB — packaging almost certainly incomplete"
+          }
+          Write-Host "Installer ready: $outExe ($sizeMb MB)"
 
       - name: Package Linux application
         if: runner.os == 'Linux'
@@ -181,7 +168,6 @@ jobs:
           path: |
             *-Setup.exe
             *-portable.zip
-            *.zip
             *.AppImage
             *.tar.gz
           if-no-files-found: error
