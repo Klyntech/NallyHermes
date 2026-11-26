@@ -7,7 +7,7 @@ import { prepareRequest } from "./planner.js";
 import { executeToolCalls, isReadOnlyCall, type ToolCallInput } from "./executor.js";
 import { evaluateTurn, finalResponse, auditFactualAnswer, type ModelToolCall } from "./evaluator.js";
 import { createExecutionPlan, type ExecutionPlan, type ExecutionPlanStep } from "./smartPlanner.js";
-import { beginPhase, completeExecution, createExecutionState, endPhase, recordPlanOutcome, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
+import { beginPhase, budgetForComplexity, completeExecution, createExecutionState, endPhase, recordPlanOutcome, routeRequest, summarizeExecution, SPOKEN_STYLE_GUIDANCE, type ExecutionState, type InteractionChannel, type ResponseStyle } from "./orchestra.js";
 import { buildAdaptiveContextPack, formatContextPackForModel } from "./contextPack.js";
 import { composePartialAnswer } from "./partial.js";
 import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
@@ -481,6 +481,12 @@ export async function runAgent(
   const academicSourceCheck = requiresAcademicSourceCheck(userMessage);
   const forceAcademicTool = academicSourceCheck && (!workflowAllowedTools || workflowAllowedTools.has("academic"));
   const route = routeRequest(userMessage, { channel, responseStyle });
+  const tier = budgetForComplexity(route.complexity, {
+    maxModelRounds: config.AGENT_MAX_MODEL_ROUNDS,
+    maxToolRounds: config.AGENT_MAX_PLAN_TOOL_ROUNDS,
+    maxParallelCalls: config.AGENT_MAX_PARALLEL_TOOL_CALLS,
+    deadlineMs: config.AGENT_PLAN_TIMEOUT_MS
+  });
   const state = createExecutionState(
     {
       text: userMessage,
@@ -491,10 +497,10 @@ export async function runAgent(
     },
     route,
     {
-      maxModelRounds: config.AGENT_MAX_MODEL_ROUNDS,
-      maxToolRounds: config.AGENT_MAX_PLAN_TOOL_ROUNDS,
-      maxParallelCalls: config.AGENT_MAX_PARALLEL_TOOL_CALLS,
-      deadlineAt: Date.now() + config.AGENT_PLAN_TIMEOUT_MS
+      maxModelRounds: tier.maxModelRounds,
+      maxToolRounds: tier.maxToolRounds,
+      maxParallelCalls: tier.maxParallelCalls,
+      deadlineAt: Date.now() + tier.deadlineMs
     }
   );
   state.status = "running";
@@ -609,7 +615,7 @@ export async function runAgent(
 
   beginPhase(state, "execution");
   let stopReason = "The direct tool-round budget was reached.";
-  for (let round = 0; round < config.AGENT_MAX_MODEL_ROUNDS; round++) {
+  for (let round = 0; round < state.budget.maxModelRounds; round++) {
     await reportProgress({ type: "thinking", phase: "model" });
     throwIfAborted();
     const response = await llm.chat.completions.create({
@@ -630,14 +636,14 @@ export async function runAgent(
     }
     messages.push(message);
 
-    const evaluation = evaluateTurn(message, round, config.AGENT_MAX_MODEL_ROUNDS);
+    const evaluation = evaluateTurn(message, round, state.budget.maxModelRounds);
     if (evaluation.kind === "complete") {
       const sources = extractAnswerSources(messages);
       const audit = auditFactualAnswer(evaluation.answer, {
         hadResearchTools: historyUsedResearchTools(messages),
         hasSources: sources.length > 0
       });
-      if (!audit.ok && round < config.AGENT_MAX_MODEL_ROUNDS - 1) {
+      if (!audit.ok && round < state.budget.maxModelRounds - 1) {
         messages.push({
           role: "system",
           content: audit.rewriteHint
