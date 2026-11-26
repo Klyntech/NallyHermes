@@ -105,9 +105,44 @@ export function classifySourceTier(url: string): SourceTier {
  * Lightweight query planner: turn one user-facing query into a few focused
  * search strings that bias toward primary sources and the measurable ask.
  */
+type CachedSearch = { expiresAt: number; payload: unknown };
+const searchResultCache = new Map<string, CachedSearch>();
+const SEARCH_CACHE_TTL_MS = 120_000;
+const SEARCH_CACHE_MAX = 40;
+
+function searchCacheKey(parts: Record<string, unknown>): string {
+  return JSON.stringify(parts);
+}
+
+function getCachedSearch(key: string): unknown | null {
+  const hit = searchResultCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    searchResultCache.delete(key);
+    return null;
+  }
+  return hit.payload;
+}
+
+function setCachedSearch(key: string, payload: unknown): void {
+  if (searchResultCache.size >= SEARCH_CACHE_MAX) {
+    const first = searchResultCache.keys().next().value;
+    if (first !== undefined) searchResultCache.delete(first);
+  }
+  searchResultCache.set(key, { expiresAt: Date.now() + SEARCH_CACHE_TTL_MS, payload });
+}
+
+/** Quantitative / evidence-heavy asks should not stay on basic depth by default. */
+export function shouldAutoAdvancedSearch(query: string): boolean {
+  return /\b(price|pricing|cost|how much|count|how many|commits?|release date|launched|changelog|version|tokens?\/?(?:m|million)?|USD|\$)\b/i.test(
+    query
+  );
+}
+
 export function planSearchQueries(query: string, research: boolean): string[] {
   const q = query.trim();
-  if (!research) return [q];
+  const expand = research || shouldAutoAdvancedSearch(q);
+  if (!expand) return [q];
 
   const variants = new Set<string>([q]);
   const lower = q.toLowerCase();
@@ -132,7 +167,7 @@ export function planSearchQueries(query: string, research: boolean): string[] {
     variants.add(`${q} site:cloud.google.com`);
   }
 
-  return [...variants].slice(0, 3);
+  return [...variants].slice(0, research ? 3 : 2);
 }
 
 type NormalizedHit = {
@@ -251,10 +286,25 @@ function sortResults(results: NormalizedHit[]): NormalizedHit[] {
 /** Search the web: hybrid CC + Tavily when both are configured (closes coverage gap). */
 export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgressReporter): Promise<unknown> {
   const parsed = searchInput.parse(input);
-  const research = parsed.research;
-  const depth = research ? "advanced" : parsed.depth;
+  const research = parsed.research || shouldAutoAdvancedSearch(parsed.query);
+  const depth = research ? "advanced" : parsed.depth === "advanced" ? "advanced" : parsed.depth;
   const extract = research || depth === "advanced";
   const queries = planSearchQueries(parsed.query, research);
+
+  const cacheKey = searchCacheKey({
+    q: parsed.query,
+    max: parsed.max_results,
+    depth,
+    research,
+    topic: parsed.topic,
+    include: parsed.include_domains ?? null,
+    exclude: parsed.exclude_domains ?? null,
+    mode: config.WEB_SEARCH_MODE
+  });
+  const cached = getCachedSearch(cacheKey);
+  if (cached) {
+    return { ...(cached as object), cache: "hit" };
+  }
   const perQuery = Math.max(3, Math.ceil(parsed.max_results / queries.length));
   const mode = config.WEB_SEARCH_MODE;
   const useCc = isCreepyCrawleyConfigured() && mode !== "tavily";
@@ -387,7 +437,7 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
     resultCount: results.length
   });
 
-  return {
+  const payload = {
     answer,
     provider,
     providers_used: providersUsed,
@@ -402,4 +452,6 @@ export async function searchWeb(input: WebSearchInput, onProgress?: ToolProgress
       "Prefer source_tier=primary. For prices, counts, dates, or complete inventories, call fetch on at least one primary URL before stating numbers when extracted_content is missing or thin. Do not fill table cells from snippets alone. If a field is missing on the primary page, write Not verified — not 'not disclosed' from memory.",
     results
   };
+  setCachedSearch(cacheKey, payload);
+  return payload;
 }
