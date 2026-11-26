@@ -61,7 +61,8 @@ async function runPlannedStep(
   readOnlyOnly: boolean,
   deadline: number,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  allowedTools?: ReadonlySet<string>
+  allowedTools?: ReadonlySet<string>,
+  resumeRequest?: string
 ): Promise<StepOutcome> {
   messages.push({
     role: "system",
@@ -146,7 +147,9 @@ async function runPlannedStep(
         functionCalls as ToolCallInput[],
         telegramId,
         onProgress,
-        allowedTools
+        allowedTools,
+        false,
+        resumeRequest
       );
       const resultById = new Map(results.map((result) => [result.tool_call_id, result]));
       let hadToolErrors = false;
@@ -266,7 +269,8 @@ async function runPlannedRequest(
   steps: ExecutionPlanStep[],
   telegramId: string,
   onProgress?: (event: ProgressEvent) => Promise<void> | void,
-  allowedTools?: ReadonlySet<string>
+  allowedTools?: ReadonlySet<string>,
+  resumeRequest?: string
 ): Promise<string> {
   const completed = new Set<string>();
   const outcomes: StepOutcome[] = [];
@@ -324,7 +328,8 @@ async function runPlannedRequest(
         step.parallel_safe,
         deadline,
         onProgress,
-        allowedTools
+        allowedTools,
+        resumeRequest
       )
     ));
 
@@ -606,7 +611,7 @@ export async function runAgent(
   if (plan) {
     await reportProgress({ type: "plan_created", stepCount: plan.steps.length });
     beginPhase(state, "execution");
-    const answer = await runPlannedRequest(messages, plan.steps, telegramId, reportProgress, workflowAllowedTools);
+    const answer = await runPlannedRequest(messages, plan.steps, telegramId, reportProgress, workflowAllowedTools, userMessage);
     endPhase(state, "execution");
     completeExecution(state, "completed");
   if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
