@@ -14,6 +14,7 @@ import { composePartialAnswer } from "./partial.js";
 import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
 import { requiresAcademicSourceCheck } from "./academicSourceGate.js";
 import { appendSourcesFooter, extractAnswerSources, type AnswerSource } from "./sourceAttribution.js";
+import { persistTurnMemories } from "./turnMemory.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -550,15 +551,7 @@ export async function runAgent(
     channel: state.channel,
     responseStyle: state.responseStyle,
     latencyBudgetMs: Math.max(0, state.budget.deadlineAt - Date.now()),
-    complexityHint: route.complexity,
-    connectors: {
-      tavily: Boolean(config.TAVILY_API_KEY),
-      github: Boolean(config.GITHUB_TOKEN),
-      notion: Boolean(config.NOTION_TOKEN),
-      gmail: Boolean(config.GMAIL_REFRESH_TOKEN),
-      calendar: Boolean(config.GOOGLE_CALENDAR_ENABLED),
-      voice: Boolean(config.VOICE_ENABLED && config.DEEPGRAM_API_KEY && config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID)
-    }
+    complexityHint: route.complexity
   });
   const [pack, prepared] = await Promise.all([
     packPromise,
@@ -617,6 +610,7 @@ export async function runAgent(
     endPhase(state, "execution");
     completeExecution(state, "completed");
   if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
+    void persistTurnMemories({ telegramId, userMessage, messages, completed: true });
     console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
     await reportProgress({ type: "response_ready" });
     return answer;
@@ -678,6 +672,8 @@ export async function runAgent(
       }
       endPhase(state, "execution");
       completeExecution(state, audit.ok ? "completed" : "completed");
+      if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
+      void persistTurnMemories({ telegramId, userMessage, messages, completed: true });
       console.info("orchestra.execution", JSON.stringify({
         ...summarizeExecution(state),
         route: route.reason,
