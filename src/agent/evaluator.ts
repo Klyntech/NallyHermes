@@ -40,7 +40,9 @@ export type ClaimAuditIssue = {
     | "not_disclosed_language"
     | "table_without_proof"
     | "numeric_without_evidence"
-    | "complete_claim_without_tools";
+    | "complete_claim_without_tools"
+    | "price_without_evidence"
+    | "dated_claim_without_evidence";
   detail: string;
 };
 
@@ -60,19 +62,32 @@ const PROOF_HINT =
   /https?:\/\/|sha\b|\b[0-9a-f]{7,40}\b|not\s+verified/i;
 const NUMERIC_CLAIM =
   /(?:\$\s*\d|\b\d+[\d,.]*\s*(?:\/\s*(?:m|million)\b)?|\b\d+\s*(?:commits?|repos?|branches?|models?|tokens?|USD|usd)\b)/i;
+const PRICE_CLAIM =
+  /(?:\$\s*\d|\b\d+[\d,.]*\s*(?:USD|usd|EUR|eur|GBP|gbp)\b|\bprice[sd]?\b.{0,40}\b\d)/i;
+const DATED_CLAIM =
+  /\b(?:on|as of|since|until|before|after)\s+\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b20[2-3]\d[-/]\d{2}[-/]\d{2}\b/i;
+
+export type ClaimAuditOptions = {
+  hadResearchTools?: boolean;
+  hasSources?: boolean;
+  /** Spoken replies skip table layout checks but still catch unbacked numbers and inventory claims. */
+  style?: "text" | "spoken";
+};
 
 /**
  * Lightweight, deterministic claim audit for factual / tabular answers.
  * Blocks common half-bluff patterns before the reply is shown to the user.
+ * Application authority: model fluency never overrides this gate.
  */
 export function auditFactualAnswer(
   answer: string,
-  options?: { hadResearchTools?: boolean; hasSources?: boolean }
+  options?: ClaimAuditOptions
 ): ClaimAuditResult {
   const text = answer.trim();
   const issues: ClaimAuditIssue[] = [];
   const hadResearchTools = options?.hadResearchTools ?? false;
   const hasSources = options?.hasSources ?? false;
+  const spoken = options?.style === "spoken";
 
   if (APPROX_NUMBER.test(text)) {
     issues.push({
@@ -88,18 +103,37 @@ export function auditFactualAnswer(
     });
   }
 
-  const hasTable = MARKDOWN_TABLE_ROW.test(text) && (text.match(/\|/g)?.length ?? 0) >= 6;
-  if (hasTable && !hasSources && !PROOF_HINT.test(text)) {
+  // Text path: table structure checks
+  if (!spoken) {
+    const hasTable = MARKDOWN_TABLE_ROW.test(text) && (text.match(/\|/g)?.length ?? 0) >= 6;
+    if (hasTable && !hasSources && !PROOF_HINT.test(text)) {
+      issues.push({
+        code: "table_without_proof",
+        detail: "Factual table lacks proof links, source identifiers, or verified tool-source metadata."
+      });
+    }
+
+    if (hasTable && NUMERIC_CLAIM.test(text) && !hadResearchTools) {
+      issues.push({
+        code: "numeric_without_evidence",
+        detail: "Numeric or priced table cells appear without prior web_search/fetch evidence in this turn."
+      });
+    }
+  }
+
+  // Prices without any research tools (text and spoken)
+  if (!hadResearchTools && PRICE_CLAIM.test(text) && text.length > 40) {
     issues.push({
-      code: "table_without_proof",
-      detail: "Factual table lacks proof links, source identifiers, or verified tool-source metadata."
+      code: "price_without_evidence",
+      detail: "Price or currency figures appear without web_search/fetch evidence in this turn."
     });
   }
 
-  if (hasTable && NUMERIC_CLAIM.test(text) && !hadResearchTools) {
+  // Specific calendar dates presented as fact without tools
+  if (!hadResearchTools && DATED_CLAIM.test(text) && text.length > 60) {
     issues.push({
-      code: "numeric_without_evidence",
-      detail: "Numeric or priced table cells appear without prior web_search/fetch evidence in this turn."
+      code: "dated_claim_without_evidence",
+      detail: "Specific dated claims appear without research tool evidence; verify or qualify as unverified."
     });
   }
 
@@ -108,7 +142,7 @@ export function auditFactualAnswer(
     !hadResearchTools &&
     /\b(all|every|complete)\b/i.test(text) &&
     NUMERIC_CLAIM.test(text) &&
-    text.length > 280
+    text.length > (spoken ? 160 : 280)
   ) {
     issues.push({
       code: "complete_claim_without_tools",
@@ -122,8 +156,10 @@ export function auditFactualAnswer(
     : [
         "Accuracy audit failed on your previous draft. Fix it before finishing:",
         ...issues.map((i) => `- (${i.code}) ${i.detail}`),
-        "Rules: pull primary evidence with web_search and fetch when needed; do not use ~ or 'not disclosed'; write Not verified only after checking. Factual tables must be backed by sources; the application adds a clickable Sources footer automatically. Do not add retrieval timestamps or status labels such as Partial/Complete.",
-        "Revise the answer now, or call tools if evidence is missing. Do not repeat the same unbacked table."
+        spoken
+          ? "Rules for spoken replies: do not invent prices, counts, or dates. Call web_search/fetch when needed, or say you could not verify. Do not use ~ or 'about N' for hard facts. Keep speech short; detailed tables belong in text."
+          : "Rules: pull primary evidence with web_search and fetch when needed; do not use ~ or 'not disclosed'; write Not verified only after checking. Factual tables must be backed by sources; the application adds a clickable Sources footer automatically. Do not add retrieval timestamps or status labels such as Partial/Complete.",
+        "Revise the answer now, or call tools if evidence is missing. Do not repeat the same unbacked claims."
       ].join("\n");
 
   return { ok, issues, rewriteHint };
