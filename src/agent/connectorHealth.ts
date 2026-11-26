@@ -105,6 +105,12 @@ export function buildConnectorHealth(): ConnectorHealth[] {
       detail: nallputer
         ? (config.NALLPUTER_ALLOW_WRITES ? "writes_enabled" : "read_only")
         : "NALLPUTER_URL/TOKEN missing"
+    },
+    {
+      id: "deskdear",
+      available: false,
+      capabilities: undefined,
+      detail: "No paired DeskDear device online (Phase A control-plane scaffold)"
     }
   ];
 }
