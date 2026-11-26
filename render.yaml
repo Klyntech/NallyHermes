@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: nallydeskdear-simulator
+    runtime: docker
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: off
+    envVars:
+      - key: DESKDEAR_SIMULATOR_ROOT
+        value: /tmp/nallydeskdear-simulator
+      - key: DESKDEAR_CONTROL_PLANE_URL
+        sync: false
+      - key: DESKDEAR_SIMULATOR_MODE
+        value: simulation

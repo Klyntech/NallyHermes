@@ -8,6 +8,8 @@ add_executable(deskdear
     src/device_identity.cpp
     src/permissions.cpp
     src/platform.cpp
+    src/policy.cpp
+    src/simulator.cpp
 )
 target_include_directories(deskdear PRIVATE include)
 target_compile_features(deskdear PRIVATE cxx_std_20)
@@ -39,4 +41,37 @@ if(BUILD_TESTING)
     target_include_directories(deskdear_permissions_test PRIVATE include)
     target_compile_features(deskdear_permissions_test PRIVATE cxx_std_20)
     add_test(NAME deskdear_permissions COMMAND deskdear_permissions_test)
+
+    add_executable(deskdear_policy_test
+        tests/policy_test.cpp
+        src/permissions.cpp
+        src/policy.cpp
+    )
+    target_include_directories(deskdear_policy_test PRIVATE include)
+    target_compile_features(deskdear_policy_test PRIVATE cxx_std_20)
+    add_test(NAME deskdear_policy COMMAND deskdear_policy_test)
+
+    add_executable(deskdear_simulator_security_test
+        tests/simulator_security_test.cpp
+        src/simulator.cpp
+        src/permissions.cpp
+        src/policy.cpp
+    )
+    target_include_directories(deskdear_simulator_security_test PRIVATE include)
+    target_compile_features(deskdear_simulator_security_test PRIVATE cxx_std_20)
+    add_test(NAME deskdear_simulator_security COMMAND deskdear_simulator_security_test)
+endif()
+
+add_executable(deskdear-simulator
+    src/simulator_main.cpp
+    src/simulator.cpp
+    src/permissions.cpp
+    src/policy.cpp
+)
+target_include_directories(deskdear-simulator PRIVATE include)
+target_compile_features(deskdear-simulator PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(deskdear-simulator PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(deskdear-simulator PRIVATE -Wall -Wextra -Wpedantic)
 endif()

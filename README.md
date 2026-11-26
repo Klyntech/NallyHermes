@@ -25,7 +25,15 @@ On Windows, run `build\Release\deskdear.exe --status` for a multi-configuration 
 - Stable local device identifier, stored in the user's configuration directory.
 - Capability model that denies all permissions by default.
 - Status and initialization CLI with Windows / GNOME / KDE and Wayland / X11 environment detection.
-- CTest coverage for the deny-by-default permission model.
+- Typed operation requests with fail-closed session policy evaluation.
+- A headless simulator for health and sandboxed workspace read/write operations.
+- CTest coverage for the deny-by-default permission model and session policy.
+
+## Headless simulator and Render
+
+The headless simulator lets us test the DeskDear execution boundary before connecting a real Windows or graphical Linux desktop. See [SIMULATOR.md](SIMULATOR.md) for local commands, sandbox workspace behavior, Docker usage, and the Render Blueprint.
+
+Render is configured as a background worker in `render.yaml`. The worker currently runs in transport-free simulation mode, performs a startup self-test, and emits heartbeats. It does not control a real desktop and does not yet connect to the NallyHermes control plane.
 
 ## Security boundary
 
