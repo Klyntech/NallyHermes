@@ -12,8 +12,9 @@ import { toVoiceResponse } from "../agent/orchestra.js";
 import { splitSpokenChannelReply } from "../agent/voice/spokenSplit.js";
 import { isMobileVoiceAudioFrame, parseMobileVoiceControl } from "./voiceProtocol.js";
 import { DeepgramTranscriptBuffer } from "./deepgramTranscript.js";
-import { buildElevenLabsEndOfStream, buildElevenLabsTextInput, decodeElevenLabsPcmChunk, hasUsableTtsAudio } from "./elevenLabsStream.js";
+import { ElevenLabsStream } from "./ttsStream.js";
 import { isBargeInSpeech, PCM16_16K_BYTES_PER_MS, PcmPacer } from "./voicePlayback.js";
+import { VoiceTurn } from "./voiceTurn.js";
 
 function envInt(name: string, fallback: number, min: number, max: number): number {
   const value = Number(process.env[name]);
@@ -62,6 +63,8 @@ const defaultProviders: Providers = {
   },
   eleven: () => {
     const q = new URLSearchParams({ model_id: config.ELEVENLABS_MODEL_ID, output_format: "pcm_16000", inactivity_timeout: "180" });
+    // The turn engine sends whole sentences, which is what auto_mode is meant for (lower first-audio latency).
+    if (config.VOICE_TTS_AUTO_MODE !== false) q.set("auto_mode", "true");
     return new WebSocket(`wss://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.ELEVENLABS_VOICE_ID! )}/stream-input?${q}`, { headers: { "xi-api-key": config.ELEVENLABS_API_KEY! } });
   }
 };
@@ -146,14 +149,12 @@ export function attachVoiceWebSocket(server: Server, consumeTicket = consumeVoic
 
 function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void, providers: Providers): void {
   const startedAt = Date.now();
-  let started = false, inputStopped = false, closed = false, audioBytes = 0, frames = 0, outputBytes = 0, lastActivity = Date.now();
-  let dg: WebSocket | null = null, tts: WebSocket | null = null;
-  // Turn state. `generation` changes whenever a turn starts, is interrupted or fails, so any late
-  // callback from an older turn can tell it is stale and do nothing.
-  let turnId = "", turnActive = false, audioActive = false, generation = 0;
-  let pendingUtterance = "", carry = "";
-  let turnAbort: AbortController | null = null;
-  let ttsTimer: ReturnType<typeof setTimeout> | null = null, carryTimer: ReturnType<typeof setTimeout> | null = null;
+  let started = false, inputStopped = false, closed = false, audioBytes = 0, frames = 0, lastActivity = Date.now();
+  let dg: WebSocket | null = null;
+  let turn: VoiceTurn | null = null;
+  let carry = "";
+  let carryTimer: ReturnType<typeof setTimeout> | null = null;
+  let conversationIdPromise: Promise<string> | null = null;
   const transcriptBuffer = new DeepgramTranscriptBuffer();
   const send = (obj: unknown) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
   const pacer = new PcmPacer((chunk) => { if (ws.readyState === WebSocket.OPEN) ws.send(chunk, { binary: true }); }, PLAYBACK_LEAD_MS);
@@ -166,6 +167,13 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
     ttsConfigured: Boolean(config.ELEVENLABS_API_KEY?.trim() && config.ELEVENLABS_VOICE_ID?.trim())
   });
   const closeUpstream = (s: WebSocket | null) => { if (s && s.readyState < WebSocket.CLOSING) s.close(); };
+  const getConversationId = (): Promise<string> => {
+    conversationIdPromise ??= getOrCreateConversation(session.telegramId, session.telegramChatId).catch((error) => {
+      conversationIdPromise = null;
+      throw error;
+    });
+    return conversationIdPromise;
+  };
   const clearCarry = () => {
     carry = "";
     if (carryTimer) { clearTimeout(carryTimer); carryTimer = null; }
@@ -175,34 +183,21 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
     if (!carry || closed) return;
     carryTimer = setTimeout(() => {
       carryTimer = null;
-      if (closed || turnActive || !carry) return;
+      if (closed || turn?.active || !carry) return;
       const text = carry;
       carry = "";
       void beginAnswer(text);
     }, CARRY_REDISPATCH_MS);
   };
-  /** Stop everything that belongs to the current turn: agent request, TTS socket, queued PCM. */
-  const teardownTurn = () => {
-    generation++;
-    turnAbort?.abort(new DOMException("Voice turn ended", "AbortError"));
-    turnAbort = null;
-    if (ttsTimer) { clearTimeout(ttsTimer); ttsTimer = null; }
-    const socket = tts;
-    tts = null;
-    closeUpstream(socket);
-    pacer.clear();
-    turnActive = false;
-    audioActive = false;
-  };
   const interrupt = (userSpoke: boolean) => {
-    if (!turnActive) return;
-    const id = turnId;
-    // The user talked over Nally before any audio played: remember what they asked so that the
-    // continuation is answered together with it instead of replacing it.
-    if (userSpoke && !audioActive && pendingUtterance) carry = pendingUtterance;
-    pendingUtterance = "";
-    teardownTurn();
-    send({ type: "interrupted", turnId: id });
+    const current = turn;
+    if (!current?.active) return;
+    const { audioStarted, text } = current.abort();
+    turn = null;
+    // The user talked over Nally before any audio played: keep what they asked so the continuation is
+    // answered together with it instead of replacing it.
+    if (userSpoke && !audioStarted) carry = text;
+    send({ type: "interrupted", turnId: current.id });
     if (carry) armCarry();
   };
   const terminate = () => {
@@ -210,7 +205,8 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
     closed = true;
     clearInterval(idle);
     clearCarry();
-    teardownTurn();
+    turn?.abort();
+    turn = null;
     pacer.dispose();
     closeUpstream(dg); cleanup();
     if (ws.readyState === WebSocket.OPEN) ws.close(1000, "session ended");
@@ -227,114 +223,32 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
   }, 5_000);
   const beginAnswer = async (utterance: string) => {
     if (closed) return;
-    if (turnActive) interrupt(true);
+    if (turn?.active) interrupt(true);
     const text = carry ? `${carry} ${utterance}` : utterance;
     clearCarry();
-    pendingUtterance = text;
-    const myGeneration = ++generation;
-    turnId = randomBytes(12).toString("hex"); turnActive = true; audioActive = false; outputBytes = 0;
-    const id = turnId;
-    const controller = new AbortController();
-    turnAbort = controller;
-    const stale = () => closed || myGeneration !== generation || controller.signal.aborted;
-    /** Turn-level failure: end this reply only. The call and the live transcription stay up. */
-    const failTurn = (code: string, message: string) => {
-      if (stale() || !turnActive) return;
-      pendingUtterance = "";
-      teardownTurn();
-      send({ type: "error", code, message, recoverable: true, scope: "turn" });
-      send({ type: "assistant_end", turnId: id });
-    };
-    const finishTurn = () => {
-      if (stale() || !turnActive) return;
-      turnActive = false; audioActive = false; pendingUtterance = "";
-      if (ttsTimer) { clearTimeout(ttsTimer); ttsTimer = null; }
-      const socket = tts;
-      tts = null;
-      closeUpstream(socket);
-      if (turnAbort === controller) turnAbort = null;
-      send({ type: "audio_end", turnId: id });
-      send({ type: "assistant_end", turnId: id });
-    };
-    const turnStartedAt = Date.now();
-    send({ type: "assistant_start", turnId: id });
-    try {
-      const conversationId = await getOrCreateConversation(session.telegramId, session.telegramChatId);
-      const history = await loadConversationHistory(conversationId);
-      const answer = await respond(history, text, session.telegramId, undefined, undefined, undefined, { channel: "voice", responseStyle: "spoken", conversationId, signal: controller.signal });
-      if (stale()) return;
-      if (!answer) { failTurn("approval_required", "This request needs approval in Telegram."); return; }
-      await appendConversationExchange(conversationId, text, answer, "android");
-      if (stale()) return;
-      const agentMs = Date.now() - turnStartedAt;
-      const spoken = toVoiceResponse(splitSpokenChannelReply(answer).spoken, { maxChars: config.VOICE_TTS_MAX_CHARS }).text;
-      if (!spoken) {
-        turnActive = false; pendingUtterance = "";
-        send({ type: "assistant_end", turnId: id });
-        return;
-      }
-      // runAgent returns a complete answer; text is sent once, while audio arrives as provider chunks.
-      send({ type: "text_delta", turnId: id, text: spoken });
-      const socket = providers.eleven(); tts = socket;
-      const ttsStartedAt = Date.now();
-      let audioChunks = 0, providerFinal = false, firstAudioMs = 0;
-      if (ttsTimer) clearTimeout(ttsTimer);
-      const timer = setTimeout(() => { if (tts === socket && !providerFinal) failTurn("tts_timeout", "Speech synthesis timed out."); }, config.VOICE_TTS_TIMEOUT_MS);
-      ttsTimer = timer;
-      const clearTimer = () => { clearTimeout(timer); if (ttsTimer === timer) ttsTimer = null; };
-      /** Provider is done: let queued PCM reach the phone, then end the turn. */
-      const complete = () => {
-        if (providerFinal || stale() || !turnActive) return;
-        providerFinal = true;
-        clearTimer();
-        if (!hasUsableTtsAudio(audioActive, outputBytes)) { failTurn("tts_empty_audio", "Speech synthesis completed without producing audio. Please try again."); return; }
-        console.info("[voice] TTS completed", { agentMs, firstAudioMs, bytes: outputBytes, chunks: audioChunks, durationMs: Date.now() - ttsStartedAt });
-        closeUpstream(socket); if (tts === socket) tts = null;
-        pacer.whenDrained(() => finishTurn());
-      };
-      socket.on("open", () => {
-        if (stale()) { closeUpstream(socket); return; }
-        socket.send(JSON.stringify({ text: " ", voice_settings: { stability: config.VOICE_STABILITY, similarity_boost: config.VOICE_SIMILARITY_BOOST, style: config.VOICE_STYLE, speed: config.VOICE_SPEECH_SPEED }, generation_config: { chunk_length_schedule: [120, 160, 250, 290] } }));
-        // Final text with flush, then end-of-stream. The provider generates the audio, emits isFinal and
-        // closes. Waiting for isFinal after a flush alone is not guaranteed to ever complete.
-        socket.send(JSON.stringify(buildElevenLabsTextInput(spoken)));
-        socket.send(JSON.stringify(buildElevenLabsEndOfStream()));
-      });
-      socket.on("message", (raw, binary) => {
-        if (binary || stale() || providerFinal) return;
-        try {
-          const msg = JSON.parse(raw.toString()) as { audio?: string; isFinal?: boolean; error?: string };
-          if (msg.error) { clearTimer(); failTurn("tts_provider_error", "Speech synthesis failed."); return; }
-          const chunk = decodeElevenLabsPcmChunk(msg.audio);
-          if (chunk) {
-            outputBytes += chunk.length; audioChunks++;
-            if (outputBytes > MAX_OUTPUT_BYTES || outputBytes > config.VOICE_MAX_AUDIO_BYTES) { clearTimer(); failTurn("output_limit", "Voice response exceeded its audio limit."); return; }
-            if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount >= STALLED_CLIENT_BYTES) { clearTimer(); failTurn("backpressure", "Voice client cannot receive audio quickly enough."); return; }
-            if (!audioActive) {
-              audioActive = true;
-              firstAudioMs = Date.now() - turnStartedAt;
-              send({ type: "audio_start", turnId: id, encoding: "pcm_s16le", sampleRate: 16000, channels: 1 });
-            }
-            pacer.push(chunk);
-          }
-          if (msg.isFinal) complete();
-        } catch (error) {
-          clearTimer();
-          console.warn("[voice] Invalid TTS audio payload", error instanceof Error ? error.message : "unknown error");
-          failTurn("tts_invalid_audio", "Speech synthesis returned invalid audio. Please try again.");
-        }
-      });
-      socket.on("error", () => { clearTimer(); if (!providerFinal) failTurn("tts_provider_error", "Speech synthesis provider is unavailable."); });
-      socket.on("close", () => {
-        clearTimer();
-        if (tts !== socket) return; // already finished, interrupted or replaced
-        tts = null;
-        if (stale() || providerFinal) return;
-        // Provider hung up. If audio was produced, treat that as the end of the reply.
-        if (audioActive && outputBytes > 0) complete();
-        else failTurn("tts_disconnected", "Speech synthesis disconnected before producing audio.");
-      });
-    } catch (error) { if (!stale()) { console.error("Voice agent turn failed:", error); failTurn("agent_error", "I couldn't complete that voice turn."); } }
+    let conversationId = "";
+    const current: VoiceTurn = new VoiceTurn(randomBytes(12).toString("hex"), text, {
+      runAgent: async (userText, { signal, onTextDelta }) => {
+        conversationId = await getConversationId();
+        const history = await loadConversationHistory(conversationId);
+        const answer = await respond(history, userText, session.telegramId, undefined, undefined, undefined, { channel: "voice", responseStyle: "spoken", conversationId, signal, onTextDelta });
+        return answer || null;
+      },
+      persist: (userText, answer) => appendConversationExchange(conversationId, userText, answer, "android"),
+      splitSpoken: (answer) => toVoiceResponse(splitSpokenChannelReply(answer).spoken, { maxChars: config.VOICE_TTS_MAX_CHARS }).text,
+      createTts: (events) => new ElevenLabsStream(providers.eleven(), {
+        voiceSettings: { stability: config.VOICE_STABILITY, similarity_boost: config.VOICE_SIMILARITY_BOOST, style: config.VOICE_STYLE, speed: config.VOICE_SPEECH_SPEED },
+        timeoutMs: config.VOICE_TTS_TIMEOUT_MS
+      }, events),
+      pacer,
+      send,
+      clientStalled: () => ws.readyState !== WebSocket.OPEN || ws.bufferedAmount >= STALLED_CLIENT_BYTES,
+      maxOutputBytes: Math.min(MAX_OUTPUT_BYTES, config.VOICE_MAX_AUDIO_BYTES),
+      chunker: { maxTotalChars: config.VOICE_TTS_MAX_CHARS },
+      log: (event, data) => console.info("[voice]", event, data)
+    }, () => { if (turn === current) turn = null; });
+    turn = current;
+    await current.start();
   };
   const flushTranscript = () => {
     const update = transcriptBuffer.flush();
@@ -397,7 +311,7 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
             return;
           }
           // Only sent when vad_events=true; interrupting on bare voice activity is echo-prone, so require audio to be playing.
-          if (msg.type === "SpeechStarted") { if (audioActive) interrupt(true); return; }
+          if (msg.type === "SpeechStarted") { if (turn?.audioStarted) interrupt(true); return; }
           if (msg.type === "UtteranceEnd") { flushTranscript(); return; }
           const text = msg.channel?.alternatives?.[0]?.transcript?.trim() ?? "";
           const update = transcriptBuffer.update({ text, isFinal: msg.is_final, speechFinal: msg.speech_final, start: msg.start });
@@ -406,7 +320,7 @@ function handleSocket(ws: WebSocket, session: MobileSession, cleanup: () => void
           if (update.text.length > MAX_TRANSCRIPT_CHARS) { fail("transcript_limit", "Voice transcript is too long."); return; }
           if (!update.utterance) {
             // Still mid-utterance. Barge in only on speech-like interim text, and keep waiting while the user talks.
-            if (!msg.is_final && !msg.speech_final && text && turnActive && isBargeInSpeech(text, BARGE_IN_MIN_CHARS)) interrupt(true);
+            if (!msg.is_final && !msg.speech_final && text && turn?.active && isBargeInSpeech(text, BARGE_IN_MIN_CHARS)) interrupt(true);
             else if (carry) armCarry();
           }
           if (update.utterance) void beginAnswer(update.utterance);
