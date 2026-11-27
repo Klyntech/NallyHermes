@@ -236,3 +236,58 @@ export const pendingApprovals = pgTable("pending_approvals", {
 }, (table) => [
   index("pending_approvals_user_status_idx").on(table.telegramId, table.status),
 ]);
+
+/** Per-turn relationship episodes — system-written activity log (not chat transcript). */
+export const activityEpisodes = pgTable("activity_episodes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  telegramId: text("telegram_id").notNull(),
+  channel: text("channel").notNull().default("telegram"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Calendar date (UTC) for range queries and weekly rollups */
+  activityDate: text("activity_date").notNull(),
+  topics: jsonb("topics").$type<string[]>().default([]).notNull(),
+  tools: jsonb("tools").$type<string[]>().default([]).notNull(),
+  userIntent: text("user_intent").notNull(),
+  nallyAction: text("nally_action"),
+  outcome: text("outcome").notNull().default("answered"),
+  refs: jsonb("refs").$type<string[]>().default([]).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("activity_episodes_user_time_idx").on(table.userId, table.occurredAt),
+  index("activity_episodes_user_date_idx").on(table.userId, table.activityDate),
+  index("activity_episodes_telegram_time_idx").on(table.telegramId, table.occurredAt)
+]);
+
+/**
+ * Weekly activity summaries with explicit date bounds so Nally can pinpoint
+ * when things happened ("the week of 2026-11-17").
+ */
+export const activityWeekSummaries = pgTable("activity_week_summaries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  telegramId: text("telegram_id").notNull(),
+  /** Monday UTC YYYY-MM-DD */
+  weekStart: text("week_start").notNull(),
+  /** Sunday UTC YYYY-MM-DD */
+  weekEnd: text("week_end").notNull(),
+  episodeCount: integer("episode_count").notNull().default(0),
+  topics: jsonb("topics").$type<string[]>().default([]).notNull(),
+  summary: text("summary").notNull(),
+  dayBreakdown: jsonb("day_breakdown").$type<Record<string, string[]>>().default({}).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (table) => [
+  index("activity_week_user_start_idx").on(table.userId, table.weekStart),
+  index("activity_week_telegram_start_idx").on(table.telegramId, table.weekStart)
+]);
+
+/** Small mutable working state for Jarvis-style continuity. */
+export const userWorkingState = pgTable("user_working_state", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  telegramId: text("telegram_id").notNull().unique(),
+  activeProjects: jsonb("active_projects").$type<string[]>().default([]).notNull(),
+  openLoops: jsonb("open_loops").$type<string[]>().default([]).notNull(),
+  lastTopics: jsonb("last_topics").$type<string[]>().default([]).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
