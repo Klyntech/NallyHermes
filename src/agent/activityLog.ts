@@ -32,6 +32,77 @@ export function weekEndSundayUtc(weekStart: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+
+const NOISE_TOPICS = new Set(
+  "try check show list work set how hey yeah ok okay update confirm message section create".split(" ")
+);
+
+function meaningfulTopics(topics: string[]): string[] {
+  return topics.filter((t) => {
+    const low = t.toLowerCase();
+    if (NOISE_TOPICS.has(low)) return false;
+    if (low.length <= 2) return false;
+    return true;
+  });
+}
+
+/** Turn raw episode intents into a short human summary — not a DB readout. */
+export function narrateWeek(
+  weekStart: string,
+  weekEnd: string,
+  intents: string[],
+  topics: string[]
+): string {
+  const cleanTopics = meaningfulTopics(topics).slice(0, 6);
+  const samples = intents
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter((s) => s.length >= 8 && !/^(ok|okay|thanks|yes|no|hey)\b/i.test(s))
+    .slice(0, 12);
+
+  const bits: string[] = [];
+  // Theme sentences from topics
+  const themeBits: string[] = [];
+  if (cleanTopics.some((t) => /nally|hermes|repo|github|v4|dev/i.test(t))) {
+    themeBits.push("building and iterating on Nally/Hermes");
+  }
+  if (cleanTopics.some((t) => /football|madrid|liga|match/i.test(t))) {
+    themeBits.push("football and Real Madrid scores or fixtures");
+  }
+  if (cleanTopics.some((t) => /deskdear|desktop/i.test(t))) {
+    themeBits.push("DeskDear / desktop plans");
+  }
+  if (cleanTopics.some((t) => /email|gmail/i.test(t))) {
+    themeBits.push("email");
+  }
+  if (cleanTopics.some((t) => /schedul|remind|calendar/i.test(t))) {
+    themeBits.push("scheduling and reminders");
+  }
+  if (cleanTopics.some((t) => /voice/i.test(t))) {
+    themeBits.push("voice");
+  }
+  if (themeBits.length) {
+    bits.push(`Mostly ${themeBits.join("; ")}.`);
+  } else if (cleanTopics.length) {
+    bits.push(`Themes included ${cleanTopics.slice(0, 4).join(", ")}.`);
+  }
+
+  // Concrete snippets from user asks (paraphrase-ish: keep short)
+  const concrete = samples
+    .filter((s) => !/^(show|list|check|try|create)\b/i.test(s) || s.length > 25)
+    .slice(0, 3)
+    .map((s) => (s.length > 90 ? s.slice(0, 87) + "…" : s));
+  if (concrete.length) {
+    bits.push(`Things you asked about included: ${concrete.join("; ")}.`);
+  }
+
+  if (!bits.length) {
+    return `During ${weekStart} to ${weekEnd} you and Nally talked across several days, but the log only has short messages — no detailed project trail.`;
+  }
+
+  return `From ${weekStart} to ${weekEnd}, ${bits.join(" ")}`;
+}
+
+
 function extractTopics(text: string): string[] {
   const topics: string[] = [];
   const lower = text.toLowerCase();
@@ -209,11 +280,15 @@ export async function refreshWeekSummary(
 
   const topicCount = new Map<string, number>();
   const dayBreakdown: Record<string, string[]> = {};
+  const intents: string[] = [];
   for (const row of rows) {
     const day = row.activityDate;
     if (!dayBreakdown[day]) dayBreakdown[day] = [];
-    const label = (row.userIntent || "").slice(0, 80);
-    if (label && dayBreakdown[day]!.length < 6) dayBreakdown[day]!.push(label);
+    const label = (row.userIntent || "").slice(0, 120);
+    if (label) {
+      intents.push(label);
+      if (dayBreakdown[day]!.length < 6) dayBreakdown[day]!.push(label);
+    }
     for (const t of (row.topics as string[]) ?? []) {
       topicCount.set(t, (topicCount.get(t) ?? 0) + 1);
     }
@@ -224,12 +299,7 @@ export async function refreshWeekSummary(
     .map(([t]) => t)
     .slice(0, 12);
 
-  const topicPart = topics.length ? `Topics: ${topics.join(", ")}.` : "No strong topic tags.";
-  const daysActive = Object.keys(dayBreakdown).sort();
-  const summary =
-    `Week ${weekStart} → ${weekEnd} (UTC): ${rows.length} episode(s) across ${daysActive.length} day(s). ` +
-    topicPart +
-    (daysActive.length ? ` Active dates: ${daysActive.join(", ")}.` : "");
+  const summary = narrateWeek(weekStart, weekEnd, intents, topics);
 
   const [existing] = await db
     .select({ id: activityWeekSummaries.id })
@@ -392,7 +462,10 @@ export async function activityTool(
     const weeks = await loadRecentWeekSummaries(telegramId, input.limit ?? 8);
     return {
       weeks,
-      note: "Each week has week_start and week_end (UTC dates). Use these when the user asks when something happened."
+      note:
+        "Narrate naturally for the user: what you worked on together that week, in plain language. " +
+        "Do not say episode counts, database fields, or topic tag lists. Use week_start/week_end only if they ask when. " +
+        "Ground every claim in summary and day_breakdown intents."
     };
   }
   // default recall
@@ -416,6 +489,6 @@ export async function activityTool(
     note:
       episodes.length === 0
         ? "No stored episodes in this range. Do not invent past activity."
-        : "Ground any 'what we did' answer only in these episodes and week summaries."
+        : "Tell the story of what the user asked and what you did together. No episode counts, no raw DB jargon."
   };
 }
