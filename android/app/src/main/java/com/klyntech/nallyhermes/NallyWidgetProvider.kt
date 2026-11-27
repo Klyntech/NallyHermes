@@ -36,7 +36,7 @@ internal object NallyWidgetClicks {
 }
 
 /** A — Now Playing voice card (3×3). */
-class NallyWidgetVoiceProvider : AppWidgetProvider() {
+open class NallyWidgetVoiceProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (id in appWidgetIds) {
             val views = RemoteViews(context.packageName, R.layout.widget_nally_voice)
