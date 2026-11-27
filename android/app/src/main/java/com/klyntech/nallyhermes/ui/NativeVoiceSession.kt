@@ -45,7 +45,7 @@ internal class NativeVoiceSession(
         data class State(val state: VoiceUiState) : Event
         data class Caption(val text: String, val final: Boolean) : Event
         data class AudioLevel(val value: Float) : Event
-        data class Error(val message: String) : Event
+        data class Error(val message: String, val retryable: Boolean = false) : Event
         data object Ended : Event
     }
 
@@ -161,7 +161,8 @@ internal class NativeVoiceSession(
                     !t.message.isNullOrBlank() -> t.message!!
                     else -> "Voice connection failed (network or TLS)."
                 }
-                callback(Event.Error(message))
+                // No HTTP status means the network dropped (worth retrying); a status means the server refused us.
+                callback(Event.Error(message, retryable = status == null))
                 cleanup()
                 callback(Event.Ended)
             }
@@ -183,7 +184,7 @@ internal class NativeVoiceSession(
                         }
                         append(").")
                     }
-                    callback(Event.Error(detail))
+                    callback(Event.Error(detail, retryable = true))
                 }
                 callback(Event.Ended)
             }
