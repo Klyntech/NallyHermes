@@ -117,7 +117,7 @@ export const agentTools: ChatCompletionTool[] = [
           timezone: { type: "string", description: "IANA timezone for recurring wall-clock behavior." },
           max_runs: { type: "integer", minimum: 1, maximum: 1000, description: "Optional maximum number of successful runs, e.g. 2." },
           until_at: { type: "string", description: "Optional ISO-8601 end date/time. No occurrence after this time will run." },
-          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer", "deskdear"] }, maxItems: 10 },
+          allowed_tools: { type: "array", items: { type: "string", enum: ["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer", "deskdear", "activity"] }, maxItems: 10 },
           approval_policy: { type: "string", description: "Policy label such as confirm_mutations or read_only." },
           output_destination: { type: "string", enum: ["telegram"] },
           id: { type: "string", description: "Workflow ID for pause or cancel." }
@@ -243,6 +243,26 @@ export const agentTools: ChatCompletionTool[] = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "activity",
+      description: "Recall this user's cross-session activity with Nally. Use for 'what did we do', 'last week', or when something happened. Operations: recall (episodes by date range), weeks (dated weekly summaries), working_state (active projects/open loops). Never invent history — only report returned rows. Dates are UTC YYYY-MM-DD.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: { type: "string", enum: ["recall", "weeks", "working_state"] },
+          since_date: { type: "string", maxLength: 10, description: "UTC YYYY-MM-DD inclusive start" },
+          until_date: { type: "string", maxLength: 10, description: "UTC YYYY-MM-DD inclusive end" },
+          query: { type: "string", maxLength: 200, description: "Optional topic filter" },
+          limit: { type: "integer", minimum: 1, maximum: 50 }
+        },
+        required: ["operation"],
+        additionalProperties: false
+      }
+    }
+  },
   academicAgentTool
 ];
+
 
