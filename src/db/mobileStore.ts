@@ -51,6 +51,19 @@ export async function createMobilePairingCode(
   return { code, expiresAt };
 }
 
+/**
+ * DeskDear currently shares the v4 one-time pairing-code store while its
+ * desktop device-registration table is being introduced. Keep this named
+ * entry point separate so the Telegram command and later desktop endpoint
+ * cannot accidentally become coupled to the mobile session API.
+ */
+export async function createDesktopPairingCode(
+  telegramId: string,
+  telegramChatId: string
+): Promise<{ code: string; expiresAt: Date }> {
+  return createMobilePairingCode(telegramId, telegramChatId);
+}
+
 async function releasePairingCode(code: string, consumedAt: Date): Promise<void> {
   await db.update(mobilePairingCodes)
     .set({ consumedAt: null })

@@ -12,7 +12,7 @@ import {
   loadConversationHistory,
   setConversationMessageStatus
 } from "./db/conversationStore.js";
-import { createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
+import { createDesktopPairingCode, createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
 import { handleMobileApiRequest } from "./mobile/http.js";
 import { attachVoiceWebSocket } from "./mobile/voiceSession.js";
 import { respond } from "./agent/orchestrator.js";
@@ -531,6 +531,28 @@ bot.command("mobile", async (ctx) => {
   const pairing = await createMobilePairingCode(telegramId, String(ctx.chat.id));
   await ctx.reply(
     `NallyHermes Android pairing\n\nYour one-time code: ${pairing.code}\n\nEnter it in the app within 5 minutes. Keep it private; it links the app to this Telegram account. The code can only be used once.`
+  );
+});
+
+bot.command("pairdesktop", async (ctx) => {
+  if (!ctx.from) return;
+  if (ctx.chat.type !== "private") {
+    await ctx.reply("For privacy, request a DeskDear pairing code in a private chat with NallyHermes.");
+    return;
+  }
+  const telegramId = String(ctx.from.id);
+  await db.insert(users).values({
+    telegramId,
+    username: ctx.from.username ?? null,
+    firstName: ctx.from.first_name ?? null,
+    timezone: getDefaultTimezone()
+  }).onConflictDoUpdate({
+    target: users.telegramId,
+    set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
+  });
+  const pairing = await createDesktopPairingCode(telegramId, String(ctx.chat.id));
+  await ctx.reply(
+    `DeskDear pairing\n\nYour one-time code: ${pairing.code}\n\nEnter it in DeskDear within 5 minutes. Keep it private; it links this computer to your Nally account. The code can only be used once.`
   );
 });
 
