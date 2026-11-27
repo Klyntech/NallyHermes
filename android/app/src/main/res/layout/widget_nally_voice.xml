@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Nally"
+            android:textColor="#ECEBE6"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_chip"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="3dp"
+            android:text="Ready"
+            android:textColor="#A7AAA3"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Static waveform hint -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="18dp"
+        android:layout_marginTop="10dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <ImageView android:layout_width="3dp" android:layout_height="8dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar_dim" />
+        <ImageView android:layout_width="3dp" android:layout_height="12dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar_dim" />
+        <ImageView android:layout_width="3dp" android:layout_height="16dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar" />
+        <ImageView android:layout_width="3dp" android:layout_height="10dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar_dim" />
+        <ImageView android:layout_width="3dp" android:layout_height="14dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar" />
+        <ImageView android:layout_width="3dp" android:layout_height="8dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar_dim" />
+        <ImageView android:layout_width="3dp" android:layout_height="12dp" android:layout_marginHorizontal="2dp" android:src="@drawable/widget_bar_dim" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_voice_btn"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/widget_mic_circle"
+        android:gravity="center"
+        android:text="🎙"
+        android:textSize="22sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="Tap to talk"
+        android:textColor="#8A8F98"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_chat_btn"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_tile"
+            android:gravity="center"
+            android:text="Chat"
+            android:textColor="#ECEBE6"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="8dp"
+            android:layout_height="1dp" />
+
+        <TextView
+            android:id="@+id/widget_settings_btn"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_tile"
+            android:gravity="center"
+            android:text="Settings"
+            android:textColor="#ECEBE6"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>
