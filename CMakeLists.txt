@@ -100,7 +100,9 @@ if(DESKDEAR_BUILD_UI)
     qt_add_executable(deskdear-ui
         src/ui_main.cpp
         src/device_identity.cpp
+        src/pairing.cpp
         src/ui_pairing_controller.cpp
+        src/ui_pairing_controller.hpp
     )
     qt_add_resources(deskdear-ui deskdear_ui_resources
         PREFIX "/deskdear"
