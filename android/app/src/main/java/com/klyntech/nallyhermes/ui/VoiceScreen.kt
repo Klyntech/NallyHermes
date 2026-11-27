@@ -1,15 +1,11 @@
 package com.klyntech.nallyhermes.ui
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Handler
-import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,10 +38,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,10 +60,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.klyntech.nallyhermes.MobileApi
-import com.klyntech.nallyhermes.WakeWordService
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /** Native voice session states — same set as multi-sector / mockup. */
 enum class VoiceUiState {
@@ -84,6 +75,10 @@ private val MainText = Color(0xFFECEBE6)
 private val HintText = Color(0xFF8A8F98)
 private val Danger = Color(0xFFE07A6A)
 
+/**
+ * The call itself lives in [VoiceCallManager], so this screen can leave and come back (tab switch, lock
+ * screen, app switch) without ending it. It only shows the current state and sends taps to the manager.
+ */
 @Composable
 internal fun VoiceScreen(
     onSettings: () -> Unit,
@@ -94,90 +89,28 @@ internal fun VoiceScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val lifecycle = LocalLifecycleOwner.current
-    var gateVisible by remember { mutableStateOf(true) }
-    var localNotice by remember { mutableStateOf<String?>(null) }
-    var state by remember { mutableStateOf(VoiceUiState.Ready) }
-    var caption by remember { mutableStateOf<String?>(null) }
-    var session by remember { mutableStateOf<NativeVoiceSession?>(null) }
-    var muted by remember { mutableStateOf(false) }
+    val gateVisible = VoiceCallManager.gateVisible
+    val localNotice = VoiceCallManager.notice
+    val state = VoiceCallManager.state
+    val caption = VoiceCallManager.caption
+    val session = VoiceCallManager.session
+    val muted = VoiceCallManager.muted
+    val audioLevel = VoiceCallManager.audioLevel
+    val sessionStarting = VoiceCallManager.starting
     var captionsOn by remember { mutableStateOf(true) }
     var keyboardOn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var endArmed by remember { mutableStateOf(false) }
-    var audioLevel by remember { mutableFloatStateOf(0f) }
-    var sessionStarting by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            sessionStarting = true
-            gateVisible = false
-            localNotice = null
-            beginVoiceSession(
-                api, context, scope,
-                onSession = { session = it; sessionStarting = false },
-                onState = {
-                    state = it
-                    if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f
-                },
-                onCaption = { caption = it },
-                onAudioLevel = { audioLevel = it },
-                onError = { msg ->
-                    session?.stop("voice error")
-                    sessionStarting = session != null
-                    localNotice = msg
-                    gateVisible = true
-                },
-                onEnded = { session = null; sessionStarting = false; audioLevel = 0f; gateVisible = true }
-            )
-        } else {
-            sessionStarting = false
-            state = VoiceUiState.Denied
-            localNotice = "Microphone permission is needed. Allow it to start a call."
-        }
+        if (granted) VoiceCallManager.start(api, context) else VoiceCallManager.markPermissionDenied()
     }
 
     // Wake word / assistant launches begin listening immediately instead of waiting for a tap.
     LaunchedEffect(autoStart) {
         if (!autoStart) return@LaunchedEffect
         onAutoStartConsumed()
-        if (session != null || sessionStarting) return@LaunchedEffect
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return@LaunchedEffect
-        sessionStarting = true
-        gateVisible = false
-        localNotice = null
-        beginVoiceSession(
-            api, context, scope,
-            onSession = { session = it; sessionStarting = false },
-            onState = { state = it; if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f },
-            onCaption = { caption = it },
-            onAudioLevel = { audioLevel = it },
-            onError = { msg -> session?.stop("voice error"); sessionStarting = session != null; localNotice = msg; gateVisible = true },
-            onEnded = { session = null; sessionStarting = false; audioLevel = 0f; gateVisible = true }
-        )
-    }
-    DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                val active = state == VoiceUiState.Connecting || state == VoiceUiState.Listening ||
-                    state == VoiceUiState.Thinking || state == VoiceUiState.Tool ||
-                    state == VoiceUiState.Speaking || state == VoiceUiState.Interrupted
-                if (active) {
-                    session?.stop("app backgrounded")
-                    session = null
-                    audioLevel = 0f
-                    state = VoiceUiState.Ended
-                    localNotice = "Voice session ended when the app went to the background. Start again when ready."
-                    gateVisible = true
-                }
-            }
-        }
-        lifecycle.lifecycle.addObserver(observer)
-        onDispose { lifecycle.lifecycle.removeObserver(observer) }
-    }
-    DisposableEffect(Unit) {
-        onDispose { session?.stop("voice screen closed") }
+        VoiceCallManager.start(api, context)
     }
 
     LaunchedEffect(endArmed) {
@@ -308,10 +241,7 @@ internal fun VoiceScreen(
                 VoiceControl(
                     label = if (muted) "Mic off" else "Mic",
                     selected = muted,
-                    onClick = {
-                        muted = !muted
-                        session?.setMuted(muted)
-                    },
+                    onClick = { VoiceCallManager.toggleMute() },
                     icon = if (muted) Icons.Filled.MicOff else Icons.Filled.Mic
                 )
                 VoiceControl(
@@ -332,12 +262,7 @@ internal fun VoiceScreen(
                             endArmed = true
                         } else {
                             endArmed = false
-                            session?.stop()
-                            session = null
-                            audioLevel = 0f
-                            state = VoiceUiState.Ended
-                            gateVisible = true
-                            localNotice = "Call ended."
+                            VoiceCallManager.end()
                         }
                     },
                     shape = RoundedCornerShape(28.dp),
@@ -390,32 +315,13 @@ internal fun VoiceScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(28.dp))
-                    Button(
+                Button(
                     onClick = {
-                        if (sessionStarting || session != null) return@Button
-                        sessionStarting = true
-                        localNotice = null
+                        if (VoiceCallManager.inCall) return@Button
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                             PackageManager.PERMISSION_GRANTED
                         ) {
-                            gateVisible = false
-                            beginVoiceSession(
-                                api, context, scope,
-                                onSession = { session = it; sessionStarting = false },
-                                onState = {
-                                    state = it
-                                    if (it != VoiceUiState.Listening && it != VoiceUiState.Speaking) audioLevel = 0f
-                                },
-                                onCaption = { caption = it },
-                                onAudioLevel = { audioLevel = it },
-                                onError = { msg ->
-                                    session?.stop("voice error")
-                                    sessionStarting = session != null
-                                    localNotice = msg
-                                    gateVisible = true
-                                },
-                                onEnded = { session = null; sessionStarting = false; audioLevel = 0f; gateVisible = true }
-                            )
+                            VoiceCallManager.start(api, context)
                         } else {
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
@@ -570,59 +476,5 @@ private fun VoiceControl(
             Icon(icon, contentDescription = label, tint = if (selected) HintText else MainText)
         }
         Text(label, color = HintText, fontSize = 11.sp)
-    }
-}
-
-private fun beginVoiceSession(
-    api: MobileApi,
-    context: Context,
-    scope: CoroutineScope,
-    onSession: (NativeVoiceSession?) -> Unit,
-    onState: (VoiceUiState) -> Unit,
-    onCaption: (String?) -> Unit,
-    onAudioLevel: (Float) -> Unit,
-    onError: (String) -> Unit,
-    onEnded: () -> Unit = {}
-) {
-    scope.launch {
-        onState(VoiceUiState.Connecting)
-        WakeWordService.pauseForVoiceCall(context)
-        try {
-            val ticket = api.createVoiceTicket()
-            var serverErrorShown = false
-            var reachedListening = false
-            val voice = NativeVoiceSession(context.applicationContext, api.voiceWebSocketUrl(ticket)) { event ->
-                Handler(Looper.getMainLooper()).post {
-                    when (event) {
-                        NativeVoiceSession.Event.Connected -> onState(VoiceUiState.Connecting)
-                        is NativeVoiceSession.Event.State -> {
-                            if (event.state == VoiceUiState.Listening) reachedListening = true
-                            onState(event.state)
-                        }
-                        is NativeVoiceSession.Event.Caption -> onCaption(event.text)
-                        is NativeVoiceSession.Event.AudioLevel -> onAudioLevel(event.value)
-                        is NativeVoiceSession.Event.Error -> {
-                            serverErrorShown = true
-                            onError(event.message)
-                        }
-                        NativeVoiceSession.Event.Ended -> {
-                            WakeWordService.resumeAfterVoiceCall(context)
-                            onState(VoiceUiState.Ended)
-                            // A normal hang-up after the call was live must not replace "Call ended." with an error.
-                            if (!serverErrorShown && !reachedListening) {
-                                onError("Call ended before voice was ready.")
-                            }
-                            onEnded()
-                        }
-                    }
-                }
-            }
-            onSession(voice)
-            voice.connect()
-        } catch (error: Exception) {
-            WakeWordService.resumeAfterVoiceCall(context)
-            onState(VoiceUiState.Denied)
-            onError(error.message ?: "Could not create a secure voice session.")
-        }
     }
 }
