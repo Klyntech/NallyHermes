@@ -89,7 +89,7 @@ void PairingController::handleReply() {
     QJsonParseError parseError{};
     const auto document = QJsonDocument::fromJson(body, &parseError);
     const auto object = document.object();
-    if (parseError.error != QJsonParseError::NoError || !object.isObject()) {
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         setStatus(QStringLiteral("The control plane returned an invalid pairing response."));
         reply->deleteLater();
         return;
