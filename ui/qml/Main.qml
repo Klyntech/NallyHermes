@@ -51,6 +51,7 @@ ApplicationWindow {
     }
 
     property int selectedPage: 0
+    property bool pairingOpen: false
 
     component StatusDot: Rectangle {
         required property color dotColor
@@ -250,14 +251,14 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: ["Overview", "Activity", "Permissions", "Settings"][selectedPage]
+                        text: pairingOpen ? "Pair DeskDear" : (selectedPage === 0 ? "Overview" : ["Overview", "Activity", "Permissions", "Settings"][selectedPage])
                         color: theme.text
                         font.pixelSize: 27
                         font.weight: Font.DemiBold
                         font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
                         Layout.fillWidth: true
                     }
-                    Pill { label: "CONNECTED"; accent: theme.success }
+                    Pill { label: pairing.paired ? "PAIRED" : "NOT PAIRED"; accent: pairing.paired ? theme.success : theme.attention }
                     Button {
                         text: "Open pairing"
                         flat: true
@@ -269,13 +270,14 @@ ApplicationWindow {
                             font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
                         }
                         background: Rectangle { color: "transparent" }
+                        onClicked: pairingOpen = true
                     }
                 }
 
                 Loader {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    sourceComponent: selectedPage === 0 ? overviewPage : placeholderPage
+                    sourceComponent: pairingOpen ? pairingPage : (selectedPage === 0 ? overviewPage : placeholderPage)
                 }
             }
         }
@@ -563,6 +565,69 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: pairingPage
+        Flickable {
+            contentHeight: pairingColumn.implicitHeight
+            clip: true
+            ColumnLayout {
+                id: pairingColumn
+                width: parent.width
+                spacing: 18
+                Text { text: "TELEGRAM PAIRING"; color: theme.gold; font.pixelSize: 10; font.letterSpacing: 1.5 }
+                Text { text: pairing.paired ? "DeskDear is paired" : "Connect this desktop"; color: theme.text; font.pixelSize: 34; font.weight: Font.DemiBold }
+                Text {
+                    text: "In a private Telegram chat with Nally, send /pairdesktop. Enter the one-time code here within five minutes."
+                    color: theme.muted
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 250
+                    Layout.topMargin: 12
+                    radius: 16
+                    color: theme.panel
+                    border.color: theme.border
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 24
+                        spacing: 14
+                        Text { text: "ONE-TIME CODE"; color: theme.muted; font.pixelSize: 10; font.letterSpacing: 1.3 }
+                        TextField {
+                            id: pairingCode
+                            Layout.fillWidth: true
+                            placeholderText: "10-digit code"
+                            maximumLength: 10
+                            validator: RegularExpressionValidator { regularExpression: /[0-9]{0,10}/ }
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            font.pixelSize: 25
+                            color: theme.text
+                            background: Rectangle { radius: 9; color: theme.raised; border.color: pairingCode.activeFocus ? theme.gold : theme.border }
+                        }
+                        Button {
+                            Layout.fillWidth: true
+                            text: pairing.busy ? "Checking…" : "Pair this desktop"
+                            enabled: !pairing.busy && !pairing.paired
+                            contentItem: Text { text: parent.text; color: theme.canvas; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 13; font.bold: true }
+                            background: Rectangle { radius: 9; color: parent.enabled ? theme.gold : theme.border }
+                            onClicked: pairing.submitCode(pairingCode.text)
+                        }
+                        Text { text: pairing.status; color: pairing.paired ? theme.mint : theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    }
+                }
+                Button {
+                    text: "Back to overview"
+                    flat: true
+                    contentItem: Text { text: parent.text; color: theme.gold; font.pixelSize: 12; font.bold: true }
+                    background: Rectangle { color: "transparent" }
+                    onClicked: pairingOpen = false
                 }
             }
         }

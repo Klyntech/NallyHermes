@@ -10,6 +10,7 @@ add_executable(deskdear
     src/permissions.cpp
     src/platform.cpp
     src/policy.cpp
+    src/pairing.cpp
     src/simulator.cpp
     src/tool_registry.cpp
 )
@@ -70,6 +71,14 @@ if(BUILD_TESTING)
     target_include_directories(deskdear_tool_registry_test PRIVATE include)
     target_compile_features(deskdear_tool_registry_test PRIVATE cxx_std_20)
     add_test(NAME deskdear_tool_registry COMMAND deskdear_tool_registry_test)
+
+    add_executable(deskdear_pairing_test
+        tests/pairing_test.cpp
+        src/pairing.cpp
+    )
+    target_include_directories(deskdear_pairing_test PRIVATE include)
+    target_compile_features(deskdear_pairing_test PRIVATE cxx_std_20)
+    add_test(NAME deskdear_pairing COMMAND deskdear_pairing_test)
 endif()
 
 add_executable(deskdear-simulator
@@ -87,13 +96,18 @@ else()
 endif()
 
 if(DESKDEAR_BUILD_UI)
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2)
-    qt_add_executable(deskdear-ui src/ui_main.cpp)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Network Quick QuickControls2)
+    qt_add_executable(deskdear-ui
+        src/ui_main.cpp
+        src/device_identity.cpp
+        src/ui_pairing_controller.cpp
+    )
     qt_add_resources(deskdear-ui deskdear_ui_resources
         PREFIX "/deskdear"
         FILES ui/qml/Main.qml
     )
-    target_link_libraries(deskdear-ui PRIVATE Qt6::Quick Qt6::QuickControls2)
+    target_include_directories(deskdear-ui PRIVATE src include)
+    target_link_libraries(deskdear-ui PRIVATE Qt6::Network Qt6::Quick Qt6::QuickControls2)
     target_compile_features(deskdear-ui PRIVATE cxx_std_20)
     set_target_properties(deskdear-ui PROPERTIES WIN32_EXECUTABLE TRUE)
     install(TARGETS deskdear-ui RUNTIME DESTINATION bin)

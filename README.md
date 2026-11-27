@@ -28,6 +28,7 @@ On Windows, run `build\Release\deskdear.exe --status` for a multi-configuration 
 - Typed operation requests with fail-closed session policy evaluation.
 - A headless simulator for health and sandboxed workspace read/write operations.
 - CTest coverage for the deny-by-default permission model and session policy.
+- v4-compatible DeskDear pairing-code validation and a shared Qt pairing screen.
 
 ## Headless simulator and Render
 
@@ -70,9 +71,13 @@ windeployqt --release --qmldir ui/qml staging\bin\deskdear-ui.exe
 # Then either zip staging/ or run cpack -G NSIS (NSIS must be installed)
 ```
 
+## Telegram pairing
+
+In a private Telegram chat, the user will request `/pairdesktop`. Nally returns a one-time ten-digit code valid for five minutes. The user enters it in DeskDear through **Open pairing**. See [DESKDEAR_PAIRING.md](DESKDEAR_PAIRING.md) for the v4-compatible code rules and the `/api/desktop/pair` control-plane contract.
+
 ## Security boundary
 
-A device identifier is not an authentication credential. Pairing, account authentication, device approval, heartbeat transport, and remote jobs are not yet connected to NallyHermes. No remote command execution, screen capture, or input control is enabled in this milestone. Future capabilities must require an authenticated session and explicit, revocable user approval.
+A device identifier is not an authentication credential. The current pairing UI validates codes and is ready for the `/api/desktop/pair` control-plane endpoint, but device-key persistence, heartbeat transport, and remote jobs are not yet connected to NallyHermes. No remote command execution, screen capture, or input control is enabled in this milestone. Future capabilities must require an authenticated session and explicit, revocable user approval.
 
 ## Planned adapter approach
 
