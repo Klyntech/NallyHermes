@@ -49,6 +49,7 @@ jobs:
           host: ${{ matrix.os == 'windows-2022' && 'windows' || 'linux' }}
           target: desktop
           arch: ${{ matrix.os == 'windows-2022' && 'win64_msvc2022_64' || 'linux_gcc_64' }}
+          modules: 'qtshadertools'
           cache: true
 
       - name: Install NSIS (Windows installer)
@@ -98,8 +99,13 @@ jobs:
             throw "deskdear-ui.exe not found at $ui"
           }
 
-          # Deploy Qt runtime next to the UI binary
-          windeployqt --release --qmldir ui/qml $ui
+          # Deploy Qt runtime + QML modules next to the UI binary
+          windeployqt --release --qmldir ui/qml --compiler-runtime $ui
+
+          # Ensure the Windows platform plugin is present (hard requirement)
+          if (-not (Test-Path "staging\bin\platforms\qwindows.dll")) {
+            throw "platforms/qwindows.dll missing after windeployqt — UI will not start"
+          }
 
           if (Test-Path "staging\bin\deskdear.exe") {
             Write-Host "CLI deskdear.exe present in staging/bin"
@@ -111,7 +117,6 @@ jobs:
           Compress-Archive -Path staging\* -DestinationPath $portable -Force
           Write-Host "Portable ZIP: $portable ($([math]::Round((Get-Item $portable).Length / 1MB, 1)) MB)"
 
-          # Build a real NSIS installer with makensis (avoids CPack Windows path escapes)
           $stagingAbs = (Resolve-Path "staging").Path
           $outExe = Join-Path (Get-Location) "${{ matrix.artifact }}-Setup.exe"
           $nsiPath = Join-Path (Get-Location) "packaging\windows\deskdear.nsi"
@@ -120,7 +125,6 @@ jobs:
             throw "NSIS script missing: $nsiPath"
           }
 
-          # NSIS wants backslashes; pass absolute paths as defines
           & makensis `
             "/DSTAGING_DIR=$stagingAbs" `
             "/DOUTFILE=$outExe" `
