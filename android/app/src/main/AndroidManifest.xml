@@ -86,5 +86,9 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/nally_widget_info" />
         </receiver>
+        <service
+            android:name=".VoiceCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>
