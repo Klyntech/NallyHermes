@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { memories, users } from "../db/schema.js";
+import { loadRecentWeekSummaries, loadWorkingState } from "./activityLog.js";
 import type { InteractionChannel, ResponseStyle, RouteComplexity } from "./orchestra.js";
 import { shouldUseSemanticMemory } from "./memoryRouting.js";
 import { buildConnectorHealth } from "./connectorHealth.js";
@@ -30,6 +31,8 @@ export interface AdaptiveContextPack {
   risk: "low" | "medium" | "high";
   complexityHint?: RouteComplexity;
   builtAt: string;
+  workingState?: { activeProjects: string[]; openLoops: string[]; lastTopics: string[] };
+  weekSummaries?: Array<{ weekStart: string; weekEnd: string; summary: string; topics: string[]; episodeCount: number }>;
 }
 
 function topicFromMessage(text: string): string {
@@ -181,6 +184,14 @@ export async function buildAdaptiveContextPack(input: {
   }
   const spoken = input.responseStyle === "spoken" || input.channel === "voice";
   const tight = spoken || input.latencyBudgetMs < 45_000;
+  let workingState: AdaptiveContextPack["workingState"];
+  let weekSummaries: AdaptiveContextPack["weekSummaries"] = [];
+  try {
+    workingState = (await loadWorkingState(input.telegramId)) ?? undefined;
+    weekSummaries = await loadRecentWeekSummaries(input.telegramId, spoken ? 2 : 4);
+  } catch {
+    /* activity tables may not exist until migrated */
+  }
   const caps = tight
     ? { entities: 4, preferences: 2, commitments: 2, facts: 3 }
     : { entities: 8, preferences: 5, commitments: 5, facts: 6 };
@@ -202,7 +213,9 @@ export async function buildAdaptiveContextPack(input: {
     latencyBudgetMs: input.latencyBudgetMs,
     risk: riskFromMessage(input.userMessage),
     complexityHint: input.complexityHint,
-    builtAt: new Date().toISOString()
+    builtAt: new Date().toISOString(),
+    workingState,
+    weekSummaries
   };
 }
 
@@ -218,6 +231,21 @@ export function formatContextPackForModel(pack: AdaptiveContextPack): string {
   ];
   if (pack.complexityHint) lines.push(`complexity_hint=${pack.complexityHint}`);
   if (pack.userDisplayName) lines.push(`user_name=${pack.userDisplayName}`);
+  if (pack.workingState) {
+    const ws = pack.workingState;
+    if (ws.activeProjects.length || ws.openLoops.length || ws.lastTopics.length) {
+      lines.push("Working state (continuous across days; not only this chat):");
+      if (ws.activeProjects.length) lines.push(`- active_projects: ${ws.activeProjects.slice(0, 5).join("; ")}`);
+      if (ws.lastTopics.length) lines.push(`- recent_topics: ${ws.lastTopics.slice(0, 6).join("; ")}`);
+      if (ws.openLoops.length) lines.push(`- open_loops: ${ws.openLoops.slice(0, 4).join("; ")}`);
+    }
+  }
+  if (pack.weekSummaries?.length) {
+    lines.push("Activity by week (UTC dates — use when asked what we did or when):");
+    for (const w of pack.weekSummaries.slice(0, spoken ? 2 : 4)) {
+      lines.push(`- ${w.weekStart} → ${w.weekEnd} (${w.episodeCount} eps): ${w.summary.slice(0, spoken ? 160 : 320)}`);
+    }
+  }
   if (pack.entities.length) {
     lines.push("Known entities (resolve incomplete references when unambiguous):");
     for (const e of pack.entities.slice(0, entityCap)) {
