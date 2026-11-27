@@ -75,6 +75,43 @@
             android:name=".NallyRecognitionService"
             android:exported="false" />
 
+        <!-- Widget A: Now Playing voice card -->
+        <receiver
+            android:name=".NallyWidgetVoiceProvider"
+            android:exported="true"
+            android:label="Nally Voice">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nally_widget_voice_info" />
+        </receiver>
+        <!-- Widget B: Control pad -->
+        <receiver
+            android:name=".NallyWidgetPadProvider"
+            android:exported="true"
+            android:label="Nally Pad">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nally_widget_pad_info" />
+        </receiver>
+        <!-- Widget C: Status strip -->
+        <receiver
+            android:name=".NallyWidgetStatusProvider"
+            android:exported="true"
+            android:label="Nally Status">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nally_widget_status_info" />
+        </receiver>
+        <!-- Legacy provider name for existing placements -->
         <receiver
             android:name=".NallyWidgetProvider"
             android:exported="true"
@@ -84,7 +121,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/nally_widget_info" />
+                android:resource="@xml/nally_widget_voice_info" />
         </receiver>
         <service
             android:name=".VoiceCallService"
