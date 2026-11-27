@@ -4,13 +4,11 @@
 
 DeskDear should feel calm, precise, and trustworthy rather than like a system utility that constantly demands attention. The interface is a command center for a remote desktop agent, but the agent should normally stay out of the way. The user opens the interface when they want to pair, inspect permissions, approve an action, or review activity.
 
-The design takes inspiration from the agent-first command-center direction of Google Antigravity: conversations and active work are the center of gravity, the interface is abstracted away from operating-system details, and progress is represented as clear work states. DeskDear will use its own visual identity and will not copy Google branding or proprietary screens.
-
 ## Shared design decision
 
-Windows and Linux should use the same Qt Quick/QML presentation layer, layout, labels, colors, spacing, icons, and interaction model. Platform-specific code should be limited to the native service lifecycle, system notification adapter, secure credential storage, and desktop integration.
+**One design system across products.** DeskDear desktop (Windows + Linux) uses the same visual tokens as the Android native app (`android-native-app` branch, `ui/theme/Theme.kt` / `NallyHermesTheme`). Platform-specific code is limited to service lifecycle, notifications, credential storage, and desktop integration.
 
-The UI should not branch into separate Windows and Linux designs. A user should be able to move between both platforms and immediately understand the same concepts.
+Windows and Linux share one Qt Quick/QML presentation layer. A user moving between Android and DeskDear should recognize the same surfaces, type scale intent, and accent language.
 
 ## Silent background mode
 
@@ -36,90 +34,96 @@ On Linux, DeskDear should run as a `systemd --user` service inside the logged-in
 
 If native notifications are unavailable, the agent should continue operating and record the event in the local audit log. It must not open a window unexpectedly as a fallback.
 
-## Visual language
+## Visual language (Android design system)
 
-Use a dark-first interface with a quiet near-black canvas, soft graphite panels, and one restrained signal color. The signal color is a warm electric amber called `Nally Gold`; it represents attention and active work rather than generic success. Connection success uses a muted mint accent, errors use a clear coral accent, and neutral information uses cool blue-gray.
+Source of truth: `android/app/src/main/java/com/klyntech/nallyhermes/ui/theme/Theme.kt`
 
-Typography should be modern and highly legible. Use a system sans-serif stack so the same design feels native on Windows and Linux. Use a compact uppercase eyebrow for context, large sentence-case titles, and short descriptive copy. Avoid dense dashboards, glossy gradients, excessive rounded cards, and decorative animation.
+Dark-first, quiet olive-graphite surfaces, sage primary, soft error coral. Typography targets Manrope on Android; desktop uses the system sans stack with the same weight and size intent.
 
-Core tokens:
+### Core tokens
 
 ```text
-Canvas:       #0D0F12
-Panel:        #15181D
-Panel raised: #1C2027
-Border:       #2A3038
-Text primary: #F2F4F7
-Text muted:   #9AA3AF
-Mint:         #A7E8C3
-Nally Gold:   #E9B872
-Coral:        #F28F8F
-Blue gray:    #9DB7D3
-Radius:       14px panels, 10px controls, 999px status pills
-Spacing:      4 / 8 / 12 / 16 / 24 / 32px
+Canvas (hard):        #0B0C0B
+Background:           #191A18
+Panel (surface):      #232521
+Raised (surfaceVar):  #2B2D28
+Primary container:    #343B30
+Border (outlineVar):  #3D403A
+Outline:              #777A72
+
+Text primary:         #F1F2ED
+Text muted:           #A7AAA3
+
+Primary (sage):       #A7B09A
+On primary:           #252B20
+Success / connected:  #A7B09A
+Attention:            #C9C4A8
+Danger / error:       #F2B8B5
+On danger:            #601410
+Info:                 #A7AAA3
+
+Radius:               14px panels, 10px controls, 999px pills
+Spacing:              4 / 8 / 12 / 16 / 24 / 32px
 ```
 
-## Main window
+DeskDear maps product signals onto this palette:
+
+| Signal | Token |
+|--------|--------|
+| Connected / healthy | `primary` / success sage |
+| Needs attention / active work | `attention` warm neutral |
+| Error / stop | `danger` |
+| Neutral meta | `muted` / `info` |
+
+Avoid glossy gradients, excessive rounded cards, and decorative animation. Status must always include text, not color alone.
+
+## Main window (desktop layout)
 
 The main window is a compact command center with three regions.
 
-The left rail contains the DeskDear mark, the current device name, and four destinations: Overview, Activity, Permissions, and Settings. It is narrow and quiet. The rail can collapse to icons without changing the content model.
+**Left rail** — DeskDear mark, current device name, destinations: Overview, Activity, Permissions, Settings. Narrow and quiet; can collapse to icons later.
 
-The center surface is the active page. The Overview page begins with a small status eyebrow such as `DESKDEAR / HOME DESKTOP`, a title such as `Your computer is ready`, and one sentence explaining the current state. Below it is a large connection card showing `Connected`, the last heartbeat, and the active session state. The most important action is always visually obvious: `Stop session`, `Review permissions`, or `Pair device` depending on state.
+**Center surface** — active page. Overview starts with a small status eyebrow (`DESKDEAR / HOME DESKTOP`), a sentence-case title, and one explanatory line. Large connection card shows Connected, heartbeat, and session state. Primary actions stay obvious: Stop session, Review permissions, or Pair device.
 
-The right side is a contextual activity column. It shows the current task, pending approval, or the latest safe event. It should never become a noisy log by default. A `View all activity` action opens the complete audit view.
+**Right column** — contextual activity: current task, pending approval, or latest safe events. Not a noisy log by default.
 
 ## Key states
 
 ### Connected
-
-Display a mint status dot, `Connected`, the device name, and the last heartbeat. Show the current control mode as `Waiting for tasks`.
+Mint/sage status dot, `Connected`, device name, last heartbeat. Control mode: `Waiting for tasks`.
 
 ### Working
-
-Display `Nally is working on your computer`, the current operation, elapsed time, and a clear `Stop` action. Do not show raw protocol details unless the user opens diagnostics.
+`Nally is working on your computer`, current operation, elapsed time, clear `Stop`.
 
 ### Approval required
-
-Elevate the pending approval into the center surface. Explain what will happen in plain language, identify the capability being requested, show the scope and expiry, and offer `Allow once` and `Deny`. Never hide a high-impact action behind a generic confirmation label.
+Elevate into the center surface. Plain language, capability, scope, expiry. `Allow once` / `Deny`.
 
 ### Offline
-
-Display `DeskDear is offline`, the last successful connection time, and `Reconnect automatically` state. Do not imply that queued remote work will run unless a future protocol explicitly supports safe queuing.
+`DeskDear is offline`, last successful connection, automatic reconnect state.
 
 ### Pairing
-
-Use a focused, distraction-free flow with a pairing code or QR code, device name, account identity, requested permissions, and a final local approval step.
+Focused flow: code or QR, device name, account, requested permissions, local approval.
 
 ## Notification copy
-
-The default connection notification should be short:
 
 ```text
 DeskDear connected
 Your computer is ready for approved tasks from Nally.
-```
 
-The reconnect notification should be used sparingly:
-
-```text
 DeskDear reconnected
 Your computer is available again.
-```
 
-The approval notification may identify the operation category but must not expose private file names or sensitive content in the notification preview:
-
-```text
 DeskDear needs approval
 Nally is requesting a workspace action on this computer.
 ```
 
 ## Accessibility and trust
 
-Every status must be represented by text as well as color. Keyboard navigation must reach every control. Approval buttons must be explicit and have safe focus defaults. The stop action must be reachable without navigating through multiple pages. The UI must remain usable at increased system font sizes and should not rely on animation to communicate state.
-
-The UI should make the trust boundary visible: `Nally plans`, `DeskDear checks`, and `You approve`. This language should appear in the Permissions and Activity pages so users understand that a remote instruction is not automatically an authorization.
+Every status is text as well as color. Keyboard reaches every control. Stop is reachable without deep navigation. Trust boundary language stays visible: **Nally plans → DeskDear checks → You approve**.
 
 ## Implementation sequence
 
-First implement the shared QML shell with Overview, Activity, Permissions, Settings, and the pairing state. Use a local mock state provider so the UI can be reviewed without transport. Then connect the shell to the C++ agent through a narrow local IPC interface. Native notification adapters and startup services should be added only after the mock states and permission-review flow are stable.
+1. Shared QML shell with Android tokens (done in `ui/qml/Main.qml`).
+2. Mock state provider for Overview / Activity / Permissions / Settings / pairing.
+3. Narrow local IPC to the C++ agent.
+4. Native notification adapters and startup services after permission-review is stable.
