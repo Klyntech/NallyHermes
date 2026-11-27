@@ -9,6 +9,7 @@ import type { ProgressEvent, ToolProgressReporter } from "./progress.js";
 import { classifyFailure } from "./failure.js";
 import { callGitHubOperation, getGitHubOperation, listGitHubOperations } from "../connectors/github.js";
 import { callDeskDearOperation, getDeskDearOperation, listDeskDearOperations } from "./deskdear.js";
+import { activityTool } from "./activityLog.js";
 import { callV22Operation, getV22Operation, listV22Operations, type V22Connector } from "../connectors/v22.js";
 import { gateWriteOrPending } from "./approvals.js";
 
@@ -56,6 +57,13 @@ const schemas = {
     course: z.string().max(160).optional(),
     title: z.string().max(240).optional()
   }).strict(),
+  activity: z.object({
+    operation: z.enum(["recall", "weeks", "working_state"]),
+    since_date: z.string().max(10).optional(),
+    until_date: z.string().max(10).optional(),
+    query: z.string().max(200).optional(),
+    limit: z.number().int().min(1).max(50).optional()
+  }).strict(),
   schedule: z.object({
     operation: z.enum(["create", "list", "cancel"]),
     task: z.string().max(1000).optional(),
@@ -73,7 +81,7 @@ const schemas = {
     max_runs: z.number().int().min(1).max(1000).optional(),
     until_at: z.string().max(64).optional(),
     timezone: z.string().max(100).optional(),
-    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer", "deskdear"])).max(10).optional(),
+    allowed_tools: z.array(z.enum(["web_search", "fetch", "memory", "academic", "file_io", "schedule", "calendar", "github", "notion", "gmail", "nallputer", "deskdear", "activity"])).max(10).optional(),
     approval_policy: z.string().trim().min(1).max(100).optional(),
     output_destination: z.literal("telegram").optional(),
     id: z.string().max(100).optional()
@@ -176,6 +184,9 @@ async function executeToolCallOnce(
       case "academic":
         result = await academicTool(telegramId, args as Parameters<typeof academicTool>[1], reportToolProgress);
         break;
+      case "activity":
+        result = await activityTool(telegramId, args as Parameters<typeof activityTool>[1]);
+        break;
       case "schedule":
         result = await scheduleTool(telegramId, args as Parameters<typeof scheduleTool>[1], reportToolProgress);
         break;
@@ -274,6 +285,8 @@ export function isReadOnlyCall(call: ToolCallInput): boolean {
         return args.operation === "recall";
       case "academic":
         return ["list", "search", "get"].includes(String(args.operation));
+      case "activity":
+        return true;
       case "schedule":
         return args.operation === "list";
       case "workflow":
