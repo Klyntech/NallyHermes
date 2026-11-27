@@ -241,9 +241,9 @@ export function formatContextPackForModel(pack: AdaptiveContextPack): string {
     }
   }
   if (pack.weekSummaries?.length) {
-    lines.push("Activity by week (UTC dates — use when asked what we did or when):");
+    lines.push("Recent weeks together (for continuity — speak naturally, never cite episode counts):");
     for (const w of pack.weekSummaries.slice(0, spoken ? 2 : 4)) {
-      lines.push(`- ${w.weekStart} → ${w.weekEnd} (${w.episodeCount} eps): ${w.summary.slice(0, spoken ? 160 : 320)}`);
+      lines.push(`- ${w.weekStart} to ${w.weekEnd}: ${w.summary.slice(0, spoken ? 200 : 400)}`);
     }
   }
   if (pack.entities.length) {
