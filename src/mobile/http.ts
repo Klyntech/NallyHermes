@@ -13,6 +13,7 @@ import {
 import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
 import { splitAnswerAndSources } from "../agent/sourceAttribution.js";
 import { mintVoiceTicket } from "./voiceSession.js";
+import { handleNallyAccountRequest } from "../accounts/http.js";
 
 const MAX_REQUEST_BYTES = 8_192;
 const CLIENT_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -75,6 +76,10 @@ export async function handleMobileApiRequest(
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const pathname = url.pathname;
+  if (pathname.startsWith("/api/accounts/")) {
+    await handleNallyAccountRequest(req, res, pathname);
+    return;
+  }
   if (!pathname.startsWith("/api/mobile/")) return;
 
   try {
