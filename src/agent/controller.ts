@@ -15,6 +15,7 @@ import { beginTurnAffect, noteTaskOutcome, noteToolOutcome } from "./affect.js";
 import { requiresAcademicSourceCheck } from "./academicSourceGate.js";
 import { appendSourcesFooter, extractAnswerSources, type AnswerSource } from "./sourceAttribution.js";
 import { persistTurnMemories } from "./turnMemory.js";
+import { recordActivityEpisode } from "./activityLog.js";
 
 const llm = new OpenAI({
   apiKey: config.NVIDIA_NIM_API_KEY,
@@ -616,6 +617,7 @@ export async function runAgent(
     completeExecution(state, "completed");
   if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
     void persistTurnMemories({ telegramId, userMessage, messages, completed: true });
+    void recordActivityEpisode({ telegramId, userMessage, messages, channel, completed: true });
     console.info("orchestra.execution", JSON.stringify({ ...summarizeExecution(state), route: route.reason }));
     await reportProgress({ type: "response_ready" });
     return answer;
@@ -678,6 +680,7 @@ export async function runAgent(
       completeExecution(state, audit.ok ? "completed" : "completed");
       if (config.AFFECT_ENABLED) noteTaskOutcome(telegramId, "complete");
       void persistTurnMemories({ telegramId, userMessage, messages, completed: true });
+    void recordActivityEpisode({ telegramId, userMessage, messages, channel, completed: true });
       console.info("orchestra.execution", JSON.stringify({
         ...summarizeExecution(state),
         route: route.reason,
