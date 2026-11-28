@@ -324,6 +324,32 @@ internal class MobileApi(context: Context) {
         preferences.edit().putString("access_token", token).apply()
     }
 
+    /** Where the browser sign-in starts. Also remembers the PKCE verifier needed to finish it. */
+    fun oauthLoginUrl(provider: String): String {
+        require(provider == "google" || provider == "github") { "Unknown sign-in provider." }
+        val pkce = OAuthPkce.create()
+        preferences.edit()
+            .putString("pending_oauth_verifier", pkce.verifier)
+            .putLong("pending_oauth_at", System.currentTimeMillis())
+            .apply()
+        return endpoint("/auth/app/$provider") + "?challenge=" + URLEncoder.encode(pkce.challenge, "UTF-8")
+    }
+    
+    /** Finishes the browser sign-in: trades the one-time code and the stored PKCE verifier for a session. */
+    suspend fun completeOAuthLogin(code: String) {
+        val verifier = preferences.getString("pending_oauth_verifier", null)
+        val startedAt = preferences.getLong("pending_oauth_at", 0L)
+        preferences.edit().remove("pending_oauth_verifier").remove("pending_oauth_at").apply()
+        require(!verifier.isNullOrBlank() && System.currentTimeMillis() - startedAt < 15 * 60_000L) {
+            "That sign-in expired. Please start again."
+        }
+        val body = JSONObject().put("code", code).put("verifier", verifier).toString().toRequestBody(jsonType)
+        val response = execute(Request.Builder().url(endpoint("/api/mobile/auth/exchange")).post(body).build())
+        val token = response.optString("accessToken")
+        require(token.length >= 40) { "The server did not return a valid session. Please try again." }
+        preferences.edit().putString("access_token", token).apply()
+    }
+    
     suspend fun revoke() {
         if (!isPaired) return
         execute(request("/api/mobile/session").delete().build())
