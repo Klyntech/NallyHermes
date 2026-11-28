@@ -4,26 +4,23 @@ import QtQuick.Layouts
 
 // DeskDear desktop shell
 // Visual system aligned with android-native-app Theme.kt (NallyHermesTheme)
-// Layout remains a desktop command center: left rail / center / right context
 
 ApplicationWindow {
     id: window
     visible: true
     width: 1280
     height: 800
-    minimumWidth: 980
-    minimumHeight: 640
+    minimumWidth: 1020
+    minimumHeight: 680
     title: "DeskDear"
     color: theme.canvas
 
     /*
-     * Product tokens from android/.../ui/theme/Theme.kt
-     * Note: QML reserves property names starting with "on" + uppercase as signal
-     * handlers, so primaryForeground/dangerForeground are used instead of onPrimary/onDanger.
+     * Product tokens from android Theme.kt.
+     * QML reserves on*+Capital as signal handlers — use *Foreground names.
      */
     QtObject {
         id: theme
-        // Surfaces
         readonly property color canvas: "#0B0C0B"
         readonly property color background: "#191A18"
         readonly property color panel: "#232521"
@@ -32,11 +29,9 @@ ApplicationWindow {
         readonly property color border: "#3D403A"
         readonly property color outline: "#777A72"
 
-        // Text
         readonly property color text: "#F1F2ED"
         readonly property color muted: "#A7AAA3"
 
-        // Accents
         readonly property color primary: "#A7B09A"
         readonly property color primaryForeground: "#252B20"
         readonly property color success: "#A7B09A"
@@ -45,14 +40,16 @@ ApplicationWindow {
         readonly property color dangerForeground: "#601410"
         readonly property color info: "#A7AAA3"
 
-        // Radii / spacing
         readonly property int radiusPanel: 14
         readonly property int radiusControl: 10
         readonly property int radiusPill: 999
+        readonly property string fontFamily: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
     }
 
     property int selectedPage: 0
     property bool pairingOpen: false
+
+    readonly property var pageTitles: ["Overview", "Activity", "Permissions", "Settings"]
 
     component StatusDot: Rectangle {
         required property color dotColor
@@ -65,19 +62,20 @@ ApplicationWindow {
     component Pill: Rectangle {
         required property string label
         required property color accent
-        implicitWidth: pillText.implicitWidth + 24
-        implicitHeight: 30
+        implicitWidth: pillText.implicitWidth + 22
+        implicitHeight: 28
         radius: theme.radiusPill
         color: Qt.rgba(accent.r, accent.g, accent.b, 0.14)
-        border.color: Qt.rgba(accent.r, accent.g, accent.b, 0.32)
+        border.color: Qt.rgba(accent.r, accent.g, accent.b, 0.30)
         Text {
             id: pillText
             anchors.centerIn: parent
             text: parent.label
             color: parent.accent
-            font.pixelSize: 12
+            font.pixelSize: 11
             font.weight: Font.DemiBold
-            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+            font.family: theme.fontFamily
+            font.letterSpacing: 0.4
         }
     }
 
@@ -85,10 +83,14 @@ ApplicationWindow {
         required property string label
         required property string glyph
         required property int pageIndex
+        property bool hovered: false
+
         Layout.fillWidth: true
-        Layout.preferredHeight: 42
+        Layout.preferredHeight: 40
         radius: 9
-        color: selectedPage === pageIndex ? theme.raised : "transparent"
+        color: selectedPage === pageIndex
+               ? theme.raised
+               : (hovered ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
         border.color: selectedPage === pageIndex ? theme.border : "transparent"
 
         RowLayout {
@@ -99,30 +101,66 @@ ApplicationWindow {
             Text {
                 text: glyph
                 color: selectedPage === pageIndex ? theme.primary : theme.muted
-                font.pixelSize: 16
+                font.pixelSize: 15
             }
             Text {
                 text: label
                 color: selectedPage === pageIndex ? theme.text : theme.muted
                 font.pixelSize: 13
-                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                font.family: theme.fontFamily
                 Layout.fillWidth: true
             }
         }
         MouseArea {
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: selectedPage = pageIndex
+            onEntered: parent.hovered = true
+            onExited: parent.hovered = false
+            onClicked: {
+                selectedPage = pageIndex
+                pairingOpen = false
+            }
         }
+    }
+
+    component SectionLabel: Text {
+        color: theme.muted
+        font.pixelSize: 10
+        font.letterSpacing: 1.3
+        font.family: theme.fontFamily
+        font.weight: Font.Medium
+    }
+
+    component BodyText: Text {
+        color: theme.muted
+        font.pixelSize: 13
+        font.family: theme.fontFamily
+        wrapMode: Text.WordWrap
+    }
+
+    component TitleText: Text {
+        color: theme.text
+        font.pixelSize: 28
+        font.weight: Font.DemiBold
+        font.family: theme.fontFamily
+    }
+
+    component Card: Rectangle {
+        radius: theme.radiusPanel
+        color: theme.panel
+        border.color: theme.border
+        border.width: 1
     }
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
+        // ── Left rail ───────────────────────────────────────────────
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 224
+            Layout.preferredWidth: 228
             color: theme.panel
             border.color: theme.border
             border.width: 1
@@ -144,9 +182,9 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             text: "D"
                             color: theme.primaryForeground
-                            font.pixelSize: 18
+                            font.pixelSize: 17
                             font.bold: true
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                     }
                     Column {
@@ -154,45 +192,39 @@ ApplicationWindow {
                         Text {
                             text: "DeskDear"
                             color: theme.text
-                            font.pixelSize: 16
+                            font.pixelSize: 15
                             font.bold: true
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                         Text {
                             text: "DESKTOP AGENT"
                             color: theme.muted
                             font.pixelSize: 9
-                            font.letterSpacing: 1.2
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.letterSpacing: 1.1
+                            font.family: theme.fontFamily
                         }
                     }
                 }
 
-                Item { Layout.preferredHeight: 42 }
+                Item { Layout.preferredHeight: 36 }
 
-                Text {
-                    text: "THIS COMPUTER"
-                    color: theme.muted
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.4
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                }
+                SectionLabel { text: "THIS COMPUTER" }
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 10
                     spacing: 8
-                    StatusDot { dotColor: theme.success }
+                    StatusDot { dotColor: pairing.paired ? theme.success : theme.attention }
                     Text {
                         text: "Nigeria desktop"
                         color: theme.text
                         font.pixelSize: 13
                         Layout.fillWidth: true
                         elide: Text.ElideRight
-                        font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                        font.family: theme.fontFamily
                     }
                 }
 
-                Item { Layout.preferredHeight: 30 }
+                Item { Layout.preferredHeight: 28 }
 
                 NavItem { label: "Overview"; glyph: "◈"; pageIndex: 0 }
                 NavItem { label: "Activity"; glyph: "◌"; pageIndex: 1 }
@@ -203,40 +235,41 @@ ApplicationWindow {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 82
+                    Layout.preferredHeight: 86
                     radius: 12
                     color: theme.raised
                     border.color: theme.border
                     Column {
                         anchors.fill: parent
                         anchors.margins: 12
-                        spacing: 6
+                        spacing: 5
                         Text {
                             text: "NALLY PLANS"
                             color: theme.muted
                             font.pixelSize: 9
-                            font.letterSpacing: 1.2
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.letterSpacing: 1.1
+                            font.family: theme.fontFamily
                         }
                         Text {
                             text: "DESKDEAR CHECKS"
                             color: theme.primary
                             font.pixelSize: 11
                             font.bold: true
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                         Text {
                             text: "YOU APPROVE"
                             color: theme.success
                             font.pixelSize: 11
                             font.bold: true
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                     }
                 }
             }
         }
 
+        // ── Center surface ──────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -244,118 +277,132 @@ ApplicationWindow {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 38
-                spacing: 24
+                anchors.margins: 36
+                spacing: 20
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Text {
-                        text: pairingOpen ? "Pair DeskDear" : ["Overview", "Activity", "Permissions", "Settings"][selectedPage]
-                        color: theme.text
-                        font.pixelSize: 27
-                        font.weight: Font.DemiBold
-                        font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                    spacing: 12
+
+                    ColumnLayout {
                         Layout.fillWidth: true
+                        spacing: 4
+                        SectionLabel {
+                            text: pairingOpen ? "TELEGRAM PAIRING" : "DESKDEAR / HOME DESKTOP"
+                            visible: pairingOpen || selectedPage === 0
+                        }
+                        TitleText {
+                            text: pairingOpen
+                                  ? "Connect this desktop"
+                                  : pageTitles[selectedPage]
+                            Layout.fillWidth: true
+                        }
                     }
-                    Pill { label: pairing.paired ? "PAIRED" : "NOT PAIRED"; accent: pairing.paired ? theme.success : theme.attention }
+
+                    Pill {
+                        label: pairing.paired ? "PAIRED" : "NOT PAIRED"
+                        accent: pairing.paired ? theme.success : theme.attention
+                    }
+
                     Button {
-                        text: "Open pairing"
+                        text: pairingOpen ? "Close" : "Open pairing"
                         flat: true
                         contentItem: Text {
                             text: parent.text
                             color: theme.primary
                             font.pixelSize: 12
                             font.bold: true
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
-                        background: Rectangle { color: "transparent" }
-                        onClicked: pairingOpen = true
+                        background: Rectangle {
+                            radius: 8
+                            color: parent.hovered ? Qt.rgba(theme.primary.r, theme.primary.g, theme.primary.b, 0.10) : "transparent"
+                        }
+                        onClicked: pairingOpen = !pairingOpen
                     }
                 }
 
                 Loader {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    sourceComponent: pairingOpen ? pairingPage : (selectedPage === 0 ? overviewPage : placeholderPage)
+                    sourceComponent: pairingOpen
+                        ? pairingPage
+                        : (selectedPage === 0 ? overviewPage
+                           : selectedPage === 1 ? activityPage
+                           : selectedPage === 2 ? permissionsPage
+                           : settingsPage)
                 }
             }
         }
 
+        // ── Right context column ────────────────────────────────────
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 310
+            Layout.preferredWidth: 300
             color: theme.panel
             border.color: theme.border
             border.width: 1
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 24
-                spacing: 18
+                anchors.margins: 22
+                spacing: 16
 
-                Text {
-                    text: "CURRENT STATE"
-                    color: theme.muted
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.4
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                }
+                SectionLabel { text: "CURRENT STATE" }
 
-                Rectangle {
+                Card {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 176
-                    radius: theme.radiusPanel
-                    color: theme.raised
-                    border.color: theme.border
+                    Layout.preferredHeight: 168
                     Column {
                         anchors.fill: parent
-                        anchors.margins: 18
-                        spacing: 12
+                        anchors.margins: 16
+                        spacing: 10
                         Row {
                             spacing: 9
-                            StatusDot { dotColor: theme.success; anchors.verticalCenter: parent.verticalCenter }
+                            StatusDot {
+                                dotColor: pairing.paired ? theme.success : theme.attention
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
                             Text {
-                                text: "Waiting for tasks"
+                                text: pairing.paired ? "Ready for tasks" : "Waiting to pair"
                                 color: theme.text
-                                font.pixelSize: 15
+                                font.pixelSize: 14
                                 font.bold: true
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                font.family: theme.fontFamily
                             }
                         }
                         Text {
-                            text: "No active control session"
+                            text: pairing.paired
+                                  ? "Linked to your Nally account"
+                                  : "No active control session"
                             color: theme.muted
                             font.pixelSize: 12
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                         Rectangle { width: parent.width; height: 1; color: theme.border }
                         Text {
                             text: "Last heartbeat"
                             color: theme.muted
                             font.pixelSize: 11
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                         Text {
                             text: "Just now"
                             color: theme.text
                             font.pixelSize: 13
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            font.family: theme.fontFamily
                         }
                     }
                 }
 
-                Text {
+                SectionLabel {
                     text: "RECENT ACTIVITY"
-                    color: theme.muted
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.4
-                    Layout.topMargin: 12
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                    Layout.topMargin: 4
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 13
+                    spacing: 12
                     Repeater {
                         model: [
                             ["Connected to Nally", "Just now", theme.success],
@@ -369,19 +416,20 @@ ApplicationWindow {
                             StatusDot { dotColor: modelData[2]; width: 7; height: 7 }
                             ColumnLayout {
                                 Layout.fillWidth: true
+                                spacing: 1
                                 Text {
                                     text: modelData[0]
                                     color: theme.text
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
-                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                    font.family: theme.fontFamily
                                 }
                                 Text {
                                     text: modelData[1]
                                     color: theme.muted
                                     font.pixelSize: 10
-                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                    font.family: theme.fontFamily
                                 }
                             }
                         }
@@ -399,148 +447,123 @@ ApplicationWindow {
                         horizontalAlignment: Text.AlignHCenter
                         font.pixelSize: 12
                         font.bold: true
-                        font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                        font.family: theme.fontFamily
                     }
                     background: Rectangle {
                         radius: theme.radiusControl
-                        color: Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.10)
-                        border.color: Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.32)
+                        color: parent.hovered
+                               ? Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.16)
+                               : Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.10)
+                        border.color: Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.30)
                     }
                 }
             }
         }
     }
 
+    // ── Pages ───────────────────────────────────────────────────────
+
     Component {
         id: overviewPage
         Flickable {
-            contentHeight: overviewColumn.implicitHeight
+            contentHeight: overviewColumn.implicitHeight + 8
             clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
             ColumnLayout {
                 id: overviewColumn
                 width: parent.width
                 spacing: 18
 
-                Text {
-                    text: "DESKDEAR / HOME DESKTOP"
-                    color: theme.primary
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.5
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                }
-                Text {
-                    text: "Your computer is ready"
-                    color: theme.text
-                    font.pixelSize: 34
-                    font.weight: Font.DemiBold
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                }
-                Text {
+                BodyText {
                     text: "Nally can request approved work here. DeskDear checks every operation locally before it runs."
-                    color: theme.muted
-                    font.pixelSize: 14
-                    wrapMode: Text.WordWrap
                     Layout.fillWidth: true
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                    font.pixelSize: 14
                 }
 
-                Rectangle {
+                Card {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 174
-                    Layout.topMargin: 12
-                    radius: 16
-                    color: theme.panel
-                    border.color: theme.border
+                    Layout.preferredHeight: 150
                     RowLayout {
                         anchors.fill: parent
-                        anchors.margins: 22
-                        spacing: 20
+                        anchors.margins: 20
+                        spacing: 18
+
                         ColumnLayout {
                             Layout.fillWidth: true
+                            spacing: 6
                             Text {
                                 text: "Connection"
                                 color: theme.muted
                                 font.pixelSize: 12
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                font.family: theme.fontFamily
                             }
                             RowLayout {
                                 spacing: 10
-                                StatusDot { dotColor: theme.success; width: 11; height: 11 }
+                                StatusDot {
+                                    dotColor: pairing.paired ? theme.success : theme.attention
+                                    width: 11; height: 11
+                                }
                                 Text {
-                                    text: "Connected"
+                                    text: pairing.paired ? "Paired" : "Not paired"
                                     color: theme.text
-                                    font.pixelSize: 23
+                                    font.pixelSize: 22
                                     font.bold: true
-                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                    font.family: theme.fontFamily
                                 }
                             }
                             Text {
-                                text: "Outbound session is healthy"
-                                color: theme.success
+                                text: pairing.paired
+                                      ? "Outbound session is healthy"
+                                      : "Pair with Telegram to link this computer"
+                                color: pairing.paired ? theme.success : theme.muted
                                 font.pixelSize: 12
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                            }
-                            Text {
-                                text: "This device is waiting for an approved task."
-                                color: theme.muted
-                                font.pixelSize: 12
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                font.family: theme.fontFamily
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
                             }
                         }
+
                         Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: theme.border }
+
                         ColumnLayout {
-                            Layout.preferredWidth: 180
-                            Text {
-                                text: "SESSION"
-                                color: theme.muted
-                                font.pixelSize: 10
-                                font.letterSpacing: 1.2
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                            }
+                            Layout.preferredWidth: 170
+                            spacing: 6
+                            SectionLabel { text: "SESSION" }
                             Text {
                                 text: "Inactive"
                                 color: theme.text
                                 font.pixelSize: 15
                                 font.bold: true
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                font.family: theme.fontFamily
                             }
-                            Text {
+                            BodyText {
                                 text: "No permissions in use"
-                                color: theme.muted
-                                font.pixelSize: 11
-                                wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                font.pixelSize: 11
                             }
                         }
                     }
                 }
 
-                Text {
+                SectionLabel {
                     text: "WHAT DESKDEAR CAN DO"
-                    color: theme.muted
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.4
-                    Layout.topMargin: 12
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                    Layout.topMargin: 4
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 14
+                    spacing: 12
                     Repeater {
                         model: [
                             ["Workspace", "Read and write inside approved folders", theme.primary],
                             ["Health", "Report status and connectivity", theme.success],
                             ["Approvals", "Ask before sensitive actions", theme.info]
                         ]
-                        delegate: Rectangle {
+                        delegate: Card {
                             required property var modelData
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 122
-                            radius: 13
-                            color: theme.panel
-                            border.color: theme.border
+                            Layout.preferredHeight: 118
                             Column {
                                 anchors.fill: parent
                                 anchors.margins: 16
@@ -548,21 +571,42 @@ ApplicationWindow {
                                 Text {
                                     text: modelData[0]
                                     color: modelData[2]
-                                    font.pixelSize: 14
+                                    font.pixelSize: 13
                                     font.bold: true
-                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                    font.family: theme.fontFamily
                                 }
                                 Text {
                                     text: modelData[1]
                                     color: theme.muted
-                                    font.pixelSize: 11
+                                    font.pixelSize: 12
                                     wrapMode: Text.WordWrap
                                     width: parent.width
-                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                    font.family: theme.fontFamily
                                 }
                             }
                         }
                     }
+                }
+
+                Button {
+                    visible: !pairing.paired
+                    text: "Pair this desktop"
+                    Layout.topMargin: 4
+                    contentItem: Text {
+                        text: parent.text
+                        color: theme.primaryForeground
+                        font.pixelSize: 13
+                        font.bold: true
+                        font.family: theme.fontFamily
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                    background: Rectangle {
+                        implicitWidth: 160
+                        implicitHeight: 38
+                        radius: 9
+                        color: parent.hovered ? Qt.lighter(theme.primary, 1.08) : theme.primary
+                    }
+                    onClicked: pairingOpen = true
                 }
             }
         }
@@ -571,108 +615,158 @@ ApplicationWindow {
     Component {
         id: pairingPage
         Flickable {
-            contentHeight: pairingColumn.implicitHeight
+            contentHeight: pairingColumn.implicitHeight + 8
             clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
             ColumnLayout {
                 id: pairingColumn
-                width: parent.width
-                spacing: 18
+                width: Math.min(parent.width, 560)
+                spacing: 16
 
-                Text {
-                    text: "TELEGRAM PAIRING"
-                    color: theme.primary
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.5
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                }
-                Text {
-                    text: pairing.paired ? "DeskDear is paired" : "Connect this desktop"
-                    color: theme.text
-                    font.pixelSize: 34
-                    font.weight: Font.DemiBold
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                }
-                Text {
+                BodyText {
                     text: "In a private Telegram chat with Nally, send /pairdesktop. Enter the one-time code here within five minutes."
-                    color: theme.muted
-                    font.pixelSize: 14
-                    wrapMode: Text.WordWrap
                     Layout.fillWidth: true
-                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                    font.pixelSize: 14
                 }
 
-                Rectangle {
+                Card {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 168
-                    radius: 16
-                    color: theme.panel
-                    border.color: theme.border
+                    implicitHeight: pairingInner.implicitHeight + 40
+
                     ColumnLayout {
-                        anchors.fill: parent
+                        id: pairingInner
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         anchors.margins: 20
-                        spacing: 12
-                        Text {
-                            text: "ONE-TIME CODE"
-                            color: theme.muted
-                            font.pixelSize: 10
-                            font.letterSpacing: 1.3
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
-                        }
+                        spacing: 14
+
+                        SectionLabel { text: "ONE-TIME CODE" }
+
                         TextField {
                             id: pairingCode
                             Layout.fillWidth: true
-                            placeholderText: "123456"
+                            Layout.preferredHeight: 48
+                            placeholderText: "10-digit code"
                             inputMethodHints: Qt.ImhDigitsOnly
                             validator: RegularExpressionValidator { regularExpression: /[0-9]{0,10}/ }
                             color: theme.text
-                            font.pixelSize: 25
-                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            placeholderTextColor: theme.outline
+                            font.pixelSize: 22
+                            font.letterSpacing: 2
+                            font.family: theme.fontFamily
+                            leftPadding: 14
+                            rightPadding: 14
                             background: Rectangle {
-                                radius: 9
+                                radius: 10
                                 color: theme.raised
+                                border.width: 1
                                 border.color: pairingCode.activeFocus ? theme.primary : theme.border
                             }
+                            Keys.onReturnPressed: {
+                                if (pairingCode.text.length === 10 && !pairing.busy)
+                                    pairing.submitCode(pairingCode.text)
+                            }
                         }
+
                         RowLayout {
+                            Layout.fillWidth: true
                             spacing: 12
+
                             Button {
+                                id: submitBtn
                                 text: pairing.busy ? "Pairing…" : "Submit code"
-                                enabled: !pairing.busy && pairingCode.text.length >= 4
+                                enabled: !pairing.busy && pairingCode.text.length === 10
                                 contentItem: Text {
                                     text: parent.text
-                                    color: theme.primaryForeground
+                                    color: parent.enabled ? theme.primaryForeground : theme.muted
                                     horizontalAlignment: Text.AlignHCenter
                                     font.pixelSize: 13
                                     font.bold: true
-                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                    font.family: theme.fontFamily
                                 }
                                 background: Rectangle {
+                                    implicitWidth: 132
+                                    implicitHeight: 38
                                     radius: 9
-                                    color: parent.enabled ? theme.primary : theme.border
+                                    color: {
+                                        if (!parent.enabled) return theme.border
+                                        if (parent.hovered) return Qt.lighter(theme.primary, 1.08)
+                                        return theme.primary
+                                    }
                                 }
                                 onClicked: pairing.submitCode(pairingCode.text)
                             }
+
                             Text {
                                 text: pairing.status
-                                color: pairing.paired ? theme.success : theme.muted
+                                color: pairing.paired ? theme.success
+                                       : (pairing.status.indexOf("invalid") >= 0
+                                          || pairing.status.indexOf("not configured") >= 0
+                                          || pairing.status.indexOf("could not") >= 0
+                                          ? theme.danger : theme.muted)
                                 font.pixelSize: 12
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
-                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                font.family: theme.fontFamily
+                            }
+                        }
+                    }
+                }
+
+                // Steps
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    Repeater {
+                        model: [
+                            ["1", "Open Telegram"],
+                            ["2", "Send /pairdesktop"],
+                            ["3", "Paste code here"]
+                        ]
+                        delegate: Card {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 64
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 10
+                                Rectangle {
+                                    width: 26; height: 26; radius: 13
+                                    color: theme.primaryContainer
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: modelData[0]
+                                        color: theme.primary
+                                        font.bold: true
+                                        font.pixelSize: 12
+                                        font.family: theme.fontFamily
+                                    }
+                                }
+                                Text {
+                                    text: modelData[1]
+                                    color: theme.text
+                                    font.pixelSize: 12
+                                    font.family: theme.fontFamily
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
                             }
                         }
                     }
                 }
 
                 Button {
-                    text: "Back to overview"
+                    text: "← Back to overview"
                     flat: true
                     contentItem: Text {
                         text: parent.text
                         color: theme.primary
                         font.pixelSize: 12
                         font.bold: true
-                        font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                        font.family: theme.fontFamily
                     }
                     background: Rectangle { color: "transparent" }
                     onClicked: pairingOpen = false
@@ -682,23 +776,233 @@ ApplicationWindow {
     }
 
     Component {
-        id: placeholderPage
-        ColumnLayout {
-            spacing: 12
-            Text {
-                text: "This surface is coming next"
-                color: theme.text
-                font.pixelSize: 24
-                font.bold: true
-                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+        id: activityPage
+        Flickable {
+            contentHeight: activityColumn.implicitHeight + 8
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            ColumnLayout {
+                id: activityColumn
+                width: parent.width
+                spacing: 14
+
+                BodyText {
+                    text: "Local audit of agent requests and outcomes. Live streaming connects in a later build."
+                    Layout.fillWidth: true
+                }
+
+                Repeater {
+                    model: [
+                        ["Self-test", "Agent core checks passed", "5 min ago", theme.success],
+                        ["Policy load", "Default permission set applied", "2 min ago", theme.info],
+                        ["Heartbeat", "Control plane reachability OK", "Just now", theme.primary]
+                    ]
+                    delegate: Card {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 78
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 16
+                            spacing: 14
+                            StatusDot { dotColor: modelData[3]; width: 10; height: 10 }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: modelData[0]
+                                    color: theme.text
+                                    font.pixelSize: 14
+                                    font.bold: true
+                                    font.family: theme.fontFamily
+                                }
+                                Text {
+                                    text: modelData[1]
+                                    color: theme.muted
+                                    font.pixelSize: 12
+                                    font.family: theme.fontFamily
+                                }
+                            }
+                            Text {
+                                text: modelData[2]
+                                color: theme.outline
+                                font.pixelSize: 11
+                                font.family: theme.fontFamily
+                            }
+                        }
+                    }
+                }
             }
-            Text {
-                text: "The shared shell is ready. The next build connects this page to the local agent state and audit stream."
-                color: theme.muted
-                font.pixelSize: 14
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+        }
+    }
+
+    Component {
+        id: permissionsPage
+        Flickable {
+            contentHeight: permColumn.implicitHeight + 8
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            ColumnLayout {
+                id: permColumn
+                width: parent.width
+                spacing: 14
+
+                BodyText {
+                    text: "DeskDear starts fail-closed. Capabilities stay denied until you explicitly allow them."
+                    Layout.fillWidth: true
+                }
+
+                Repeater {
+                    model: [
+                        ["Workspace files", "Read / write approved folders only", "Denied", theme.danger],
+                        ["Shell commands", "Run local processes", "Denied", theme.danger],
+                        ["Network tools", "Outbound fetches on your behalf", "Denied", theme.danger],
+                        ["Screen capture", "Read pixels from displays", "Denied", theme.danger],
+                        ["Clipboard", "Read or write clipboard", "Denied", theme.danger]
+                    ]
+                    delegate: Card {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 72
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 16
+                            spacing: 12
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: modelData[0]
+                                    color: theme.text
+                                    font.pixelSize: 14
+                                    font.bold: true
+                                    font.family: theme.fontFamily
+                                }
+                                Text {
+                                    text: modelData[1]
+                                    color: theme.muted
+                                    font.pixelSize: 12
+                                    font.family: theme.fontFamily
+                                }
+                            }
+                            Pill {
+                                label: modelData[2].toUpperCase()
+                                accent: modelData[3]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: settingsPage
+        Flickable {
+            contentHeight: settingsColumn.implicitHeight + 8
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            ColumnLayout {
+                id: settingsColumn
+                width: parent.width
+                spacing: 14
+
+                BodyText {
+                    text: "Local agent preferences. Control-plane URL defaults to the production host."
+                    Layout.fillWidth: true
+                }
+
+                Card {
+                    Layout.fillWidth: true
+                    implicitHeight: settingsInner.implicitHeight + 36
+                    ColumnLayout {
+                        id: settingsInner
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 18
+                        spacing: 14
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Version"
+                                color: theme.text
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: "0.1.0"
+                                color: theme.muted
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                            }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Pairing status"
+                                color: theme.text
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: pairing.paired ? "Paired" : "Not paired"
+                                color: pairing.paired ? theme.success : theme.attention
+                                font.pixelSize: 13
+                                font.bold: true
+                                font.family: theme.fontFamily
+                            }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Control plane"
+                                color: theme.text
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: "nally.onrender.com"
+                                color: theme.muted
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                            }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "Execution policy"
+                                color: theme.text
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: "Fail-closed"
+                                color: theme.primary
+                                font.pixelSize: 13
+                                font.bold: true
+                                font.family: theme.fontFamily
+                            }
+                        }
+                    }
+                }
+
+                BodyText {
+                    text: "Override the endpoint with the DESKDEAR_CONTROL_URL environment variable if you run a private control plane."
+                    Layout.fillWidth: true
+                    font.pixelSize: 12
+                }
             }
         }
     }
