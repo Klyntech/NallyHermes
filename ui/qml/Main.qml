@@ -18,33 +18,34 @@ ApplicationWindow {
 
     /*
      * Product tokens from android/.../ui/theme/Theme.kt
-     * darkColorScheme + hard canvas used on login/shell surfaces.
+     * Note: QML reserves property names starting with "on" + uppercase as signal
+     * handlers, so primaryForeground/dangerForeground are used instead of onPrimary/onDanger.
      */
     QtObject {
         id: theme
         // Surfaces
-        readonly property color canvas: "#0B0C0B"          // hard app canvas (NallyHermesApp)
-        readonly property color background: "#191A18"     // Material background
-        readonly property color panel: "#232521"          // surface
-        readonly property color raised: "#2B2D28"         // surfaceVariant
+        readonly property color canvas: "#0B0C0B"
+        readonly property color background: "#191A18"
+        readonly property color panel: "#232521"
+        readonly property color raised: "#2B2D28"
         readonly property color primaryContainer: "#343B30"
-        readonly property color border: "#3D403A"         // outlineVariant
+        readonly property color border: "#3D403A"
         readonly property color outline: "#777A72"
 
         // Text
-        readonly property color text: "#F1F2ED"           // onBackground / onSurface
-        readonly property color muted: "#A7AAA3"          // onSurfaceVariant / secondary
+        readonly property color text: "#F1F2ED"
+        readonly property color muted: "#A7AAA3"
 
-        // Accents (Android primary family is sage; map DeskDear signals onto it)
-        readonly property color primary: "#A7B09A"        // primary (sage)
-        readonly property color onPrimary: "#252B20"
-        readonly property color success: "#A7B09A"        // connected / healthy (same family as primary)
-        readonly property color attention: "#C9C4A8"      // warm neutral attention (desktop “gold” role)
-        readonly property color danger: "#F2B8B5"         // error
-        readonly property color onDanger: "#601410"
-        readonly property color info: "#A7AAA3"           // neutral info
+        // Accents
+        readonly property color primary: "#A7B09A"
+        readonly property color primaryForeground: "#252B20"
+        readonly property color success: "#A7B09A"
+        readonly property color attention: "#C9C4A8"
+        readonly property color danger: "#F2B8B5"
+        readonly property color dangerForeground: "#601410"
+        readonly property color info: "#A7AAA3"
 
-        // Radii / spacing (shared product rhythm)
+        // Radii / spacing
         readonly property int radiusPanel: 14
         readonly property int radiusControl: 10
         readonly property int radiusPill: 999
@@ -119,7 +120,6 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
 
-        // ── Left rail ───────────────────────────────────────────────
         Rectangle {
             Layout.fillHeight: true
             Layout.preferredWidth: 224
@@ -143,7 +143,7 @@ ApplicationWindow {
                         Text {
                             anchors.centerIn: parent
                             text: "D"
-                            color: theme.onPrimary
+                            color: theme.primaryForeground
                             font.pixelSize: 18
                             font.bold: true
                             font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
@@ -237,7 +237,6 @@ ApplicationWindow {
             }
         }
 
-        // ── Center surface ──────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -251,7 +250,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: pairingOpen ? "Pair DeskDear" : (selectedPage === 0 ? "Overview" : ["Overview", "Activity", "Permissions", "Settings"][selectedPage])
+                        text: pairingOpen ? "Pair DeskDear" : ["Overview", "Activity", "Permissions", "Settings"][selectedPage]
                         color: theme.text
                         font.pixelSize: 27
                         font.weight: Font.DemiBold
@@ -282,7 +281,6 @@ ApplicationWindow {
             }
         }
 
-        // ── Right context column ────────────────────────────────────
         Rectangle {
             Layout.fillHeight: true
             Layout.preferredWidth: 310
@@ -579,53 +577,103 @@ ApplicationWindow {
                 id: pairingColumn
                 width: parent.width
                 spacing: 18
-                Text { text: "TELEGRAM PAIRING"; color: theme.gold; font.pixelSize: 10; font.letterSpacing: 1.5 }
-                Text { text: pairing.paired ? "DeskDear is paired" : "Connect this desktop"; color: theme.text; font.pixelSize: 34; font.weight: Font.DemiBold }
+
+                Text {
+                    text: "TELEGRAM PAIRING"
+                    color: theme.primary
+                    font.pixelSize: 10
+                    font.letterSpacing: 1.5
+                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                }
+                Text {
+                    text: pairing.paired ? "DeskDear is paired" : "Connect this desktop"
+                    color: theme.text
+                    font.pixelSize: 34
+                    font.weight: Font.DemiBold
+                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                }
                 Text {
                     text: "In a private Telegram chat with Nally, send /pairdesktop. Enter the one-time code here within five minutes."
                     color: theme.muted
                     font.pixelSize: 14
                     wrapMode: Text.WordWrap
                     Layout.fillWidth: true
+                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
                 }
+
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 250
-                    Layout.topMargin: 12
+                    Layout.preferredHeight: 168
                     radius: 16
                     color: theme.panel
                     border.color: theme.border
                     ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: 24
-                        spacing: 14
-                        Text { text: "ONE-TIME CODE"; color: theme.muted; font.pixelSize: 10; font.letterSpacing: 1.3 }
+                        anchors.margins: 20
+                        spacing: 12
+                        Text {
+                            text: "ONE-TIME CODE"
+                            color: theme.muted
+                            font.pixelSize: 10
+                            font.letterSpacing: 1.3
+                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                        }
                         TextField {
                             id: pairingCode
                             Layout.fillWidth: true
-                            placeholderText: "10-digit code"
-                            maximumLength: 10
-                            validator: RegularExpressionValidator { regularExpression: /[0-9]{0,10}/ }
+                            placeholderText: "123456"
                             inputMethodHints: Qt.ImhDigitsOnly
-                            font.pixelSize: 25
+                            validator: RegularExpressionValidator { regularExpression: /[0-9]{0,10}/ }
                             color: theme.text
-                            background: Rectangle { radius: 9; color: theme.raised; border.color: pairingCode.activeFocus ? theme.gold : theme.border }
+                            font.pixelSize: 25
+                            font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            background: Rectangle {
+                                radius: 9
+                                color: theme.raised
+                                border.color: pairingCode.activeFocus ? theme.primary : theme.border
+                            }
                         }
-                        Button {
-                            Layout.fillWidth: true
-                            text: pairing.busy ? "Checking…" : "Pair this desktop"
-                            enabled: !pairing.busy && !pairing.paired
-                            contentItem: Text { text: parent.text; color: theme.canvas; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 13; font.bold: true }
-                            background: Rectangle { radius: 9; color: parent.enabled ? theme.gold : theme.border }
-                            onClicked: pairing.submitCode(pairingCode.text)
+                        RowLayout {
+                            spacing: 12
+                            Button {
+                                text: pairing.busy ? "Pairing…" : "Submit code"
+                                enabled: !pairing.busy && pairingCode.text.length >= 4
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: theme.primaryForeground
+                                    horizontalAlignment: Text.AlignHCenter
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                    font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                                }
+                                background: Rectangle {
+                                    radius: 9
+                                    color: parent.enabled ? theme.primary : theme.border
+                                }
+                                onClicked: pairing.submitCode(pairingCode.text)
+                            }
+                            Text {
+                                text: pairing.status
+                                color: pairing.paired ? theme.success : theme.muted
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                                font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                            }
                         }
-                        Text { text: pairing.status; color: pairing.paired ? theme.mint : theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                     }
                 }
+
                 Button {
                     text: "Back to overview"
                     flat: true
-                    contentItem: Text { text: parent.text; color: theme.gold; font.pixelSize: 12; font.bold: true }
+                    contentItem: Text {
+                        text: parent.text
+                        color: theme.primary
+                        font.pixelSize: 12
+                        font.bold: true
+                        font.family: "Segoe UI, Ubuntu, Cantarell, Noto Sans, sans-serif"
+                    }
                     background: Rectangle { color: "transparent" }
                     onClicked: pairingOpen = false
                 }
