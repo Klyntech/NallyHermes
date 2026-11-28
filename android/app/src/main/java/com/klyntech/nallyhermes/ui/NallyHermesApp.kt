@@ -265,6 +265,21 @@ fun NallyHermesApp(
                     loginNonce = null
                     authFeedback = event.message
                 }
+                is TelegramLoginEvent.OAuthCode -> {
+                    authBusy = true
+                    try {
+                        api.completeOAuthLogin(event.code)
+                        paired = true
+                        showPairingCode = false
+                        authFeedback = null
+                        syncReady = false
+                    } catch (error: Exception) {
+                        authFeedback = error.message ?: "Sign-in could not be completed."
+                    } finally {
+                        authBusy = false
+                    }
+                }
+                is TelegramLoginEvent.OAuthFailure -> authFeedback = event.message
             }
             onLoginEventConsumed()
         }
@@ -363,7 +378,16 @@ fun NallyHermesApp(
                                 }
                             }
                         },
-                        onUseCode = { authFeedback = null; showPairingCode = true }
+                        onUseCode = { authFeedback = null; showPairingCode = true },
+                        onOAuthLogin = { provider ->
+                            try {
+                                context.startActivity(
+                                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(api.oauthLoginUrl(provider)))
+                                )
+                            } catch (error: Exception) {
+                                authFeedback = error.message ?: "Could not open the sign-in page."
+                            }
+                        }
                     )
                     "code" -> PairingCodeScreen(
                         api = api,
@@ -385,6 +409,14 @@ fun NallyHermesApp(
                     // Voice & Settings are light — they can enter/exit freely.
                     Box(Modifier.fillMaxSize()) {
                         val chatVisible = selectedTab == AppTab.CHAT
+                        // Shows while a voice call is running and you are on Chat or Settings.
+                        InCallPill(
+                            visible = VoiceCallManager.inCall && selectedTab != AppTab.VOICE,
+                            state = VoiceCallManager.state,
+                            onOpen = { selectedTabName = AppTab.VOICE.name },
+                            onHangUp = { VoiceCallManager.end() },
+                            modifier = Modifier.align(Alignment.TopCenter).zIndex(5f)
+                        )
                         val chatAlpha by animateFloatAsState(
                             targetValue = if (chatVisible) 1f else 0f,
                             animationSpec = tween(190, easing = FastOutSlowInEasing),
@@ -496,8 +528,9 @@ private fun TelegramLoginScreen(
     busy: Boolean,
     feedback: String?,
     onLogin: () -> Unit,
-    onUseCode: () -> Unit
-) {
+    onUseCode: () -> Unit,
+    onOAuthLogin: (String) -> Unit
+    ) {
     // Spotify/Grok-inspired: immersive near-black, one primary pill, calm hierarchy
     val canvas = Color(0xFF0B0C0B)
     val muted = Color(0xFF9A9E96)
@@ -641,7 +674,10 @@ private fun TelegramLoginScreen(
                     label = "Google",
                     enabled = !busy,
                     modifier = Modifier.weight(1f),
-                    onClick = { providerNote = "Google sign-in is coming in a later build." }
+                    onClick = {
+                        providerNote = "Finish signing in in your browser, then come back to Nally."
+                        onOAuthLogin("google")
+                    }
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_google_brand),
@@ -653,7 +689,10 @@ private fun TelegramLoginScreen(
                     label = "GitHub",
                     enabled = !busy,
                     modifier = Modifier.weight(1f),
-                    onClick = { providerNote = "GitHub sign-in is coming in a later build." }
+                    onClick = {
+                        providerNote = "Finish signing in in your browser, then come back to Nally."
+                        onOAuthLogin("github")
+                    }
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_github_brand),
@@ -2099,7 +2138,7 @@ private fun SettingsScreen(
                         catch (e: Exception) { feedback = e.message ?: "Could not unlink Google." }
                         finally { busy = false }
                     }
-                } else feedback = "Google linking needs Sign-In + backend oauth."
+                } else feedback = "To link Google, send /linknallyaccount to Nally in Telegram, then tap Continue with Google."
             }
             SettingsDivider()
             SettingsNavRow(
@@ -2117,7 +2156,7 @@ private fun SettingsScreen(
                         catch (e: Exception) { feedback = e.message ?: "Could not unlink GitHub." }
                         finally { busy = false }
                     }
-                } else feedback = "GitHub linking needs OAuth access token."
+                } else feedback = "To link GitHub, send /linknallyaccount to Nally in Telegram, then tap Continue with GitHub."
             }
             SettingsDivider()
             SettingsNavRow(
