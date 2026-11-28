@@ -24,9 +24,12 @@ test("Hermes catalog matches DeskDear public tool names", () => {
   assert.equal(listDeskDearOperations().length, 23);
 });
 
-test("enabled tools are status, read, write", () => {
+test("all catalog tools are enabled for Nally", () => {
   const enabled = DESKDEAR_OPERATIONS.filter((o) => o.state === "enabled").map((o) => o.name);
-  assert.deepEqual(enabled, ["status", "read", "write"]);
+  assert.equal(enabled.length, DESKDEAR_OPERATIONS.length);
+  assert.ok(enabled.includes("click"));
+  assert.ok(enabled.includes("shot"));
+  assert.ok(enabled.includes("write"));
 });
 
 test("approval flags match device registry", () => {
@@ -44,8 +47,8 @@ test("calls fail closed without device; status is local", async () => {
   assert.equal(denied.status, "denied_local");
   const unavail = await callDeskDearOperation("write", { path: "a.txt", content: "x" }, true);
   assert.equal(unavail.status, "unavailable");
-  const planned = await callDeskDearOperation("click", { coordinate: [1, 2] }, true);
-  assert.equal(planned.status, "not_implemented");
+  const noCtx = await callDeskDearOperation("click", { coordinate: [1, 2] }, true);
+  assert.ok(noCtx.status === "unavailable" || noCtx.status === "denied_local");
 });
 
 test("approval gate uses DeskDear public names", () => {
@@ -56,8 +59,8 @@ test("approval gate uses DeskDear public names", () => {
 
 test("status reports enabled tool list", () => {
   const s = getDeskDearStatus();
-  assert.deepEqual(s.enabledTools, ["status", "read", "write"]);
   assert.equal(s.toolCount, 23);
+  assert.equal(s.enabledTools.length, 23);
   assert.equal(s.transport, "not_connected");
 });
 
