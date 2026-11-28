@@ -85,7 +85,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Browser sign-in finished: nallyhermes://auth?code=... (or ?error=...). */
+    private fun handleAuthIntent(intent: Intent?): Boolean {
+        val uri = intent?.data ?: return false
+        if (uri.scheme != "nallyhermes" || uri.host != "auth") return false
+        val code = uri.getQueryParameter("code")
+        loginEvent.value = if (!code.isNullOrBlank()) {
+            TelegramLoginEvent.OAuthCode(code)
+        } else {
+            TelegramLoginEvent.OAuthFailure(
+                when (uri.getQueryParameter("error")) {
+                    "not_linked" -> "No Nally account is linked to that login yet. In Telegram, send /linknallyaccount to Nally, link it, then try again."
+                    "cancelled" -> "Sign-in was cancelled."
+                    else -> "Sign-in could not be completed. Please try again."
+                }
+            )
+        }
+        return true
+    }
+    
     private fun handleLoginIntent(intent: Intent?) {
+        if (handleAuthIntent(intent)) return
         val uri = intent?.data ?: return
         val host = uri.host.orEmpty()
         val isTelegramLoginLink = uri.scheme == "https" &&
