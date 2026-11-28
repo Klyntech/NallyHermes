@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Shapes
 
 // DeskDear desktop shell — Lucide icons (ISC), aligned with Android icons-lucide-android
 
@@ -43,6 +42,98 @@ ApplicationWindow {
     property bool pairingOpen: false
     readonly property var pageTitles: ["Overview", "Activity", "Permissions", "Settings"]
 
+    // Live presence + permissions (session-local)
+    property var heartbeatAt: new Date()
+    property string heartbeatLabel: "—"
+    property var activityEvents: []
+    property var permissions: [
+        { id: "workspace", title: "Workspace files", detail: "Read / write approved folders only", allowed: false },
+        { id: "shell", title: "Shell commands", detail: "Run local processes", allowed: false },
+        { id: "network", title: "Network tools", detail: "Outbound fetches on your behalf", allowed: false },
+        { id: "screen", title: "Screen capture", detail: "Read pixels from displays", allowed: false },
+        { id: "clipboard", title: "Clipboard", detail: "Read or write clipboard", allowed: false }
+    ]
+
+    function pushActivity(title, detail, accent) {
+        var list = activityEvents.slice()
+        list.unshift({ title: title, detail: detail || "", accent: accent || theme.info, at: new Date() })
+        if (list.length > 12) list = list.slice(0, 12)
+        activityEvents = list
+    }
+    function refreshHeartbeatLabel() {
+        if (!pairing.paired) { heartbeatLabel = "Not paired"; return }
+        var ms = Date.now() - heartbeatAt.getTime()
+        if (ms < 8000) heartbeatLabel = "Just now"
+        else if (ms < 60000) heartbeatLabel = Math.floor(ms / 1000) + "s ago"
+        else if (ms < 3600000) heartbeatLabel = Math.floor(ms / 60000) + " min ago"
+        else heartbeatLabel = Math.floor(ms / 3600000) + " h ago"
+    }
+    function formatAge(d) {
+        if (!d) return ""
+        var ms = Date.now() - d.getTime()
+        if (ms < 8000) return "Just now"
+        if (ms < 60000) return Math.floor(ms / 1000) + "s ago"
+        if (ms < 3600000) return Math.floor(ms / 60000) + " min ago"
+        return Math.floor(ms / 3600000) + " h ago"
+    }
+    function grantAllPermissions() {
+        var next = []
+        for (var i = 0; i < permissions.length; ++i) {
+            var p = permissions[i]
+            next.push({ id: p.id, title: p.title, detail: p.detail, allowed: true })
+        }
+        permissions = next
+        pushActivity("Permissions granted", "All capabilities allowed for this session", theme.success)
+    }
+    function setPermission(index, allowed) {
+        var next = []
+        for (var i = 0; i < permissions.length; ++i) {
+            var p = permissions[i]
+            next.push({ id: p.id, title: p.title, detail: p.detail, allowed: (i === index) ? allowed : p.allowed })
+        }
+        permissions = next
+        var row = permissions[index]
+        pushActivity(row.allowed ? ("Allowed: " + row.title) : ("Denied: " + row.title), "Local policy updated", row.allowed ? theme.success : theme.danger)
+    }
+    function allowedCount() {
+        var n = 0
+        for (var i = 0; i < permissions.length; ++i) if (permissions[i].allowed) n++
+        return n
+    }
+
+    Timer {
+        interval: 5000
+        running: pairing.paired
+        repeat: true
+        onTriggered: { heartbeatAt = new Date(); refreshHeartbeatLabel(); activityEvents = activityEvents.slice() }
+    }
+    Timer {
+        interval: 3000
+        running: true
+        repeat: true
+        onTriggered: refreshHeartbeatLabel()
+    }
+    Connections {
+        target: pairing
+        function onPairedChanged() {
+            if (pairing.paired) {
+                heartbeatAt = new Date()
+                refreshHeartbeatLabel()
+                pushActivity("Paired with Nally", "Device linked to your account", theme.success)
+                grantAllPermissions()
+            } else {
+                heartbeatLabel = "Not paired"
+                pushActivity("Unpaired", "Session cleared", theme.attention)
+            }
+        }
+    }
+    Component.onCompleted: {
+        pushActivity("Agent started", "DeskDear UI online", theme.info)
+        if (pairing.paired) { heartbeatAt = new Date(); grantAllPermissions() }
+        refreshHeartbeatLabel()
+    }
+
+
     component StatusDot: Rectangle {
         required property color dotColor
         width: 9; height: 9; radius: 5; color: dotColor
@@ -68,41 +159,89 @@ ApplicationWindow {
         }
     }
 
-    // Lucide (ISC) — same family as Android icons-lucide-android
+    // Lucide-style icons via Canvas (no QtQuick.Shapes deploy dependency)
     component LucideIcon: Item {
         id: iconRoot
         property string name: "activity"
         property bool active: false
         property real size: 18
         property color stroke: active ? theme.primary : theme.muted
-        width: size; height: size
-        readonly property var paths: ({
-            "layout-dashboard": ["M3 3h7v9H3z", "M14 3h7v5h-7z", "M14 12h7v9h-7z", "M3 16h7v5H3z"],
-            "activity": ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"],
-            "shield": ["M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"],
-            "settings": ["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"],
-            "monitor": ["M8 21h8", "M12 17v4", "M3 3h18v14H3z"],
-            "link-2": ["M9 17H7A5 5 0 0 1 7 7h2", "M15 7h2a5 5 0 1 1 0 10h-2", "M8 12h8"],
-            "circle-stop": ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M9 9h6v6H9z"],
-            "check": ["M20 6 9 17l-5-5"]
-        })
-        Shape {
+        width: size
+        height: size
+
+        Canvas {
+            id: canvas
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
-            transformOrigin: Item.TopLeft
-            scale: iconRoot.size / 24
-            Repeater {
-                model: iconRoot.paths[iconRoot.name] || []
-                ShapePath {
-                    strokeWidth: 1.75
-                    strokeColor: iconRoot.stroke
-                    fillColor: "transparent"
-                    capStyle: ShapePath.RoundCap
-                    joinStyle: ShapePath.RoundJoin
-                    PathSvg { path: modelData }
+            antialiasing: true
+            renderStrategy: Canvas.Cooperative
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.reset()
+                ctx.clearRect(0, 0, width, height)
+                ctx.strokeStyle = iconRoot.stroke
+                ctx.lineWidth = Math.max(1.4, width / 14)
+                ctx.lineCap = "round"
+                ctx.lineJoin = "round"
+                var s = width / 24
+                ctx.scale(s, s)
+                var n = iconRoot.name
+                function rr(x, y, rw, rh, r) {
+                    ctx.beginPath()
+                    ctx.moveTo(x + r, y)
+                    ctx.lineTo(x + rw - r, y)
+                    ctx.quadraticCurveTo(x + rw, y, x + rw, y + r)
+                    ctx.lineTo(x + rw, y + rh - r)
+                    ctx.quadraticCurveTo(x + rw, y + rh, x + rw - r, y + rh)
+                    ctx.lineTo(x + r, y + rh)
+                    ctx.quadraticCurveTo(x, y + rh, x, y + rh - r)
+                    ctx.lineTo(x, y + r)
+                    ctx.quadraticCurveTo(x, y, x + r, y)
+                    ctx.stroke()
+                }
+                if (n === "layout-dashboard") {
+                    rr(3, 3, 8, 9, 1.5); rr(13, 3, 8, 5, 1.5)
+                    rr(13, 11, 8, 10, 1.5); rr(3, 15, 8, 6, 1.5)
+                } else if (n === "activity") {
+                    ctx.beginPath()
+                    ctx.moveTo(2, 12); ctx.lineTo(5, 12); ctx.lineTo(8.5, 5)
+                    ctx.lineTo(12, 19); ctx.lineTo(15.5, 9); ctx.lineTo(19, 12); ctx.lineTo(22, 12)
+                    ctx.stroke()
+                } else if (n === "shield") {
+                    ctx.beginPath()
+                    ctx.moveTo(12, 3); ctx.lineTo(20, 6); ctx.lineTo(20, 12)
+                    ctx.bezierCurveTo(20, 17, 16.5, 20.2, 12, 21.5)
+                    ctx.bezierCurveTo(7.5, 20.2, 4, 17, 4, 12)
+                    ctx.lineTo(4, 6); ctx.closePath(); ctx.stroke()
+                } else if (n === "settings") {
+                    ctx.beginPath(); ctx.arc(12, 12, 3, 0, Math.PI * 2); ctx.stroke()
+                    for (var i = 0; i < 8; ++i) {
+                        var a = (i / 8) * Math.PI * 2
+                        ctx.beginPath()
+                        ctx.moveTo(12 + Math.cos(a) * 6.2, 12 + Math.sin(a) * 6.2)
+                        ctx.lineTo(12 + Math.cos(a) * 9.2, 12 + Math.sin(a) * 9.2)
+                        ctx.stroke()
+                    }
+                } else if (n === "monitor") {
+                    rr(3, 4, 18, 12, 1.5)
+                    ctx.beginPath()
+                    ctx.moveTo(8, 20); ctx.lineTo(16, 20)
+                    ctx.moveTo(12, 16); ctx.lineTo(12, 20)
+                    ctx.stroke()
+                } else if (n === "check") {
+                    ctx.beginPath()
+                    ctx.moveTo(5, 12); ctx.lineTo(10, 17); ctx.lineTo(19, 6)
+                    ctx.stroke()
+                } else {
+                    ctx.beginPath(); ctx.arc(12, 12, 7, 0, Math.PI * 2); ctx.stroke()
                 }
             }
         }
+        onNameChanged: canvas.requestPaint()
+        onActiveChanged: canvas.requestPaint()
+        onStrokeChanged: canvas.requestPaint()
+        onWidthChanged: canvas.requestPaint()
+        onHeightChanged: canvas.requestPaint()
+        Component.onCompleted: canvas.requestPaint()
     }
 
     component NavItem: Rectangle {
@@ -334,14 +473,37 @@ ApplicationWindow {
                             }
                         }
                         Text {
-                            text: pairing.paired ? "Linked to your Nally account" : "No active control session"
+                            text: pairing.paired
+                                  ? ("Linked · " + allowedCount() + "/" + permissions.length + " capabilities open")
+                                  : "No active control session"
                             color: theme.muted
                             font.pixelSize: 12
                             font.family: theme.fontFamily
+                            wrapMode: Text.WordWrap
+                            width: parent.width
                         }
                         Rectangle { width: parent.width; height: 1; color: theme.border }
                         Text { text: "Last heartbeat"; color: theme.muted; font.pixelSize: 11; font.family: theme.fontFamily }
-                        Text { text: "Just now"; color: theme.text; font.pixelSize: 13; font.family: theme.fontFamily }
+                        Row {
+                            spacing: 8
+                            StatusDot {
+                                dotColor: pairing.paired ? theme.success : theme.outline
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 7; height: 7
+                            }
+                            Text {
+                                text: heartbeatLabel
+                                color: theme.text
+                                font.pixelSize: 13
+                                font.family: theme.fontFamily
+                            }
+                        }
+                        Text {
+                            text: pairing.paired ? "Local agent presence (5s pulse)" : "Pair to start presence"
+                            color: theme.outline
+                            font.pixelSize: 10
+                            font.family: theme.fontFamily
+                        }
                     }
                 }
                 SectionLabel { text: "RECENT ACTIVITY"; Layout.topMargin: 4 }
@@ -349,21 +511,17 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     spacing: 12
                     Repeater {
-                        model: [
-                            ["Connected to Nally", "Just now", theme.success],
-                            ["Permission policy loaded", "2 min ago", theme.info],
-                            ["Agent self-test passed", "5 min ago", theme.attention]
-                        ]
+                        model: activityEvents
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
                             spacing: 10
-                            StatusDot { dotColor: modelData[2]; width: 7; height: 7 }
+                            StatusDot { dotColor: modelData.accent; width: 7; height: 7 }
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 1
                                 Text {
-                                    text: modelData[0]
+                                    text: modelData.title
                                     color: theme.text
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
@@ -371,13 +529,20 @@ ApplicationWindow {
                                     font.family: theme.fontFamily
                                 }
                                 Text {
-                                    text: modelData[1]
+                                    text: formatAge(modelData.at)
                                     color: theme.muted
                                     font.pixelSize: 10
                                     font.family: theme.fontFamily
                                 }
                             }
                         }
+                    }
+                    Text {
+                        visible: activityEvents.length === 0
+                        text: "No events yet"
+                        color: theme.outline
+                        font.pixelSize: 12
+                        font.family: theme.fontFamily
                     }
                 }
                 Item { Layout.fillHeight: true }
@@ -398,6 +563,15 @@ ApplicationWindow {
                                ? Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.16)
                                : Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.10)
                         border.color: Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.30)
+                    }
+                    onClicked: {
+                        var next = []
+                        for (var i = 0; i < permissions.length; ++i) {
+                            var p = permissions[i]
+                            next.push({ id: p.id, title: p.title, detail: p.detail, allowed: false })
+                        }
+                        permissions = next
+                        pushActivity("Sessions stopped", "All capabilities revoked", theme.danger)
                     }
                 }
             }
@@ -455,8 +629,18 @@ ApplicationWindow {
                             Layout.preferredWidth: 170
                             spacing: 6
                             SectionLabel { text: "SESSION" }
-                            Text { text: "Inactive"; color: theme.text; font.pixelSize: 15; font.bold: true; font.family: theme.fontFamily }
-                            BodyText { text: "No permissions in use"; Layout.fillWidth: true; font.pixelSize: 11 }
+                            Text {
+                                text: pairing.paired ? (allowedCount() > 0 ? "Armed" : "Locked") : "Inactive"
+                                color: theme.text
+                                font.pixelSize: 15
+                                font.bold: true
+                                font.family: theme.fontFamily
+                            }
+                            BodyText {
+                                text: allowedCount() + " of " + permissions.length + " capabilities allowed"
+                                Layout.fillWidth: true
+                                font.pixelSize: 11
+                            }
                         }
                     }
                 }
@@ -663,11 +847,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                 }
                 Repeater {
-                    model: [
-                        ["Self-test", "Agent core checks passed", "5 min ago", theme.success],
-                        ["Policy load", "Default permission set applied", "2 min ago", theme.info],
-                        ["Heartbeat", "Control plane reachability OK", "Just now", theme.primary]
-                    ]
+                    model: activityEvents
                     delegate: Card {
                         required property var modelData
                         Layout.fillWidth: true
@@ -676,14 +856,20 @@ ApplicationWindow {
                             anchors.fill: parent
                             anchors.margins: 16
                             spacing: 14
-                            StatusDot { dotColor: modelData[3]; width: 10; height: 10 }
+                            StatusDot { dotColor: modelData.accent; width: 10; height: 10 }
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 2
-                                Text { text: modelData[0]; color: theme.text; font.pixelSize: 14; font.bold: true; font.family: theme.fontFamily }
-                                Text { text: modelData[1]; color: theme.muted; font.pixelSize: 12; font.family: theme.fontFamily }
+                                Text { text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; font.family: theme.fontFamily }
+                                Text {
+                                    text: modelData.detail || ""
+                                    color: theme.muted
+                                    font.pixelSize: 12
+                                    font.family: theme.fontFamily
+                                    visible: modelData.detail && modelData.detail.length > 0
+                                }
                             }
-                            Text { text: modelData[2]; color: theme.outline; font.pixelSize: 11; font.family: theme.fontFamily }
+                            Text { text: formatAge(modelData.at); color: theme.outline; font.pixelSize: 11; font.family: theme.fontFamily }
                         }
                     }
                 }
@@ -702,19 +888,68 @@ ApplicationWindow {
                 width: parent.width
                 spacing: 14
                 BodyText {
-                    text: "DeskDear starts fail-closed. Capabilities stay denied until you explicitly allow them."
+                    text: "Toggle capabilities for this session. Pairing grants all by default; lock any row anytime."
                     Layout.fillWidth: true
                 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    Button {
+                        text: "Allow all"
+                        contentItem: Text {
+                            text: parent.text
+                            color: theme.primaryForeground
+                            font.pixelSize: 12
+                            font.bold: true
+                            font.family: theme.fontFamily
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        background: Rectangle {
+                            implicitHeight: 34; implicitWidth: 100; radius: 8
+                            color: parent.hovered ? Qt.lighter(theme.primary, 1.08) : theme.primary
+                        }
+                        onClicked: grantAllPermissions()
+                    }
+                    Button {
+                        text: "Deny all"
+                        contentItem: Text {
+                            text: parent.text
+                            color: theme.danger
+                            font.pixelSize: 12
+                            font.bold: true
+                            font.family: theme.fontFamily
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                        background: Rectangle {
+                            implicitHeight: 34; implicitWidth: 100; radius: 8
+                            color: parent.hovered
+                                   ? Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.16)
+                                   : Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.10)
+                            border.color: Qt.rgba(theme.danger.r, theme.danger.g, theme.danger.b, 0.30)
+                        }
+                        onClicked: {
+                            var next = []
+                            for (var i = 0; i < permissions.length; ++i) {
+                                var p = permissions[i]
+                                next.push({ id: p.id, title: p.title, detail: p.detail, allowed: false })
+                            }
+                            permissions = next
+                            pushActivity("Permissions revoked", "All capabilities denied", theme.danger)
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: allowedCount() + " allowed"
+                        color: theme.muted
+                        font.pixelSize: 12
+                        font.family: theme.fontFamily
+                    }
+                }
                 Repeater {
-                    model: [
-                        ["Workspace files", "Read / write approved folders only", "Denied", theme.danger],
-                        ["Shell commands", "Run local processes", "Denied", theme.danger],
-                        ["Network tools", "Outbound fetches on your behalf", "Denied", theme.danger],
-                        ["Screen capture", "Read pixels from displays", "Denied", theme.danger],
-                        ["Clipboard", "Read or write clipboard", "Denied", theme.danger]
-                    ]
+                    model: permissions
                     delegate: Card {
                         required property var modelData
+                        required property int index
                         Layout.fillWidth: true
                         Layout.preferredHeight: 72
                         RowLayout {
@@ -724,10 +959,29 @@ ApplicationWindow {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 2
-                                Text { text: modelData[0]; color: theme.text; font.pixelSize: 14; font.bold: true; font.family: theme.fontFamily }
-                                Text { text: modelData[1]; color: theme.muted; font.pixelSize: 12; font.family: theme.fontFamily }
+                                Text { text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; font.family: theme.fontFamily }
+                                Text { text: modelData.detail; color: theme.muted; font.pixelSize: 12; font.family: theme.fontFamily }
                             }
-                            Pill { label: modelData[2].toUpperCase(); accent: modelData[3] }
+                            Pill {
+                                label: modelData.allowed ? "ALLOWED" : "DENIED"
+                                accent: modelData.allowed ? theme.success : theme.danger
+                            }
+                            Rectangle {
+                                width: 48; height: 28; radius: 14
+                                color: modelData.allowed ? theme.primary : theme.border
+                                Rectangle {
+                                    width: 22; height: 22; radius: 11
+                                    color: theme.text
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: modelData.allowed ? parent.width - width - 3 : 3
+                                    Behavior on x { NumberAnimation { duration: 120 } }
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: setPermission(index, !modelData.allowed)
+                                }
+                            }
                         }
                     }
                 }
