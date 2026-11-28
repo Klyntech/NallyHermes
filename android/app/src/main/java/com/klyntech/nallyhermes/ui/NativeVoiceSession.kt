@@ -59,15 +59,30 @@ internal class NativeVoiceSession(
     @Volatile private var phase = "init"
     @Volatile private var lastServerError: String? = null
     @Volatile private var recorder: AudioRecord? = null
-    @Volatile private var track: AudioTrack? = null
+    
     @Volatile private var echoCanceler: AcousticEchoCanceler? = null
     @Volatile private var noiseSuppressor: NoiseSuppressor? = null
     private var captureJob: Job? = null
-    private var playbackJob: Job? = null
-    // Bounded by bytes (MAX_PLAYBACK_QUEUE_BYTES), not by chunk count: provider chunk sizes vary a lot.
-    private val playbackChunks = LinkedBlockingQueue<ByteArray>()
-    private val playbackLock = Any()
-    private val playbackQueuedBytes = AtomicInteger(0)
+    
+    // One AudioTrack and writer thread for the whole call; barge-in flushes it instead of recreating it.
+    private val playback = VoicePlaybackEngine(
+        onDrained = {
+            if (!stopped.get() && phase == "speaking") {
+                Log.i(TAG, "TTS playback drained: bytes=$playbackReceivedBytes, chunks=$playbackReceivedChunks")
+                phase = "listening"
+                callback(Event.AudioLevel(0f))
+                callback(Event.State(VoiceUiState.Listening))
+            }
+        },
+        onFailure = { message ->
+            if (!stopped.get()) {
+                callback(Event.Error(message))
+                stop("playback failed")
+            }
+        }
+    )
+    
+    
     @Volatile private var playbackReceivedBytes = 0L
     @Volatile private var playbackReceivedChunks = 0
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -115,17 +130,7 @@ internal class NativeVoiceSession(
                 if (playbackReceivedChunks == 1) {
                     Log.i(TAG, "First TTS PCM received: bytes=${chunk.size}, rms=${pcmLevel(chunk)}")
                 }
-                var overflowed = false
-                synchronized(playbackLock) {
-                    if (stopped.get() || phase != "speaking") return
-                    val queuedBytes = playbackQueuedBytes.addAndGet(chunk.size)
-                    if (queuedBytes > MAX_PLAYBACK_QUEUE_BYTES) {
-                        playbackQueuedBytes.addAndGet(-chunk.size)
-                        overflowed = true
-                    } else {
-                        playbackChunks.offer(chunk)
-                    }
-                }
+                val overflowed = !playback.enqueue(chunk)
                 if (overflowed) {
                     // Only this reply is lost; the call stays up. The server paces audio, so this
                     // should only happen against an older server that bursts the whole reply.
@@ -232,6 +237,8 @@ internal class NativeVoiceSession(
                     return
                 }
                 callback(Event.State(VoiceUiState.Listening))
+                // Warm the speaker up now so the first word of a reply plays without a start-up delay.
+                playback.ensureStarted()
                 startCapture()
             }
             "transcript" -> {
@@ -253,7 +260,7 @@ internal class NativeVoiceSession(
                     phase = "speaking"
                     playbackReceivedBytes = 0L
                     playbackReceivedChunks = 0
-                    if (!startPlayback()) {
+                    if (!playback.ensureStarted()) {
                         callback(Event.Error("Audio playback could not be initialized."))
                         stop("playback initialization")
                     } else callback(Event.State(VoiceUiState.Speaking))
@@ -262,7 +269,7 @@ internal class NativeVoiceSession(
             "audio_end" -> {
                 // Empty frame is a drain marker; the playback worker switches back to listening only
                 // after all PCM already received has reached AudioTrack.
-                playbackChunks.offer(ByteArray(0))
+                playback.endOfTurn()
             }
             "assistant_end" -> {
                 // A turn may validly have no spoken output. Do not leave the UI in Thinking;
@@ -455,81 +462,8 @@ internal class NativeVoiceSession(
         }
     }
 
-    private fun startPlayback(): Boolean {
-        if (stopped.get()) return false
-        try {
-            playbackJob?.cancel()
-            val previousTrack = track
-            track = null
-            try { previousTrack?.pause(); previousTrack?.flush(); previousTrack?.stop(); previousTrack?.release() } catch (_: Exception) { }
-            clearPlayback(notify = false)
-            val minimum = AudioTrack.getMinBufferSize(16_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            if (minimum <= 0) return false
-            val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-            val format = AudioFormat.Builder().setSampleRate(16_000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()
-            val output = AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(format)
-                .setBufferSizeInBytes(maxOf(minimum * 2, 6_400)).setTransferMode(AudioTrack.MODE_STREAM).build()
-            if (output.state != AudioTrack.STATE_INITIALIZED) { output.release(); return false }
-            output.play()
-            track = output
-            playbackJob = sessionScope.launch {
-                try {
-                    var queuedFrames = 0L
-                    while (!stopped.get()) {
-                        val chunk = playbackChunks.take()
-                        if (chunk.isEmpty()) {
-                            // AudioTrack.write() only queues PCM. Do not announce the turn is
-                            // finished until the hardware playback head has consumed these frames.
-                            while (!stopped.get() && phase == "speaking" && queuedFrames > 0L) {
-                                val playedFrames = output.playbackHeadPosition.toLong() and 0xffffffffL
-                                if (playedFrames >= queuedFrames) break
-                                Thread.sleep(10L)
-                            }
-                            if (stopped.get() || phase != "speaking") continue
-                            // AudioTrack route inspection is not exposed by every compile SDK.
-                            // Keep playback diagnostics portable across supported Android versions.
-                            Log.i(TAG, "TTS playback drained: bytes=$playbackReceivedBytes, chunks=$playbackReceivedChunks, frames=$queuedFrames, head=${output.playbackHeadPosition}, musicVolume=${audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)}")
-                            phase = "listening"
-                            callback(Event.AudioLevel(0f))
-                            callback(Event.State(VoiceUiState.Listening))
-                            continue
-                        }
-                        playbackQueuedBytes.addAndGet(-chunk.size)
-                        var offset = 0
-                        while (offset < chunk.size && !stopped.get()) {
-                            val written = output.write(chunk, offset, chunk.size - offset, AudioTrack.WRITE_BLOCKING)
-                            if (written <= 0) {
-                                Log.e(TAG, "AudioTrack write failed: status=$written, state=${output.state}, playState=${output.playState}")
-                                throw IllegalStateException("AudioTrack could not play the response (status $written).")
-                            }
-                            if (written % 2 != 0) throw IllegalStateException("AudioTrack returned a non-frame-aligned PCM write.")
-                            offset += written
-                            queuedFrames += written / 2
-                        }
-                    }
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                } catch (error: Exception) {
-                    if (!stopped.get() && isActive) {
-                        callback(Event.Error(error.message ?: "Audio playback failed."))
-                        stop("playback failed")
-                    }
-                }
-            }
-            return true
-        } catch (_: Exception) { return false }
-    }
-
     private fun clearPlayback(notify: Boolean = true) {
-        val discarded = ArrayList<ByteArray>()
-        synchronized(playbackLock) {
-            playbackChunks.drainTo(discarded)
-            val discardedBytes = discarded.sumOf { it.size }
-            if (discardedBytes > 0) playbackQueuedBytes.addAndGet(-discardedBytes)
-        }
-        try { track?.pause(); track?.flush() } catch (_: Exception) { }
+        playback.interrupt()
         if (notify) callback(Event.AudioLevel(0f))
     }
 
@@ -563,7 +497,7 @@ internal class NativeVoiceSession(
     private fun cleanup() {
         if (!stopped.get()) stopped.set(true)
         captureJob?.cancel(); captureJob = null
-        playbackJob?.cancel(); playbackJob = null
+        
         sessionScope.cancel()
         try { recorder?.let { if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) it.stop(); it.release() } } catch (_: Exception) { }
         recorder = null
@@ -571,9 +505,7 @@ internal class NativeVoiceSession(
         echoCanceler = null
         try { noiseSuppressor?.enabled = false; noiseSuppressor?.release() } catch (_: Exception) { }
         noiseSuppressor = null
-        try { track?.pause(); track?.flush(); track?.stop(); track?.release() } catch (_: Exception) { }
-        track = null
-        clearPlayback(notify = false)
+        playback.release()
         if (Build.VERSION.SDK_INT >= 26) audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         else {
             @Suppress("DEPRECATION")
