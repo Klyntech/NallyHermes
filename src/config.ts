@@ -78,7 +78,7 @@ const envSchema = z.object({
   VOICE_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   MOBILE_VOICE_ALLOWED_ORIGINS: z.string().default(""),
   DEEPGRAM_API_KEY: z.string().optional(),
-  DEEPGRAM_MODEL: z.string().default("nova-2"),
+  DEEPGRAM_MODEL: z.string().default("flux-general-en"),
   DEEPGRAM_LANGUAGE: z.string().default("en"),
   ELEVENLABS_API_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().optional(),
