@@ -17,6 +17,17 @@ The Telegram Login SDK source in `app/src/main/java/org/telegram/login/` is base
 
 Text sync does not yet include Telegram attachments or native voice capture. Voice remains a native-client placeholder. Live tool activity is a transient server snapshot and may reset if Render restarts mid-request.
 
+## Nally Mobile Companion (device control)
+
+The Companion is the controlled device-capability layer. It lives under `com.klyntech.nallyhermes.companion` and currently supports:
+
+- `get_battery`
+- `set_volume`
+- `set_flashlight`
+- `launch_app`
+
+See **[COMPANION.md](COMPANION.md)** for the request/result protocol, Kotlin usage, and roadmap.
+
 ## Telegram Login setup (required to enable the primary sign-in button)
 
 1. In **@BotFather → Bot Settings → Login Widget**, register the Android application for the Nally bot and obtain its Telegram Login **Client ID**.
