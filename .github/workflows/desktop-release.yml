@@ -33,7 +33,7 @@ jobs:
         include:
           - name: Windows x64
             os: windows-2022
-            artifact: DeskDear-windows-x64
+            artifact: DeskDear-Setup
           - name: Linux x64
             os: ubuntu-22.04
             artifact: DeskDear-linux-x64
@@ -88,7 +88,7 @@ jobs:
       - name: Install application
         run: cmake --install build --config Release --prefix staging
 
-      - name: Deploy Qt + package Windows (Setup.exe + portable ZIP)
+      - name: Deploy Qt + build Setup.exe (Windows only)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -111,14 +111,9 @@ jobs:
             Write-Host "CLI deskdear.exe present in staging/bin"
           }
 
-          # Portable ZIP
-          $portable = "${{ matrix.artifact }}-portable.zip"
-          if (Test-Path $portable) { Remove-Item $portable -Force }
-          Compress-Archive -Path staging\* -DestinationPath $portable -Force
-          Write-Host "Portable ZIP: $portable ($([math]::Round((Get-Item $portable).Length / 1MB, 1)) MB)"
-
+          # Single installable artifact — no portable ZIP
           $stagingAbs = (Resolve-Path "staging").Path
-          $outExe = Join-Path (Get-Location) "${{ matrix.artifact }}-Setup.exe"
+          $outExe = Join-Path (Get-Location) "DeskDear-Setup.exe"
           $nsiPath = Join-Path (Get-Location) "packaging\windows\deskdear.nsi"
 
           if (-not (Test-Path $nsiPath)) {
@@ -165,13 +160,20 @@ jobs:
           mv DeskDear*.AppImage "${{ matrix.artifact }}.AppImage"
           tar -czf "${{ matrix.artifact }}.tar.gz" -C AppDir .
 
-      - name: Upload build artifacts
+      - name: Upload Windows Setup.exe
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeskDear-Setup
+          path: DeskDear-Setup.exe
+          if-no-files-found: error
+
+      - name: Upload Linux artifacts
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
-            *-Setup.exe
-            *-portable.zip
             *.AppImage
             *.tar.gz
           if-no-files-found: error
