@@ -24,7 +24,8 @@ export async function transcribeWithDeepgram(
   }
 
   const language = options?.language ?? config.DEEPGRAM_LANGUAGE;
-  const model = config.DEEPGRAM_MODEL;
+  // Pre-recorded listen is Nova-oriented. Flux models are for live /v2 conversational STT.
+  const model = config.DEEPGRAM_MODEL.startsWith("flux-") ? "nova-2" : config.DEEPGRAM_MODEL;
   const params = new URLSearchParams({
     model,
     smart_format: "true",
