@@ -44,7 +44,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="*.tg.dev" android:pathPrefix="/tglogin" />
-            </intent-filter>
+                </intent-filter>
+                <!-- Return from the Google / GitHub browser sign-in -->
+                <intent-filter>
+                    <action android:name="android.intent.action.VIEW" />
+                    <category android:name="android.intent.category.DEFAULT" />
+                    <category android:name="android.intent.category.BROWSABLE" />
+                    <data android:scheme="nallyhermes" android:host="auth" />
+                </intent-filter>
         </activity>
 
         <service
