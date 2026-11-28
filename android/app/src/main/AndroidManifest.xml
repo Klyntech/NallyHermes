@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Required so launch_app can resolve other packages on Android 11+ -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -13,6 +14,10 @@
         </intent>
         <intent>
             <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
@@ -46,6 +51,11 @@
             android:name=".WakeWordService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Device-control layer. Not exported; only the NallyHermes process may bind. -->
+        <service
+            android:name=".companion.NallyMobileCompanionService"
+            android:exported="false" />
 
         <receiver
             android:name=".NallyWidgetProvider"
