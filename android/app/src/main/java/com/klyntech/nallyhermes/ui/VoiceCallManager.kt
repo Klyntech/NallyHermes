@@ -62,7 +62,7 @@ internal object VoiceCallManager {
     // Incremented by start() and end() so a stale ticket request can tell it was superseded.
     private var generation = 0
 
-    val inCall: Boolean get() = starting || session != null
+    val inCall: Boolean get() = starting || session != null || state == VoiceUiState.Reconnecting
 
     fun start(api: MobileApi, context: Context) {
         val app = context.applicationContext
