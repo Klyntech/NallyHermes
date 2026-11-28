@@ -73,7 +73,7 @@ async function releasePairingCode(code: string, consumedAt: Date): Promise<void>
     ));
 }
 
-async function createSessionForUser(
+export async function createSessionForUser(
   userId: string,
   telegramId: string,
   telegramChatId: string

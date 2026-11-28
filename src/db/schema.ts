@@ -291,3 +291,33 @@ export const userWorkingState = pgTable("user_working_state", {
   lastTopics: jsonb("last_topics").$type<string[]>().default([]).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
+
+/** A Google/GitHub login linked to a Nally account, so the app can sign in without a pairing code. */
+export const userIdentities = pgTable("user_identities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull(),
+  provider: text("provider").notNull(),
+  providerUserId: text("provider_user_id").notNull(),
+  email: text("email"),
+  displayName: text("display_name"),
+  telegramChatId: text("telegram_chat_id").notNull(),
+  linkedAt: timestamp("linked_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+/** One browser sign-in attempt (link from Telegram, or app login), plus its one-time app exchange code. */
+export const oauthFlows = pgTable("oauth_flows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stateHash: text("state_hash").notNull().unique(),
+  purpose: text("purpose").notNull(),
+  provider: text("provider").notNull(),
+  telegramId: text("telegram_id"),
+  telegramChatId: text("telegram_chat_id"),
+  codeChallenge: text("code_challenge"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  exchangeCodeHash: text("exchange_code_hash").unique(),
+  exchangeUserId: uuid("exchange_user_id"),
+  exchangeExpiresAt: timestamp("exchange_expires_at", { withTimezone: true }),
+  exchangeConsumedAt: timestamp("exchange_consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});

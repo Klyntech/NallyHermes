@@ -13,6 +13,7 @@ import {
 import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
 import { splitAnswerAndSources } from "../agent/sourceAttribution.js";
 import { mintVoiceTicket } from "./voiceSession.js";
+import { listLinkedIdentities, redeemExchangeCode, unlinkUserIdentity } from "../db/oauthStore.js";
 import { registerDeskDearDevice } from "../agent/deskdearTransport.js";
 
 const MAX_REQUEST_BYTES = 8_192;
@@ -159,6 +160,30 @@ export async function handleMobileApiRequest(
       return;
     }
 
+    if (pathname === "/api/mobile/auth/exchange" && req.method === "POST") {
+      // The app trades the one-time code from the browser sign-in (plus its PKCE verifier) for a session.
+      const now = Date.now();
+      if (now - pairingWindowStart >= 60_000) {
+        pairingWindowStart = now;
+        pairingAttempts = 0;
+      }
+      pairingAttempts++;
+      if (pairingAttempts > 60) {
+        sendJson(res, 429, { error: "Too many sign-in attempts. Wait a minute and try again." });
+        return;
+      }
+      const body = await readJson(req);
+      const code = typeof body?.code === "string" ? body.code : "";
+      const verifier = typeof body?.verifier === "string" ? body.verifier : "";
+      const created = await redeemExchangeCode(code, verifier);
+      if (!created) {
+        sendJson(res, 401, { error: "This sign-in expired or was already used. Please try again." });
+        return;
+      }
+      sendJson(res, 200, { accessToken: created.token, expiresAt: created.expiresAt.toISOString() });
+      return;
+    }
+    
     if (pathname === "/api/mobile/voice-health" && req.method === "GET") {
       sendJson(res, 200, {
         ok: true,
@@ -184,6 +209,30 @@ export async function handleMobileApiRequest(
     }
 
 
+    if (pathname === "/api/mobile/account/identities" && req.method === "GET") {
+      const identities = await listLinkedIdentities(session.userId);
+      sendJson(res, 200, {
+        identities: identities.map((row) => ({
+          provider: row.provider,
+          email: row.email,
+          displayName: row.displayName,
+          linkedAt: row.linkedAt.toISOString()
+        }))
+      });
+      return;
+    }
+    
+    if (pathname === "/api/mobile/account/identities" && req.method === "DELETE") {
+      const body = await readJson(req);
+      const provider = typeof body?.provider === "string" ? body.provider : "";
+      if (provider !== "google" && provider !== "github") {
+        sendJson(res, 400, { error: "Unknown provider." });
+        return;
+      }
+      sendJson(res, 200, { unlinked: await unlinkUserIdentity(session.userId, provider) });
+      return;
+    }
+    
     if (pathname === "/api/mobile/voice-ticket" && req.method === "POST") {
       const ticket = await (deps.createVoiceTicket ?? mintVoiceTicket)(session);
       sendJson(res, 201, {

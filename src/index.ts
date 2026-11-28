@@ -14,6 +14,9 @@ import {
 } from "./db/conversationStore.js";
 import { createDesktopPairingCode, createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
 import { handleMobileApiRequest } from "./mobile/http.js";
+import { handleAuthRequest, readOAuthEnv } from "./mobile/oauthWeb.js";
+import { buildLinkAccountView, handleUnlinkCallback } from "./mobile/linkAccount.js";
+import * as oauthStore from "./db/oauthStore.js";
 import { handleDesktopApiRequest } from "./desktop/http.js";
 import { attachVoiceWebSocket } from "./mobile/voiceSession.js";
 import { respond } from "./agent/orchestrator.js";
@@ -357,11 +360,17 @@ async function applyPendingLabel(
 
 const webhookPath = `/telegram/${config.WEBHOOK_SECRET}`;
 
-const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/mobile — pair the Android app securely\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
+const helpText = "# NallyHermes\nYour AI assistant.\n\nI can answer questions, search the web, fetch pages, manage your workspace and memories, and create reminders.\n\n## Commands\n/start — start the bot\n/help — show this help\n/mobile — pair the Android app securely\n/linknallyaccount — link Google or GitHub so the app signs in without a code\n/memorycheck — test memory storage, retrieval and deletion\n/rerankbench — benchmark NVIDIA reranker latency\n/timezone — view or set your timezone";
 
 
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data ?? "";
+  if (data.startsWith("unlink:")) {
+    const outcome = await handleUnlinkCallback(String(ctx.from?.id ?? ""), data.slice("unlink:".length), oauthStore);
+    await ctx.answerCallbackQuery({ text: outcome });
+    try { await ctx.editMessageText(outcome); } catch { /* message unchanged or too old */ }
+    return;
+  }
   if (!data.startsWith("appr:")) return;
   const telegramId = String(ctx.from?.id ?? "");
   const parts = data.split(":");
@@ -555,6 +564,35 @@ bot.command("pairdesktop", async (ctx) => {
   await ctx.reply(
     `DeskDear pairing\n\nYour one-time code: ${pairing.code}\n\nEnter it in DeskDear within 5 minutes. Keep it private; it links this computer to your Nally account. The code can only be used once.`
   );
+});
+
+bot.command("linknallyaccount", async (ctx) => {
+  if (!ctx.from) return;
+  if (ctx.chat.type !== "private") {
+    await ctx.reply("For privacy, link your account in a private chat with NallyHermes.");
+    return;
+  }
+  const telegramId = String(ctx.from.id);
+  await db.insert(users).values({
+    telegramId,
+    username: ctx.from.username ?? null,
+    firstName: ctx.from.first_name ?? null,
+    timezone: getDefaultTimezone()
+  }).onConflictDoUpdate({
+    target: users.telegramId,
+    set: { username: ctx.from.username ?? null, firstName: ctx.from.first_name ?? null }
+  });
+  const view = await buildLinkAccountView(telegramId, String(ctx.chat.id), {
+    env: readOAuthEnv(),
+    createFlow: (input) => oauthStore.createFlow(input),
+    listIdentitiesForTelegramId: (id) => oauthStore.listIdentitiesForTelegramId(id)
+  });
+  const keyboard = new InlineKeyboard();
+  for (const button of view.buttons) {
+    if ("url" in button) keyboard.url(button.text, button.url).row();
+    else keyboard.text(button.text, button.data).row();
+  }
+  await ctx.reply(view.text, view.buttons.length ? { reply_markup: keyboard } : undefined);
 });
 
 bot.command("ingest", async (ctx) => {
@@ -1031,11 +1069,13 @@ bot.catch((error) => console.error("Telegram bot error:", error));
 
 console.info("Starting NallyHermes webhook server...");
 await ensureDatabase();
+await oauthStore.ensureOAuthSchema();
 await bot.init();
 await bot.api.setMyCommands([
   { command: "start", description: "Start NallyHermes" },
   { command: "help", description: "See what NallyHermes can do" },
   { command: "mobile", description: "Pair the NallyHermes Android app" },
+  { command: "linknallyaccount", description: "Link Google or GitHub to sign in to the app" },
   { command: "timezone", description: "View or change your timezone" },
   { command: "memorycheck", description: "Test memory storage, retrieval and deletion" },
   { command: "rerankbench", description: "Benchmark NVIDIA reranker latency" }
@@ -1052,6 +1092,21 @@ const server = createServer((req, res) => {
   }
   if (pathname.startsWith("/api/desktop/")) {
     void handleDesktopApiRequest(req, res);
+    return;
+  }
+  if (pathname.startsWith("/auth/")) {
+    void handleAuthRequest(req, res, {
+      store: oauthStore,
+      notifyTelegram: async (telegramId, text, unlinkProvider) => {
+        await bot.api.sendMessage(
+          Number(telegramId),
+          text,
+          unlinkProvider
+            ? { reply_markup: new InlineKeyboard().text("Not me: unlink", `unlink:${unlinkProvider}`) }
+            : undefined
+        );
+      }
+    });
     return;
   }
   if (pathname === "/manus-routes.json" && req.method === "GET") {
