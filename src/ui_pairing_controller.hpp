@@ -14,6 +14,8 @@ class PairingController final : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(bool paired READ paired NOTIFY pairedChanged)
     Q_PROPERTY(bool endpointConfigured READ endpointConfigured CONSTANT)
+    Q_PROPERTY(QString controlBaseOrigin READ controlBaseOriginConstant CONSTANT)
+    Q_PROPERTY(QString deviceToken READ deviceToken NOTIFY pairedChanged)
 
 public:
     explicit PairingController(QObject* parent = nullptr);
@@ -22,6 +24,8 @@ public:
     bool busy() const { return busy_; }
     bool paired() const { return paired_; }
     bool endpointConfigured() const { return endpointConfigured_; }
+    QString controlBaseOriginConstant() const { return controlBaseOrigin_; }
+    QString deviceToken() const { return QString::fromUtf8(sessionToken_); }
 
     Q_INVOKABLE void submitCode(const QString& code);
     Q_INVOKABLE void clearStatus();
@@ -43,6 +47,7 @@ private:
     QPointer<QNetworkReply> pendingReply_;
     QString status_;
     QString endpoint_;
+    QString controlBaseOrigin_;
     QByteArray sessionToken_;
     QString deviceId_;
     QString deviceName_;

@@ -15,18 +15,10 @@ namespace {
 constexpr auto kDefaultControlBase = "https://nally.onrender.com";
 
 /*
- * Research (2026-11-28) against the live control plane + v4 server source:
- *
- *  - POST /api/mobile/pair exists and validates 10-digit Telegram codes.
- *  - POST /api/desktop/pair returns 404 (not implemented on the deployed server).
- *  - Telegram /pairdesktop issues codes via createDesktopPairingCode(), which is
- *    an alias of createMobilePairingCode() — same pairing-code store.
- *  - Successful pair response: { "accessToken": "...", "expiresAt": "..." }.
- *
- * DeskDear therefore pairs through /api/mobile/pair until a dedicated desktop
- * route is deployed. DESKDEAR_CONTROL_URL may still override the base origin.
+ * Prefer POST /api/desktop/pair (v4 device transport).
+ * DESKDEAR_CONTROL_URL may override the base origin or a full pair URL.
  */
-QString controlEndpoint() {
+QString controlBaseOrigin() {
     const char* value = std::getenv("DESKDEAR_CONTROL_URL");
     QString baseStr = (value != nullptr && *value != '\0')
         ? QString::fromUtf8(value).trimmed()
@@ -41,20 +33,23 @@ QString controlEndpoint() {
         return {};
     }
 
+    // If a full pair URL was provided, strip back to origin+path prefix before /api/
     const QString path = base.path();
-    // Allow an explicit full pair URL for staging overrides.
-    if (path.endsWith(QStringLiteral("/api/mobile/pair"))
-        || path.endsWith(QStringLiteral("/api/desktop/pair"))) {
-        return base.toString(QUrl::FullyEncoded);
+    if (path.contains(QStringLiteral("/api/"))) {
+        const int idx = path.indexOf(QStringLiteral("/api/"));
+        base.setPath(path.left(idx));
+        base.setQuery(QString());
+        base.setFragment(QString());
     }
-
-    QString cleaned = path;
-    if (cleaned.endsWith(QLatin1Char('/'))) {
-        cleaned.chop(1);
-    }
-    // Prefer the live mobile pair route (shared code store with /pairdesktop).
-    base.setPath(cleaned + QStringLiteral("/api/mobile/pair"));
     return base.toString(QUrl::FullyEncoded);
+}
+
+QString controlEndpoint() {
+    const QString origin = controlBaseOrigin();
+    if (origin.isEmpty()) {
+        return {};
+    }
+    return origin + QStringLiteral("/api/desktop/pair");
 }
 
 }  // namespace
@@ -62,6 +57,7 @@ QString controlEndpoint() {
 PairingController::PairingController(QObject* parent)
     : QObject(parent)
     , endpoint_(controlEndpoint())
+    , controlBaseOrigin_(controlBaseOrigin())
     , endpointConfigured_(!endpoint_.isEmpty()) {
     try {
         const auto identity = deskdear::DeviceIdentityStore::load_or_create();
@@ -177,7 +173,7 @@ void PairingController::handleReply() {
     // Memory-only until OS keystore storage is implemented.
     sessionToken_ = token.toUtf8();
     setPaired(true);
-    setStatus(QStringLiteral("DeskDear is paired with your Nally account."));
+    setStatus(QStringLiteral("DeskDear is paired. Device transport will start."));
     reply->deleteLater();
 }
 

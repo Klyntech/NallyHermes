@@ -11,6 +11,7 @@
 #include <QMessageLogContext>
 
 #include "ui_pairing_controller.hpp"
+#include "ui_device_transport.hpp"
 
 #ifdef Q_OS_WIN
 #  ifndef NOMINMAX
@@ -119,7 +120,21 @@ int main(int argc, char* argv[]) {
         Qt::QueuedConnection);
 
     PairingController pairing;
+    DeviceTransportController transport;
     engine.rootContext()->setContextProperty(QStringLiteral("pairing"), &pairing);
+    engine.rootContext()->setContextProperty(QStringLiteral("transport"), &transport);
+
+    QObject::connect(&pairing, &PairingController::pairedChanged, &transport, [&]() {
+        if (pairing.paired()) {
+            const QString origin = pairing.controlBaseOriginConstant();
+            const QByteArray token = pairing.deviceToken().toUtf8();
+            if (!origin.isEmpty() && token.size() >= 20) {
+                transport.start(origin, token);
+            }
+        } else {
+            transport.stop();
+        }
+    });
 
     const QUrl url(QStringLiteral("qrc:/deskdear/ui/qml/Main.qml"));
     writeLogLine(QStringLiteral("Loading QML: ") + url.toString());
