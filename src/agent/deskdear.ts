@@ -86,7 +86,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: false,
     readOnly: true,
     kind: "workspace",
-    state: "planned",
+    state: "enabled",
     capability: "WorkspaceRead"
   },
   {
@@ -96,7 +96,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: false,
     readOnly: true,
     kind: "workspace",
-    state: "planned",
+    state: "enabled",
     capability: "WorkspaceRead"
   },
   {
@@ -106,7 +106,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "workspace",
-    state: "planned",
+    state: "enabled",
     capability: "WorkspaceWrite"
   },
   {
@@ -116,7 +116,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "workspace",
-    state: "planned",
+    state: "enabled",
     capability: "WorkspaceWrite"
   },
   {
@@ -126,7 +126,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "workspace",
-    state: "planned",
+    state: "enabled",
     capability: "WorkspaceWrite"
   },
   {
@@ -136,7 +136,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "application",
-    state: "planned",
+    state: "enabled",
     capability: "OpenApplication"
   },
   {
@@ -146,7 +146,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: true,
     kind: "screen",
-    state: "planned",
+    state: "enabled",
     capability: "ScreenCapture"
   },
   {
@@ -156,7 +156,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: true,
     kind: "screen",
-    state: "planned",
+    state: "enabled",
     capability: "ScreenCapture"
   },
   {
@@ -166,7 +166,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: true,
     kind: "screen",
-    state: "planned",
+    state: "enabled",
     capability: "ScreenCapture"
   },
   {
@@ -176,7 +176,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -186,7 +186,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -196,7 +196,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -206,7 +206,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -216,7 +216,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -226,7 +226,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -236,7 +236,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "input",
-    state: "planned",
+    state: "enabled",
     capability: "InputControl"
   },
   {
@@ -246,7 +246,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: false,
     readOnly: true,
     kind: "task",
-    state: "planned",
+    state: "enabled",
     capability: "Health"
   },
   {
@@ -256,7 +256,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: false,
     readOnly: true,
     kind: "task",
-    state: "planned",
+    state: "enabled",
     capability: "Health"
   },
   {
@@ -266,7 +266,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: true,
     readOnly: false,
     kind: "task",
-    state: "planned",
+    state: "enabled",
     capability: "Health"
   },
   {
@@ -276,7 +276,7 @@ export const DESKDEAR_OPERATIONS: readonly DeskDearOperation[] = [
     approvalRequired: false,
     readOnly: true,
     kind: "task",
-    state: "planned",
+    state: "enabled",
     capability: "Health"
   }
 ] as const;
@@ -341,7 +341,7 @@ export function getDeskDearStatus(telegramId?: string): DeskDearStatus {
   if (transport === "online" && device) {
     note =
       `DeskDear device "${device.deviceName}" (${device.deviceId}) is online. ` +
-      "Enabled device tools today: status, read, write. Prefer connectors over GUI when both work.";
+      "Full DeskDear tool surface is exposed (workspace, screen, input, tasks). Device policy still applies. Prefer connectors over GUI when both work.";
   } else if (transport === "paired" && device) {
     note =
       `DeskDear device "${device.deviceName}" is paired but offline (no recent heartbeat). ` +
@@ -349,7 +349,7 @@ export function getDeskDearStatus(telegramId?: string): DeskDearStatus {
   } else {
     note =
       "DeskDear public tools are registered in Nally and aligned with the device tool_registry. " +
-      "No paired device is online yet. Enabled device tools today: status, read, write. " +
+      "No paired device is online yet. Full DeskDear tool surface is exposed (workspace, screen, input, tasks). Device policy still applies. " +
       "Do not claim desktop actions succeeded without a device result.";
   }
   return {
@@ -401,15 +401,6 @@ export async function callDeskDearOperation(
       operation: name,
       action: op.action,
       result: getDeskDearStatus(ctx.telegramId)
-    };
-  }
-
-  if (op.state === "planned") {
-    return {
-      status: "not_implemented",
-      operation: name,
-      action: op.action,
-      message: `DeskDear tool "${name}" (${op.action}) is planned on the device (ToolState::Planned), not enabled yet.`
     };
   }
 
