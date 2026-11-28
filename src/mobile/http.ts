@@ -13,6 +13,7 @@ import {
 import { TelegramLoginError, verifyTelegramLoginIdToken } from "./telegramLogin.js";
 import { splitAnswerAndSources } from "../agent/sourceAttribution.js";
 import { mintVoiceTicket } from "./voiceSession.js";
+import { registerDeskDearDevice } from "../agent/deskdearTransport.js";
 
 const MAX_REQUEST_BYTES = 8_192;
 const CLIENT_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -137,6 +138,22 @@ export async function handleMobileApiRequest(
       if (!paired) {
         sendJson(res, 401, { error: "That pairing code is invalid, expired, or already used." });
         return;
+      }
+      // When DeskDear sends deviceId/deviceName, register the desktop transport.
+      const deviceId = typeof (body as { deviceId?: unknown }).deviceId === "string"
+        ? (body as { deviceId: string }).deviceId.trim()
+        : undefined;
+      const deviceName = typeof (body as { deviceName?: unknown }).deviceName === "string"
+        ? (body as { deviceName: string }).deviceName.trim()
+        : undefined;
+      if (deviceId || deviceName) {
+        registerDeskDearDevice({
+          telegramId: paired.telegramId,
+          deviceId,
+          deviceName,
+          token: paired.token,
+          expiresAt: paired.expiresAt
+        });
       }
       sendJson(res, 200, { accessToken: paired.token, expiresAt: paired.expiresAt.toISOString() });
       return;

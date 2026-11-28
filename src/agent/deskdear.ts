@@ -8,6 +8,11 @@
  * Until a device is paired, remote ops fail closed.
  */
 
+import {
+  deskDearTransportState,
+  enqueueDeskDearOperation
+} from "./deskdearTransport.js";
+
 export type DeskDearOpKind =
   | "health"
   | "workspace"
@@ -328,17 +333,31 @@ export type DeskDearStatus = {
   operations: ReturnType<typeof listDeskDearOperations>;
 };
 
-export function getDeskDearStatus(): DeskDearStatus {
+export function getDeskDearStatus(telegramId?: string): DeskDearStatus {
   const enabledTools = DESKDEAR_OPERATIONS.filter((o) => o.state === "enabled").map((o) => o.name);
-  return {
-    available: false,
-    transport: "not_connected",
-    enabledTools,
-    toolCount: DESKDEAR_OPERATIONS.length,
-    note:
+  const { transport, device } = deskDearTransportState(telegramId);
+  const available = transport === "online";
+  let note: string;
+  if (transport === "online" && device) {
+    note =
+      `DeskDear device "${device.deviceName}" (${device.deviceId}) is online. ` +
+      "Enabled device tools today: status, read, write. Prefer connectors over GUI when both work.";
+  } else if (transport === "paired" && device) {
+    note =
+      `DeskDear device "${device.deviceName}" is paired but offline (no recent heartbeat). ` +
+      "Remote ops are unavailable until the desktop agent pulses again.";
+  } else {
+    note =
       "DeskDear public tools are registered in Nally and aligned with the device tool_registry. " +
       "No paired device is online yet. Enabled device tools today: status, read, write. " +
-      "Do not claim desktop actions succeeded without a device result.",
+      "Do not claim desktop actions succeeded without a device result.";
+  }
+  return {
+    available,
+    transport,
+    enabledTools,
+    toolCount: DESKDEAR_OPERATIONS.length,
+    note,
     operations: listDeskDearOperations()
   };
 }
@@ -352,10 +371,16 @@ export type DeskDearCallResult =
       message: string;
     };
 
+export type DeskDearCallContext = {
+  /** Telegram user id that owns the paired DeskDear device */
+  telegramId?: string;
+};
+
 export async function callDeskDearOperation(
   name: string,
-  _args: Record<string, unknown>,
-  approved: boolean
+  args: Record<string, unknown>,
+  approved: boolean,
+  ctx: DeskDearCallContext = {}
 ): Promise<DeskDearCallResult> {
   const op = getDeskDearOperation(name);
 
@@ -369,9 +394,14 @@ export async function callDeskDearOperation(
     };
   }
 
-  // Control-plane metadata without a live device
+  // Local control-plane status (includes live transport when telegramId is known)
   if (name === "status") {
-    return { status: "ok", operation: name, action: op.action, result: getDeskDearStatus() };
+    return {
+      status: "ok",
+      operation: name,
+      action: op.action,
+      result: getDeskDearStatus(ctx.telegramId)
+    };
   }
 
   if (op.state === "planned") {
@@ -383,12 +413,60 @@ export async function callDeskDearOperation(
     };
   }
 
-  // Enabled tools that need a device (read, write, …)
+  if (!ctx.telegramId) {
+    return {
+      status: "unavailable",
+      operation: name,
+      action: op.action,
+      message:
+        "No DeskDear user context is available for this turn, so the operation was not sent to any desktop."
+    };
+  }
+
+  const state = deskDearTransportState(ctx.telegramId);
+  if (state.transport !== "online") {
+    return {
+      status: "unavailable",
+      operation: name,
+      action: op.action,
+      message:
+        state.transport === "paired"
+          ? "DeskDear is paired but offline (no recent heartbeat). Open DeskDear on the desktop and keep it running."
+          : "No DeskDear device is paired and online. Pair from the desktop app, then retry."
+    };
+  }
+
+  const deviceResult = await enqueueDeskDearOperation({
+    telegramId: ctx.telegramId,
+    name: op.name,
+    action: op.action,
+    arguments: args ?? {}
+  });
+
+  if (deviceResult.status === "ok") {
+    return {
+      status: "ok",
+      operation: name,
+      action: op.action,
+      result: deviceResult.result ?? null
+    };
+  }
+
+  if (deviceResult.status === "denied") {
+    return {
+      status: "denied_local",
+      operation: name,
+      action: op.action,
+      message: deviceResult.error ?? "DeskDear denied the operation locally."
+    };
+  }
+
   return {
     status: "unavailable",
     operation: name,
     action: op.action,
     message:
-      "No DeskDear device is paired and online. The operation was not sent to any desktop."
+      deviceResult.error ??
+      "DeskDear did not complete the operation (timeout or device error)."
   };
 }

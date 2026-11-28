@@ -14,6 +14,7 @@ import {
 } from "./db/conversationStore.js";
 import { createDesktopPairingCode, createMobilePairingCode, type MobileSession } from "./db/mobileStore.js";
 import { handleMobileApiRequest } from "./mobile/http.js";
+import { handleDesktopApiRequest } from "./desktop/http.js";
 import { attachVoiceWebSocket } from "./mobile/voiceSession.js";
 import { respond } from "./agent/orchestrator.js";
 import { splitAnswerAndSources } from "./agent/sourceAttribution.js";
@@ -1047,6 +1048,10 @@ const server = createServer((req, res) => {
       submitMessage: submitMobileMessage,
       getActivity: getMobileActivity
     });
+    return;
+  }
+  if (pathname.startsWith("/api/desktop/")) {
+    void handleDesktopApiRequest(req, res);
     return;
   }
   if (pathname === "/manus-routes.json" && req.method === "GET") {

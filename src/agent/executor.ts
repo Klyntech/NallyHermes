@@ -209,7 +209,7 @@ async function executeToolCallOnce(
         if (dd.operation === "list_operations") result = listDeskDearOperations();
         else if (!dd.name) throw new Error("DeskDear operation name is required.");
         else if (dd.operation === "get_operation") result = getDeskDearOperation(dd.name);
-        else result = await callDeskDearOperation(dd.name, dd.arguments ?? {}, dd.approved === true);
+        else result = await callDeskDearOperation(dd.name, dd.arguments ?? {}, dd.approved === true, { telegramId });
         break;
       }
       case "notion":

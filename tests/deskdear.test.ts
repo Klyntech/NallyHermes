@@ -60,3 +60,24 @@ test("status reports enabled tool list", () => {
   assert.equal(s.toolCount, 23);
   assert.equal(s.transport, "not_connected");
 });
+
+
+test("status reflects transport when telegramId is provided", async () => {
+  const {
+    registerDeskDearDevice,
+    pulseDeskDearHeartbeat,
+    resetDeskDearTransportForTests
+  } = await import("../src/agent/deskdearTransport.js");
+  const { getDeskDearStatus } = await import("../src/agent/deskdear.js");
+  resetDeskDearTransportForTests();
+  assert.equal(getDeskDearStatus("nope").transport, "not_connected");
+  const { token } = registerDeskDearDevice({
+    telegramId: "555",
+    deviceName: "PC",
+    expiresAt: new Date(Date.now() + 60_000)
+  });
+  pulseDeskDearHeartbeat(token);
+  assert.equal(getDeskDearStatus("555").transport, "online");
+  assert.equal(getDeskDearStatus("555").available, true);
+  resetDeskDearTransportForTests();
+});
