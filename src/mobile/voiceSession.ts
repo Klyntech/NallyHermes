@@ -58,8 +58,38 @@ export async function consumeVoiceTicket(ticket: string): Promise<MobileSession 
 type Providers = { deepgram: (language: string) => WebSocket; eleven: () => WebSocket };
 const defaultProviders: Providers = {
   deepgram: (language) => {
-    const q = new URLSearchParams({ model: config.DEEPGRAM_MODEL, language, encoding: "linear16", sample_rate: "16000", channels: "1", interim_results: "true", punctuate: "true", smart_format: "true", endpointing: "300", utterance_end_ms: "1000" });
-    return new WebSocket(`wss://api.deepgram.com/v1/listen?${q}`, { headers: { Authorization: `Token ${config.DEEPGRAM_API_KEY}` } });
+    const model = config.DEEPGRAM_MODEL;
+    const flux = model.startsWith("flux-");
+    // Flux STT is conversational (/v2/listen) with built-in end-of-turn. Nova stays on /v1/listen.
+    const q = new URLSearchParams(
+      flux
+        ? {
+            model,
+            encoding: "linear16",
+            sample_rate: "16000",
+            eot_threshold: "0.7",
+          }
+        : {
+            model,
+            language,
+            encoding: "linear16",
+            sample_rate: "16000",
+            channels: "1",
+            interim_results: "true",
+            punctuate: "true",
+            smart_format: "true",
+            endpointing: "300",
+            utterance_end_ms: "1000",
+          }
+    );
+    // flux-general-multi accepts language_hint; flux-general-en encodes language in the model id.
+    if (flux && model === "flux-general-multi" && language) {
+      q.set("language_hint", language);
+    }
+    const path = flux ? "v2/listen" : "v1/listen";
+    return new WebSocket(`wss://api.deepgram.com/${path}?${q}`, {
+      headers: { Authorization: `Token ${config.DEEPGRAM_API_KEY}` },
+    });
   },
   eleven: () => {
     const q = new URLSearchParams({ model_id: config.ELEVENLABS_MODEL_ID, output_format: "pcm_16000", inactivity_timeout: "180" });
